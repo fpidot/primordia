@@ -1,0 +1,11 @@
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Node (only test runner; no production deps)
+node_modules/
+
+# Local Claude state
+.claude/settings.local.json
