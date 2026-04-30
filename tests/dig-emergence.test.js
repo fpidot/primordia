@@ -18,23 +18,27 @@ await runTest('dig-emergence: maze 3k ticks → some wall activity', async () =>
   PRESETS.maze(world);
   const wallsBefore = world._wallCount;
   const versionBefore = world._wallsVersion;
+  const digsBefore = world.totalWallDigs;
+  const depositsBefore = world.totalWallDeposits;
 
   await runSim(world, 3000, { reportEvery: 1000 });
 
   const wallsAfter = world._wallCount;
   const versionAfter = world._wallsVersion;
+  const digDelta = world.totalWallDigs - digsBefore;
+  const depositDelta = world.totalWallDeposits - depositsBefore;
   const carryingNow = world.particles.filter(p => !p.dead && p.wallCarry > 0).length;
 
   console.log(`\n  walls: before=${wallsBefore} after=${wallsAfter} ` +
               `delta=${wallsAfter - wallsBefore}`);
   console.log(`  versionDelta=${versionAfter - versionBefore} ` +
               `carryingNow=${carryingNow}`);
+  console.log(`  organism wall actions: digs=${digDelta} builds=${depositDelta}`);
 
-  // Liveness: either (a) wall count changed, (b) wall version bumped past
-  // initial setup, or (c) particles are actively carrying. Any one is fine.
-  const activity = (wallsAfter !== wallsBefore) ||
-                   (versionAfter > versionBefore + 1) ||
-                   (carryingNow > 0);
+  // Liveness: direct organism-made wall counters must advance. Wall count can
+  // net to zero when digging and rebuilding cancel out, so counters are the
+  // durable signal.
+  const activity = (digDelta + depositDelta) > 10;
   assert('some wall activity', activity,
          'no dig/deposit events in 3000 ticks of maze');
 

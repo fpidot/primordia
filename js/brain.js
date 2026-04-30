@@ -16,7 +16,7 @@
 
 import { NUM_SPECIES, NUM_CHEM } from './genome.js';
 
-export const N_HIDDEN_MAX = 8;          // structural cap; raise later if perf allows
+export const N_HIDDEN_MAX = 10;         // structural cap; GPU result stride stores all hidden slots
 
 // Sensor layout — STABLE: changing this breaks evolved-weight meaning.
 // Slots reserved for Phase 2d/e signaling sensors are zero-filled until those
@@ -66,6 +66,11 @@ export const SENSOR_NAMES = [
   /* 38 */ 'wall.s',                    // Thread B-2 — south
   /* 39 */ 'wall.e',                    // Thread B-2 — east
   /* 40 */ 'wall.w',                    // Thread B-2 — west
+  /* 41 */ 'mud.n',                     // passable mud terrain north
+  /* 42 */ 'mud.s',                     // south
+  /* 43 */ 'mud.e',                     // east
+  /* 44 */ 'mud.w',                     // west
+  /* 45 */ 'terrain.mud',               // mud underfoot (0/1); slows and drains
 ];
 export const N_INPUT = SENSOR_NAMES.length;
 
@@ -108,13 +113,6 @@ export const N_SOUND_CHANNELS = 4;
 const ACT_TANH = 0, ACT_RELU = 1, ACT_SIG = 2, ACT_LIN = 3;
 const N_ACT = 4;
 
-function activate(actId, x) {
-  if (actId === ACT_TANH) return Math.tanh(x);
-  if (actId === ACT_RELU) return x > 0 ? x : 0;
-  if (actId === ACT_SIG)  return 1 / (1 + Math.exp(-x));
-  return x;
-}
-
 export class Brain {
   constructor() {
     this.enabled = new Uint8Array(N_HIDDEN_MAX);
@@ -156,7 +154,12 @@ export class Brain {
       for (let j = 0; j < N_HIDDEN_MAX; j++) {
         if (enabled[j]) s += W_hh[hhOff + j] * h[j];
       }
-      h_new[k] = activate(actH[k], s);
+      const act = actH[k];
+      h_new[k] = act === ACT_TANH
+        ? Math.tanh(s)
+        : (act === ACT_RELU
+          ? (s > 0 ? s : 0)
+          : (act === ACT_SIG ? 1 / (1 + Math.exp(-s)) : s));
     }
     for (let k = 0; k < N_HIDDEN_MAX; k++) h[k] = h_new[k];
 
@@ -210,8 +213,8 @@ export function makeBrain(rng = Math.random, initSlots = 4) {
   // but a small tail starts mildly positive — same shape as the predation
   // bias init so evolution has a non-vanishing seed to amplify within a
   // few thousand ticks if digging pays off.
-  b.biasO[OUT_DIG]     = -0.6 + (rng() - 0.4) * 1.5;
-  b.biasO[OUT_DEPOSIT] = -0.6 + (rng() - 0.4) * 1.5;
+  b.biasO[OUT_DIG]     = -0.45 + (rng() - 0.35) * 1.8;
+  b.biasO[OUT_DEPOSIT] = -0.45 + (rng() - 0.35) * 1.8;
   return b;
 }
 
@@ -366,24 +369,17 @@ function copyInto(dst, src) {
 }
 
 // GPU upload layout — flat float layout matching WGSL Brain struct.
-// Offsets (in floats) — all derived from N_INPUT / N_OUTPUT below so changes
-// flow through automatically. With Thread B-2 bumps (N_INPUT=37, N_OUTPUT=18):
-//   0..7    : enabled (0.0/1.0)
-//   8..15   : actH    (0..3)
-//   16..23  : biasH
-//   24..319 : W_ih    (k-major: k*N_INPUT + j, 8*37=296)
-//   320..383: W_hh    (k-major: k*N_HIDDEN_MAX + j, 8*8=64)
-//   384..527: W_ho    (k-major: k*N_OUTPUT + o, 8*18=144)
-//   528..545: biasO   (18 floats)
-//   546..559: pad     (round to multiple of 16 → BRAIN_PACK_STRIDE = 560)
+// Offsets (in floats) are derived from N_INPUT / N_OUTPUT below so sensor and
+// output additions flow through automatically. Layout order:
+//   enabled, actH, biasH, W_ih, W_hh, W_ho, biasO, pad-to-16.
 export const BRAIN_OFF_ENABLED = 0;
 export const BRAIN_OFF_ACTH    = 8;
 export const BRAIN_OFF_BIASH   = 16;
 export const BRAIN_OFF_WIH     = 24;
-export const BRAIN_OFF_WHH     = BRAIN_OFF_WIH + N_HIDDEN_MAX * N_INPUT;       // 192
-export const BRAIN_OFF_WHO     = BRAIN_OFF_WHH + N_HIDDEN_MAX * N_HIDDEN_MAX;  // 256
-export const BRAIN_OFF_BIASO   = BRAIN_OFF_WHO + N_HIDDEN_MAX * N_OUTPUT;      // 368
-export const BRAIN_PACK_STRIDE = Math.ceil((BRAIN_OFF_BIASO + N_OUTPUT) / 16) * 16; // 384
+export const BRAIN_OFF_WHH     = BRAIN_OFF_WIH + N_HIDDEN_MAX * N_INPUT;
+export const BRAIN_OFF_WHO     = BRAIN_OFF_WHH + N_HIDDEN_MAX * N_HIDDEN_MAX;
+export const BRAIN_OFF_BIASO   = BRAIN_OFF_WHO + N_HIDDEN_MAX * N_OUTPUT;
+export const BRAIN_PACK_STRIDE = Math.ceil((BRAIN_OFF_BIASO + N_OUTPUT) / 16) * 16;
 
 export function packBrain(b, out, offset) {
   for (let k = 0; k < N_HIDDEN_MAX; k++) {

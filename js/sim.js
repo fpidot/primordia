@@ -4,7 +4,7 @@
 // decay slowly converts to food, others eat it.
 
 import {
-  NUM_SPECIES, NUM_CHEM, makeGenome, mutate, cloneGenome,
+  NUM_SPECIES, NUM_CHEM, SPECIES_NAMES, makeGenome, mutate, cloneGenome,
   genomeToJSON, genomeFromJSON,
 } from './genome.js';
 import {
@@ -16,13 +16,13 @@ import {
   OUT_DIG, OUT_DEPOSIT,
 } from './brain.js';
 import { crossoverGenome } from './genome.js';
-import { CladeTracker } from './lineage.js';
+import { CladeTracker, CLUSTER_HUMAN_NAMES } from './lineage.js';
 import {
   RESULT_STRIDE, EXTRAS_STRIDE,
   RES_FX, RES_FY, RES_NBVX, RES_NBVY,
   RES_SIGR, RES_SIGG, RES_SIGB, RES_SIGN,
   RES_OWNN, RES_ALIENN, RES_CROWD,
-  RES_OUT0, RES_H0,
+  RES_OUT0,
 } from './gpu_pairforce.js';
 
 // Fixed world geometry — canvas internal pixel size = (W, H); camera scales it.
@@ -103,8 +103,22 @@ const BOND_DEATH_DRAIN = 1.5;
 // and deposit carried material near their current position.
 const WALL_DIG_COST     = 0.30;
 const WALL_DEPOSIT_COST = 0.05;     // halved from 0.10 to encourage building
+const WALL_CARRY_COST   = 0.0025;   // per carried block per tick; makes load meaningful
 const WALL_CARRY_MAX    = 5;
 const WALL_SCAN_RANGE   = 6;       // grid cells; sensor reach for wall.{n,s,e,w}
+const MUD_SPEED_MULT     = 0.78;
+const MUD_ENERGY_DRAIN   = 0.010;
+
+// Communication has a tiny metabolic cost, but named clusters can convert
+// received bond messages into action-specific coordination bonuses.
+const SIGNAL_COST  = 0.0012;
+const SOUND_COST   = 0.0010;
+const BONDMSG_COST = 0.0008;
+const COORD_HUNT_BONUS  = 0.25;
+const COORD_EAT_BONUS   = 0.08;
+const COORD_BUILD_BONUS = 0.35;
+const WALL_SHELTER_RELIEF = 0.25;
+const COORD_SHELTER_RELIEF = 0.25;
 
 // Scan four cardinal directions from grid (gx, gy) for the nearest *real*
 // wall (any type) — returns {n, s, e, w} each in [0, 1]. World edges DO NOT
@@ -112,40 +126,98 @@ const WALL_SCAN_RANGE   = 6;       // grid cells; sensor reach for wall.{n,s,e,w
 // into the bounce-bound (where particles can't actually dig anything),
 // which a digging lineage would learn to feckly chase. Now sensors only
 // fire for diggable interior walls.
-function scanWallProximity(walls, gx, gy) {
+function scanWallProximity(walls, gx, gy, targetType = 0) {
   let wn = 0, ws = 0, we = 0, ww = 0;
+  const hit = targetType
+    ? (idx) => walls[idx] === targetType
+    : (idx) => !!walls[idx];
   // North (y decreasing)
   for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
     const ny = gy - d;
     if (ny < 0) break;
-    if (walls[ny * GW + gx]) { wn = 1 - (d - 1) / WALL_SCAN_RANGE; break; }
+    if (hit(ny * GW + gx)) { wn = 1 - (d - 1) / WALL_SCAN_RANGE; break; }
   }
   // South (y increasing)
   for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
     const ny = gy + d;
     if (ny >= GH) break;
-    if (walls[ny * GW + gx]) { ws = 1 - (d - 1) / WALL_SCAN_RANGE; break; }
+    if (hit(ny * GW + gx)) { ws = 1 - (d - 1) / WALL_SCAN_RANGE; break; }
   }
   // East (x increasing)
   for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
     const nx = gx + d;
     if (nx >= GW) break;
-    if (walls[gy * GW + nx]) { we = 1 - (d - 1) / WALL_SCAN_RANGE; break; }
+    if (hit(gy * GW + nx)) { we = 1 - (d - 1) / WALL_SCAN_RANGE; break; }
   }
   // West (x decreasing)
   for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
     const nx = gx - d;
     if (nx < 0) break;
-    if (walls[gy * GW + nx]) { ww = 1 - (d - 1) / WALL_SCAN_RANGE; break; }
+    if (hit(gy * GW + nx)) { ww = 1 - (d - 1) / WALL_SCAN_RANGE; break; }
   }
   return { wn, ws, we, ww };
+}
+
+// Combined terrain scan for the hot brain-input paths. It preserves the old
+// semantics of two independent scans: wall.* reports nearest material of any
+// type, while mud.* reports nearest mud even if another wall type is closer.
+function scanWallAndMudProximityInto(walls, gx, gy, out) {
+  let wn = 0, ws = 0, we = 0, ww = 0;
+  let mn = 0, ms = 0, me = 0, mw = 0;
+  for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
+    const ny = gy - d;
+    if (ny < 0) break;
+    const wt = walls[ny * GW + gx];
+    const v = 1 - (d - 1) / WALL_SCAN_RANGE;
+    if (wt) {
+      if (!wn) wn = v;
+      if (wt === WALL_POROUS && !mn) mn = v;
+      if (wn && mn) break;
+    }
+  }
+  for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
+    const ny = gy + d;
+    if (ny >= GH) break;
+    const wt = walls[ny * GW + gx];
+    const v = 1 - (d - 1) / WALL_SCAN_RANGE;
+    if (wt) {
+      if (!ws) ws = v;
+      if (wt === WALL_POROUS && !ms) ms = v;
+      if (ws && ms) break;
+    }
+  }
+  for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
+    const nx = gx + d;
+    if (nx >= GW) break;
+    const wt = walls[gy * GW + nx];
+    const v = 1 - (d - 1) / WALL_SCAN_RANGE;
+    if (wt) {
+      if (!we) we = v;
+      if (wt === WALL_POROUS && !me) me = v;
+      if (we && me) break;
+    }
+  }
+  for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
+    const nx = gx - d;
+    if (nx < 0) break;
+    const wt = walls[gy * GW + nx];
+    const v = 1 - (d - 1) / WALL_SCAN_RANGE;
+    if (wt) {
+      if (!ww) ww = v;
+      if (wt === WALL_POROUS && !mw) mw = v;
+      if (ww && mw) break;
+    }
+  }
+  out[0] = wn; out[1] = ws; out[2] = we; out[3] = ww;
+  out[4] = mn; out[5] = ms; out[6] = me; out[7] = mw;
+  return out;
 }
 
 // Wall types — `walls[i]` value semantics:
 //   0 = open
 //   1 = solid    (blocks particles, blocks chemicals/sound) — original behaviour
-//   2 = membrane (blocks particles, passes chemicals/sound) — selective barrier
-//   3 = porous   (passes particles, blocks chemicals)       — chemical screen
+//   2 = glass (blocks particles, passes chemicals/sound) — transparent barrier
+//   3 = mud   (passes particles/fields, slows + drains)  — terrain pressure
 // Stored as Uint8 so brushes can paint any of 1/2/3 at the cost of one byte.
 export const WALL_OPEN     = 0;
 export const WALL_SOLID    = 1;
@@ -171,6 +243,37 @@ let _lineage = 0;
 
 function rng_default() { return Math.random(); }
 
+const CLUSTER_FORBIDDEN_GIVEN_NAMES = new Set(SPECIES_NAMES.map(s => s.toLowerCase()));
+
+function clusterDisplayName(baseName) {
+  const parts = String(baseName || 'cluster').split('-').filter(Boolean);
+  if (parts.length >= 2) return [parts[0] + parts[1], ...parts.slice(2)].join('-');
+  return parts[0] || 'cluster';
+}
+
+function uniqueClusterDisplayName(baseDisplay, usedNames, anchorId) {
+  const parts = String(baseDisplay || 'cluster').split('-').filter(Boolean);
+  if (parts.length < 2) return baseDisplay;
+  let given = parts[parts.length - 1];
+  let givenKey = given.toLowerCase();
+  if (!CLUSTER_FORBIDDEN_GIVEN_NAMES.has(givenKey) && !usedNames.has(givenKey)) {
+    usedNames.add(givenKey);
+    return baseDisplay;
+  }
+  const pool = CLUSTER_HUMAN_NAMES.filter(n => !CLUSTER_FORBIDDEN_GIVEN_NAMES.has(n.toLowerCase()));
+  const start = Math.abs((anchorId || 1) * 1103515245) % pool.length;
+  for (let i = 0; i < pool.length; i++) {
+    const candidate = pool[(start + i) % pool.length];
+    const key = candidate.toLowerCase();
+    if (usedNames.has(key)) continue;
+    usedNames.add(key);
+    parts[parts.length - 1] = candidate;
+    return parts.join('-');
+  }
+  usedNames.add(givenKey);
+  return baseDisplay;
+}
+
 export class World {
   constructor(opts = {}) {
     this.maxParticles = opts.maxParticles ?? 5000;
@@ -184,7 +287,13 @@ export class World {
     // Field channels (food, decay) + mutagen aux + walls
     this.field = [new Float32Array(GW * GH), new Float32Array(GW * GH)];
     this.mutagen = new Float32Array(GW * GH);
+    this._decayActive = false;
+    this._mutagenActive = false;
     this.walls = new Uint8Array(GW * GH);
+    this.wallOwnerId = new Int32Array(GW * GH);
+    this.wallOwnerClusterId = new Int32Array(GW * GH);
+    this.wallOwnerCladeId = new Int32Array(GW * GH);
+    this.wallOwnerTick = new Int32Array(GW * GH);
 
     // Spatial hash (linked-list style)
     this.cellHead = new Int32Array(HW * HH);
@@ -193,6 +302,8 @@ export class World {
     // Lineage counter for new particles created from outside
     this.totalBorn = 0;
     this.totalDied = 0;
+    this.totalWallDigs = 0;
+    this.totalWallDeposits = 0;
 
     this.clades = new CladeTracker();
 
@@ -213,10 +324,13 @@ export class World {
     // One-shot wall-action audio events: producer is the dig/deposit code
     // path, consumer is audio.js (drained each tick). Cosmetic only.
     this._wallSoundEvents = [];
+    this._deathSoundEvents = [];
     // Wall version — bumped on every wall brush so the renderer can rebuild
     // its smooth-edge cache even when count is unchanged but a cell changed
-    // type (e.g. solid → membrane).
+    // type (e.g. solid -> glass).
     this._wallsVersion = 0;
+    this._solidWallVersion = -1;
+    this._solidWallIndices = [];
 
     // Bonded clusters — recomputed periodically via union-find on the bond
     // graph. Clusters of size ≥ MIN_NAMED_CLUSTER get a name + flag label.
@@ -240,9 +354,18 @@ export class World {
     this._gpuResults = null;
     this._gpuPending = null;           // Phase 4f — pipelined readback promise
     this._brainsDirty = true;          // re-upload brain weights when any brain changed
+    this._gpuStateDirty = true;        // re-upload transient brain state when GPU state mapping changes
     this._extrasStaging = null;        // Float32Array(maxParticles × EXTRAS_STRIDE) — lazy alloc
     this._gpuValidate = false;
     this._gpuLastDiff = null;
+    this._idLookup = [];
+    this._idLookupTouched = [];
+    this._buildCandX = new Int16Array(4);
+    this._buildCandY = new Int16Array(4);
+    this._terrainScanScratch = new Float32Array(8);
+    this._profileEnabled = false;
+    this._profileTotals = new Map();
+    this._profileTicks = 0;
   }
 
   // Attach a GPUPairForce kernel. World does not own its lifecycle; caller
@@ -257,10 +380,36 @@ export class World {
       // First GPU-enabled tick must (re)upload all brain weights so the brain
       // kernel doesn't run with the GPU buffer's zeroed initial state.
       this._brainsDirty = true;
+      this._gpuStateDirty = true;
     }
   }
   isGPUEnabled() { return !!this._gpuEnabled; }
   setGPUValidate(v) { this._gpuValidate = !!v; }
+  setProfiling(enabled) {
+    this._profileEnabled = !!enabled;
+    this._profileTotals.clear();
+    this._profileTicks = 0;
+  }
+  profileSummary() {
+    const ticks = Math.max(1, this._profileTicks || 0);
+    const out = {};
+    for (const [name, ms] of this._profileTotals) out[name] = +(ms / ticks).toFixed(3);
+    return out;
+  }
+  _profileAdd(name, ms) {
+    this._profileTotals.set(name, (this._profileTotals.get(name) || 0) + ms);
+  }
+  _solidWalls() {
+    if (this._solidWallVersion === this._wallsVersion) return this._solidWallIndices;
+    const out = this._solidWallIndices;
+    out.length = 0;
+    const walls = this.walls;
+    for (let i = 0; i < walls.length; i++) {
+      if (walls[i] === WALL_SOLID) out.push(i);
+    }
+    this._solidWallVersion = this._wallsVersion;
+    return out;
+  }
 
   // ────────────────────────────────────────────────────────────── lifecycle
 
@@ -288,6 +437,10 @@ export class World {
       bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
       incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
       wallCarry: 0,
+      shelterRelief: 0,
+      wallDigs: 0,
+      wallDeposits: 0,
+      cluster: null,
       bonds: [],
       dead: false,
     };
@@ -343,6 +496,7 @@ export class World {
     for (let i = 0; i < this.mutagen.length; i++) {
       if (!this.walls[i]) this.mutagen[i] = Math.min(4, this.mutagen[i] + strength);
     }
+    this._mutagenActive = true;
     this.clades.pushEvent(this.tick, 'speciation',
       `mutagen storm · world-wide mutation boost`, '#a78bfa');
   }
@@ -362,19 +516,30 @@ export class World {
     this.births.length = 0;
     this.field[0].fill(0);
     this.field[1].fill(0);
+    this._decayActive = false;
     this.mutagen.fill(0);
+    this._mutagenActive = false;
     this.walls.fill(0);
+    this.wallOwnerId.fill(0);
+    this.wallOwnerClusterId.fill(0);
+    this.wallOwnerCladeId.fill(0);
+    this.wallOwnerTick.fill(0);
     if (this._soundFields) for (const s of this._soundFields) s.fill(0);
     this.tick = 0;
     this.totalBorn = 0;
     this.totalDied = 0;
+    this.totalWallDigs = 0;
+    this.totalWallDeposits = 0;
     this._wallCount = 0;
     // Bump version so the renderer's wall cache key changes — without this,
     // the previous preset's walls keep displaying until the user paints
     // something new (the underlying data is empty, but the cached cell
     // list never gets invalidated).
     this._wallsVersion++;
+    this._wallSoundEvents.length = 0;
+    this._deathSoundEvents.length = 0;
     this._brainsDirty = true;
+    this._gpuStateDirty = true;
     // Phase 4f — drop any in-flight GPU readback so the next tick doesn't
     // apply results computed against the previous (now-replaced) world.
     this._gpuPending = null;
@@ -391,8 +556,12 @@ export class World {
   clearField() {
     this.field[0].fill(0);
     this.field[1].fill(0);
+    this._decayActive = false;
     this.mutagen.fill(0);
+    this._mutagenActive = false;
     if (this._soundFields) for (const s of this._soundFields) s.fill(0);
+    if (this._wallSoundEvents) this._wallSoundEvents.length = 0;
+    if (this._deathSoundEvents) this._deathSoundEvents.length = 0;
   }
 
   // ────────────────────────────────────────────────────────────── brushes
@@ -424,28 +593,32 @@ export class World {
             this._wallsVersion++;
             this.field[0][idx] = 0;
             this.field[1][idx] = 0;
+            this.clearWallMeta(idx);
             break;
           case 'membrane':
             if (!this.walls[idx]) this._wallCount++;
             this.walls[idx] = WALL_MEMBRANE;
             this._wallsVersion++;
-            // Membrane doesn't zero fields — chemicals pass through
+            this.clearWallMeta(idx);
+            // Glass doesn't zero fields — chemicals and sound pass through.
             break;
           case 'porous':
             if (!this.walls[idx]) this._wallCount++;
             this.walls[idx] = WALL_POROUS;
             this._wallsVersion++;
-            this.field[0][idx] = 0;
-            this.field[1][idx] = 0;
+            // Mud is terrain, not a chemical screen.
+            this.clearWallMeta(idx);
             break;
           case 'mutagen':
             this.mutagen[idx] = clamp(this.mutagen[idx] + strength * 0.6 * fall, 0, MUTAGEN_CAP);
+            if (this.mutagen[idx] > 1e-5) this._mutagenActive = true;
             break;
           case 'erase':
             if (this.walls[idx]) {
               this.walls[idx] = 0;
               this._wallCount = Math.max(0, this._wallCount - 1);
               this._wallsVersion++;
+              this.clearWallMeta(idx);
             }
             this.field[0][idx] = 0;
             this.field[1][idx] = 0;
@@ -477,12 +650,28 @@ export class World {
     const N = ps.length;
     const f0 = this.field[0], f1 = this.field[1];
     const walls = this.walls, mut = this.mutagen;
+    const hasWalls = this._wallCount > 0;
+    const profiling = this._profileEnabled;
+    let profileT = profiling ? performance.now() : 0;
+    const markProfile = profiling
+      ? (name) => {
+          const now = performance.now();
+          this._profileAdd(name, now - profileT);
+          profileT = now;
+        }
+      : null;
 
     // id → particle map for bond / mate lookups
-    const idMap = new Map();
+    const idMap = this._idLookup;
+    const touchedIds = this._idLookupTouched;
+    for (let i = 0; i < touchedIds.length; i++) idMap[touchedIds[i]] = null;
+    touchedIds.length = 0;
     for (let i = 0; i < N; i++) {
       const p = ps[i];
-      if (!p.dead) idMap.set(p.id, p);
+      if (!p.dead) {
+        idMap[p.id] = p;
+        touchedIds.push(p.id);
+      }
     }
 
     // Phase 5a → 6b — propagate bond-network messages along bond edges.
@@ -501,7 +690,7 @@ export class World {
       }
       let sR = 0, sG = 0, sB = 0, n = 0;
       for (const partnerId of p.bonds) {
-        const partner = idMap.get(partnerId);
+        const partner = idMap[partnerId];
         if (partner && !partner.dead) {
           sR += partner.bondMsgR;
           sG += partner.bondMsgG;
@@ -552,16 +741,30 @@ export class World {
     // recurrent state machine, (b) typical particle motion is <1 px/tick
     // so positions are virtually identical between adjacent ticks. CPU-
     // only mode is unchanged.
+    if (profiling) markProfile('setup');
     let useGpuPairs = false;
     if (this._gpuPending) {
-      try {
-        this._gpuResults = await this._gpuPending;
+      const pending = this._gpuPending;
+      if (pending.done) {
         this._gpuPending = null;
-        if (this._gpuEnabled && N > 0) useGpuPairs = true;
-      } catch (err) {
-        console.warn('[gpu] pipelined readback failed; falling back to CPU', err);
-        this._gpuEnabled = false;
+        if (pending.error) {
+          console.warn('[gpu] pipelined readback failed; falling back to CPU', pending.error);
+          this._gpuEnabled = false;
+          this._gpuResults = null;
+        } else {
+          const age = this.tick - pending.tick;
+          if (age <= 1) {
+            this._gpuResults = pending.value;
+            if (this._gpuEnabled && N > 0) useGpuPairs = true;
+          } else {
+            this._gpuResults = null;
+          }
+        }
+      } else {
         this._gpuResults = null;
+      }
+      if (!this._gpuEnabled) {
+        this._gpuEnabled = false;
         this._gpuPending = null;
       }
     } else {
@@ -569,6 +772,7 @@ export class World {
     }
 
     // ── 1. Build spatial hash ────────────────────────────────────────
+    if (profiling) markProfile('gpuAwait');
     this.cellHead.fill(-1);
     for (let i = 0; i < N; i++) {
       const p = ps[i];
@@ -581,6 +785,7 @@ export class World {
     }
 
     // ── 2. Pair forces + field gradient + integration ────────────────
+    if (profiling) markProfile('hash');
     for (let i = 0; i < N; i++) {
       const p = ps[i];
       if (p.dead) continue;
@@ -682,8 +887,8 @@ export class World {
                       // so loyal-trait colonies don't auto-cannibalize. Range
                       // [-0.5, 1.5] supports cannibal (0%-aversion → bonus
                       // drain) through strict-loyal (full block).
-                      const pCl = this._particleToCluster.get(p.id);
-                      const qCl = this._particleToCluster.get(q.id);
+                      const pCl = p.cluster;
+                      const qCl = q.cluster;
                       const kinShared = pCl && pCl === qCl;
                       const kinMult = kinShared
                         ? Math.max(0, Math.min(1.5, 1 - (p.genome.kin_aversion || 0.5)))
@@ -698,7 +903,11 @@ export class World {
                         : 1;
                       const totalMult = kinMult * speciesMult;
                       if (totalMult > 0.001) {
-                        const baseRate = 0.18 * willBoost * totalMult;
+                        const huntCoord = p.cluster
+                          ? Math.max(0, p.incomingBondMsgR)
+                          : 0;
+                        const baseRate = 0.18 * willBoost * totalMult *
+                          (1 + huntCoord * COORD_HUNT_BONUS);
                         const drain = Math.min(q.energy * baseRate, 0.7);
                         q.energy -= drain;
                         // Phase 6 — predator efficiency raised 0.55 → 0.80.
@@ -715,8 +924,8 @@ export class World {
                         d < BOND_FORM_DIST &&
                         p.bonds.length < MAX_BONDS && q.bonds.length < MAX_BONDS &&
                         !p.bonds.includes(q.id) && !q.bonds.includes(p.id)) {
-                      const pCluster = this._particleToCluster.get(p.id);
-                      const qCluster = this._particleToCluster.get(q.id);
+                      const pCluster = p.cluster;
+                      const qCluster = q.cluster;
                       const sameCluster = pCluster && pCluster === qCluster;
                       let pGate = BOND_GATE, qGate = BOND_GATE;
                       if (sameCluster) {
@@ -750,7 +959,7 @@ export class World {
                 // is naturally bounded; the segment math takes care of reach.
                 if (this.bondBarrier &&
                     q.bonds.length > 0 &&
-                    this._particleToCluster.has(q.id)) {
+                    q.cluster) {
                   const pBondedQ = p.bonds.length > 0 && p.bonds.includes(q.id);
                   if (!pBondedQ) {
                     const qBonds = q.bonds;
@@ -759,7 +968,7 @@ export class World {
                       if (pid <= q.id) continue;          // each segment once
                       if (pid === p.id) continue;
                       if (p.bonds.length > 0 && p.bonds.includes(pid)) continue;
-                      const partner = idMap.get(pid);
+                      const partner = idMap[pid];
                       if (!partner || partner.dead) continue;
                       const sx = partner.x - q.x;
                       const sy = partner.y - q.y;
@@ -816,13 +1025,11 @@ export class World {
       // ── Brain: build sensor input, run forward pass, apply outputs ──
       const out = this._brainOutput;
       if (useGpuPairs) {
-        // GPU already ran the forward pass — copy outputs from the result
-        // buffer and update the persistent h state from GPU's value.
+        // GPU already ran the forward pass — copy outputs from the compact
+        // result buffer. Hidden CTRNN state stays resident on GPU between
+        // dispatches and is reset only when the particle list changes.
         const oo = i * RESULT_STRIDE + RES_OUT0;
         for (let oj = 0; oj < N_OUTPUT; oj++) out[oj] = this._gpuResults[oo + oj];
-        const ho = i * RESULT_STRIDE + RES_H0;
-        const h = g.brain.h;
-        for (let k = 0; k < h.length; k++) h[k] = this._gpuResults[ho + k];
         // Validation hook: when window.__primordia.world.setGPUValidate(true),
         // every 256 ticks dump output[5] (predation) GPU vs CPU side-by-side
         // for the first live particle so the user can confirm the shader
@@ -886,7 +1093,7 @@ export class World {
         inp[29] = p.incomingBondMsgG;
         inp[30] = p.incomingBondMsgB;
         // Phase 6a — cluster geometry. Lookup once per tick.
-        const cl6 = this._particleToCluster.get(p.id);
+        const cl6 = p.cluster;
         if (cl6) {
           inp[31] = Math.tanh((cl6.cx - p.x) / 80);
           inp[32] = Math.tanh((cl6.cy - p.y) / 80);
@@ -897,14 +1104,22 @@ export class World {
           inp[31] = inp[32] = inp[33] = inp[34] = inp[35] = 0;
         }
         inp[36] = (p.wallCarry || 0) / WALL_CARRY_MAX;   // Thread B-2
-        // Wall proximity sensors — share the same scan helper as GPU extras.
-        {
-          const wScan = scanWallProximity(walls, sgx, sgy);
-          inp[37] = wScan.wn;
-          inp[38] = wScan.ws;
-          inp[39] = wScan.we;
-          inp[40] = wScan.ww;
+        // Terrain proximity sensors — share the same scan helper as GPU extras.
+        if (hasWalls) {
+          const tScan = scanWallAndMudProximityInto(walls, sgx, sgy, this._terrainScanScratch);
+          inp[37] = tScan[0];
+          inp[38] = tScan[1];
+          inp[39] = tScan[2];
+          inp[40] = tScan[3];
+          inp[41] = tScan[4];
+          inp[42] = tScan[5];
+          inp[43] = tScan[6];
+          inp[44] = tScan[7];
+        } else {
+          inp[37] = inp[38] = inp[39] = inp[40] = 0;
+          inp[41] = inp[42] = inp[43] = inp[44] = 0;
         }
+        inp[45] = walls[sIdx] === WALL_POROUS ? 1 : 0;
         g.brain.forward(inp, out);
       }
 
@@ -982,14 +1197,30 @@ export class World {
       p.bondMsgR = sigmoid01(out[OUT_BOND_MSG_R]);
       p.bondMsgG = sigmoid01(out[OUT_BOND_MSG_G]);
       p.bondMsgB = sigmoid01(out[OUT_BOND_MSG_B]);
+      const inNamedCluster = !!p.cluster;
+      const coordEat = inNamedCluster ? Math.max(0, p.incomingBondMsgG) : 0;
+      const coordBuild = inNamedCluster ? Math.max(0, p.incomingBondMsgB) : 0;
+      const commCost =
+        SIGNAL_COST * Math.max(0, sigMean - 0.55) +
+        SOUND_COST * Math.max(0, p.soundAmp - 0.45) +
+        BONDMSG_COST * (
+          Math.abs(p.bondMsgR - 0.5) +
+          Math.abs(p.bondMsgG - 0.5) +
+          Math.abs(p.bondMsgB - 0.5));
 
       // ── Thread B-2 — wall manipulation ──────────────────────────────
       // Two outputs: dig the cell in front of velocity (if solid wall) or
       // deposit a carried wall block at the current cell. Mutually
       // exclusive — deposit wins ties. Carry capped at WALL_CARRY_MAX.
-      const digSig = sigmoid01(out[OUT_DIG]);
-      const depSig = sigmoid01(out[OUT_DEPOSIT]);
-      if (depSig > 0.6 && p.wallCarry > 0) {
+      if (hasWalls || p.wallCarry > 0) {
+        const digSig = sigmoid01(out[OUT_DIG]);
+        const depSig = sigmoid01(out[OUT_DEPOSIT]);
+        const digThresh = 0.56 - coordBuild * 0.12;
+        const depThresh = 0.56 - coordBuild * 0.12;
+        const digCost = WALL_DIG_COST * (1 - coordBuild * COORD_BUILD_BONUS);
+        const depCost = WALL_DEPOSIT_COST * (1 - coordBuild * COORD_BUILD_BONUS);
+        const carryLimit = Math.max(1, Math.min(WALL_CARRY_MAX, 1 + ((p.energy / 5) | 0)));
+        if (depSig > depThresh && p.wallCarry > 0) {
         // Build candidate cells: current + cell behind velocity. Score each
         // by genome traits and pick the highest-scoring open cell.
         //   wall_affinity > 0 → prefer cells adjacent to existing walls
@@ -1002,11 +1233,29 @@ export class World {
         const sp = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
         const dgx = clamp((p.x / CELL) | 0, 0, GW - 1);
         const dgy = clamp((p.y / CELL) | 0, 0, GH - 1);
-        const candidates = [[dgx, dgy]];
+        const candX = this._buildCandX;
+        const candY = this._buildCandY;
+        let candN = 1;
+        candX[0] = dgx;
+        candY[0] = dgy;
         if (sp > 0.1) {
-          const bx = clamp(dgx - Math.round(p.vx / sp), 0, GW - 1);
-          const by = clamp(dgy - Math.round(p.vy / sp), 0, GH - 1);
-          if (bx !== dgx || by !== dgy) candidates.push([bx, by]);
+          const fx = Math.round(p.vx / sp);
+          const fy = Math.round(p.vy / sp);
+          for (let ci = 0; ci < 3; ci++) {
+            const ex = ci === 0 ? -fx : (ci === 1 ? -fy : fy);
+            const ey = ci === 0 ? -fy : (ci === 1 ? fx : -fx);
+            const bx = clamp(dgx + ex, 0, GW - 1);
+            const by = clamp(dgy + ey, 0, GH - 1);
+            let duplicate = false;
+            for (let k = 0; k < candN; k++) {
+              if (candX[k] === bx && candY[k] === by) { duplicate = true; break; }
+            }
+            if (!duplicate) {
+              candX[candN] = bx;
+              candY[candN] = by;
+              candN++;
+            }
+          }
         }
         const wallAff = p.genome.wall_affinity || 0;
         const preyWall = p.genome.prey_walling || 0;
@@ -1022,7 +1271,9 @@ export class World {
           }
         }
         let bestIdx = -1, bestTx = -1, bestTy = -1, bestScore = -Infinity;
-        for (const [tx, ty] of candidates) {
+        for (let ci = 0; ci < candN; ci++) {
+          const tx = candX[ci];
+          const ty = candY[ci];
           const didx = ty * GW + tx;
           if (walls[didx] !== 0) continue;
           let score = 0;
@@ -1071,37 +1322,58 @@ export class World {
           walls[bestIdx] = WALL_SOLID;
           this._wallCount++;
           this._wallsVersion++;
+          this.setWallMeta(bestIdx, p);
           p.wallCarry--;
-          p.energy -= WALL_DEPOSIT_COST;
+          p.energy -= depCost;
+          this.totalWallDeposits++;
+          p.wallDeposits = (p.wallDeposits || 0) + 1;
           this._wallSoundEvents.push({ kind: 'plop', x: p.x, y: p.y, id: p.id });
         }
-      } else if (digSig > 0.6 && p.wallCarry < WALL_CARRY_MAX) {
-        // Cell in front of velocity (rounded). Particles too slow to have a
-        // direction skip (digging while sitting still doesn't make sense).
+      } else if (digSig > digThresh && p.wallCarry < carryLimit && p.energy > digCost) {
+        // Prefer the cell in front of velocity, but search adjacent cells too
+        // so a particle pinned against a wall can still excavate.
         const sp = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-        if (sp > 0.1) {
-          const dirx = p.vx / sp;
-          const diry = p.vy / sp;
-          const dgx = clamp((p.x / CELL) | 0, 0, GW - 1);
-          const dgy = clamp((p.y / CELL) | 0, 0, GH - 1);
-          const tgx = clamp(dgx + Math.round(dirx), 0, GW - 1);
-          const tgy = clamp(dgy + Math.round(diry), 0, GH - 1);
-          const tidx = tgy * GW + tgx;
-          if (walls[tidx] === WALL_SOLID && p.energy > WALL_DIG_COST) {
-            walls[tidx] = 0;
-            this._wallCount = Math.max(0, this._wallCount - 1);
-            this._wallsVersion++;
-            p.wallCarry++;
-            p.energy -= WALL_DIG_COST;
-            this._wallSoundEvents.push({ kind: 'grunt', x: p.x, y: p.y, id: p.id });
+        const dirx = sp > 0.1 ? p.vx / sp : 0;
+        const diry = sp > 0.1 ? p.vy / sp : 0;
+        const dgx = clamp((p.x / CELL) | 0, 0, GW - 1);
+        const dgy = clamp((p.y / CELL) | 0, 0, GH - 1);
+        let bestIdx = -1, bestScore = -Infinity;
+        for (let yy = -1; yy <= 1; yy++) {
+          for (let xx = -1; xx <= 1; xx++) {
+            if (xx === 0 && yy === 0) continue;
+            const tgx = clamp(dgx + xx, 0, GW - 1);
+            const tgy = clamp(dgy + yy, 0, GH - 1);
+            const tidx = tgy * GW + tgx;
+            if (walls[tidx] !== WALL_SOLID) continue;
+            const len = Math.sqrt(xx * xx + yy * yy) || 1;
+            const dot = sp > 0.1 ? (xx / len) * dirx + (yy / len) * diry : 0;
+            const score = dot + Math.random() * 0.05;
+            if (score > bestScore) {
+              bestScore = score;
+              bestIdx = tidx;
+            }
           }
+        }
+        if (bestIdx >= 0) {
+          walls[bestIdx] = 0;
+          this._wallCount = Math.max(0, this._wallCount - 1);
+          this._wallsVersion++;
+          this.clearWallMeta(bestIdx);
+          p.wallCarry++;
+          p.energy -= digCost;
+          this.totalWallDigs++;
+          p.wallDigs = (p.wallDigs || 0) + 1;
+          f1[bestIdx] = Math.min(DECAY_CAP, f1[bestIdx] + 0.15);
+          this._decayActive = true;
+          this._wallSoundEvents.push({ kind: 'grunt', x: p.x, y: p.y, id: p.id });
         }
       }
 
       // ── Bond physics: spring + energy share + break-on-distance ──
+      }
       if (p.bonds.length > 0) {
         for (let bi = p.bonds.length - 1; bi >= 0; bi--) {
-          const partner = idMap.get(p.bonds[bi]);
+          const partner = idMap[p.bonds[bi]];
           if (!partner || partner.dead) {
             p.bonds.splice(bi, 1);
             continue;
@@ -1149,7 +1421,7 @@ export class World {
       // Wall handling — axis-separated, using actual current cell
       const pgy = clamp((p.y / CELL) | 0, 0, GH - 1);
       const ngx = clamp((nx / CELL) | 0, 0, GW - 1);
-      // Solid + membrane wall types block particles; porous lets them pass.
+      // Solid + glass wall types block particles; mud lets them pass.
       const wTargetX = walls[pgy * GW + ngx];
       if (wTargetX === WALL_SOLID || wTargetX === WALL_MEMBRANE) {
         nx = p.x;
@@ -1161,6 +1433,15 @@ export class World {
       if (wTargetY === WALL_SOLID || wTargetY === WALL_MEMBRANE) {
         ny = p.y;
         vy = -vy * 0.5;
+      }
+      const terrainIdx = clamp((ny / CELL) | 0, 0, GH - 1) * GW +
+        clamp((nx / CELL) | 0, 0, GW - 1);
+      const inMud = walls[terrainIdx] === WALL_POROUS;
+      if (inMud) {
+        vx *= MUD_SPEED_MULT;
+        vy *= MUD_SPEED_MULT;
+        nx = p.x + vx;
+        ny = p.y + vy;
       }
       // Toroidal-ish bounds: reflect at edges
       if (nx < 1) { nx = 1; vx = Math.abs(vx) * 0.5; }
@@ -1174,13 +1455,33 @@ export class World {
 
       // Energy
       const speed2 = vx * vx + vy * vy;
-      let dE = -(g.metab + K_MOTION_COST * speed2);
-      // crowd penalty
-      if (crowd > 6) dE -= CROWD_PENALTY * (crowd - 6);
-      // eat food at current cell
       const finalGx = clamp((nx / CELL) | 0, 0, GW - 1);
       const finalGy = clamp((ny / CELL) | 0, 0, GH - 1);
       const fIdx = finalGy * GW + finalGx;
+      let wallAdj = 0, wallAdjMax = 0;
+      if (hasWalls) {
+        for (let wy = -1; wy <= 1; wy++) {
+          const yy = finalGy + wy;
+          if (yy < 0 || yy >= GH) continue;
+          for (let wx = -1; wx <= 1; wx++) {
+            const xx = finalGx + wx;
+            if (xx < 0 || xx >= GW || (wx === 0 && wy === 0)) continue;
+            wallAdjMax++;
+            if (walls[yy * GW + xx]) wallAdj++;
+          }
+        }
+      }
+      const shelter = wallAdjMax > 0 ? wallAdj / wallAdjMax : 0;
+      const shelterRelief = inNamedCluster
+        ? Math.min(0.45, shelter * (WALL_SHELTER_RELIEF + coordBuild * COORD_SHELTER_RELIEF))
+        : 0;
+      p.shelterRelief = shelterRelief;
+      const motionCost = K_MOTION_COST * speed2 * (1 - shelterRelief * 0.35);
+      const carryCost = (p.wallCarry || 0) * WALL_CARRY_COST * (1 + Math.min(1, speed2 * 0.12));
+      let dE = -(g.metab + motionCost + commCost + carryCost + (inMud ? MUD_ENERGY_DRAIN : 0));
+      // crowd penalty
+      if (crowd > 6) dE -= CROWD_PENALTY * (crowd - 6) * (1 - shelterRelief);
+      // eat food at current cell
       // Phase 6 — eat efficiency now scales with two evolved traits:
       //   • cluster bonus: +20% if particle is in a named cluster (rewards
       //     bondedness directly so cluster_affinity has selection pressure)
@@ -1190,9 +1491,10 @@ export class World {
       // particle vs an unbonded 3-slot one. Direct fitness lever for both
       // Phase 6a (clusters) and structural brain mutation.
       const eat = Math.min(f0[fIdx], EAT_MAX);
-      const inCluster = this._particleToCluster.has(p.id);
       const slotBonus = 1 + Math.max(0, g.brain.enabledCount() - 3) * 0.025;
-      const effMult = (inCluster ? 1.20 : 1.0) * slotBonus;
+      const effMult = (inNamedCluster ? 1.20 : 1.0) *
+        (1 + coordEat * COORD_EAT_BONUS) *
+        slotBonus;
       const eatGain = eat * g.efficiency * effMult;
       f0[fIdx] -= eat;
       dE += eatGain;
@@ -1200,7 +1502,10 @@ export class World {
       const eF = g.emit[0] + Math.max(0, out[OUT_EMIT_FOOD]) * 0.06;
       const eD = g.emit[1] + Math.max(0, out[OUT_EMIT_DECAY]) * 0.06;
       if (eF > 0) f0[fIdx] = Math.min(FOOD_CAP, f0[fIdx] + eF);
-      if (eD > 0) f1[fIdx] = Math.min(DECAY_CAP, f1[fIdx] + eD);
+      if (eD > 0) {
+        f1[fIdx] = Math.min(DECAY_CAP, f1[fIdx] + eD);
+        this._decayActive = true;
+      }
       // Sound emission deposited into selected channel field at this cell
       if (p.soundAmp > 0.15) {
         const sf = this._soundFields[p.soundCh];
@@ -1212,16 +1517,29 @@ export class World {
 
       // Death
       if (p.energy <= 0) {
+        p.shelterRelief = 0;
+        if ((p.wallCarry || 0) > 0 && walls[fIdx] === WALL_OPEN) {
+          walls[fIdx] = WALL_SOLID;
+          this._wallCount++;
+          this._wallsVersion++;
+          this.setWallMeta(fIdx, p);
+          p.wallCarry--;
+          this.totalWallDeposits++;
+          p.wallDeposits = (p.wallDeposits || 0) + 1;
+          this._wallSoundEvents.push({ kind: 'plop', x: p.x, y: p.y, id: p.id });
+        }
         p.dead = true;
         f1[fIdx] = Math.min(DECAY_CAP, f1[fIdx] + DEATH_DEPOSIT);
+        this._decayActive = true;
         this.totalDied++;
+        this._deathSoundEvents.push({ x: p.x, y: p.y, id: p.id, energy: p.energy, tick: this.tick });
         this.clades.onParticleDie(p, this.tick);
         // Bond cost — losing a member drains every surviving partner. Bonds
         // also break naturally next tick when partners notice p.dead.
         if (p.bonds.length > 0) {
           const drainPerPartner = BOND_DEATH_DRAIN / p.bonds.length;
           for (const partnerId of p.bonds) {
-            const partner = idMap.get(partnerId);
+            const partner = idMap[partnerId];
             if (partner && !partner.dead) {
               partner.energy -= drainPerPartner;
               if (partner.energy < 0) partner.energy = 0;
@@ -1240,7 +1558,7 @@ export class World {
           Math.random() < REPRO_PROB_SEX &&
           this.particles.length + this.births.length < this.maxParticles) {
         for (const pid of p.bonds) {
-          const partner = idMap.get(pid);
+          const partner = idMap[pid];
           if (!partner || partner.dead) continue;
           if (partner.wantMate < MATE_GATE) continue;
           if (partner.energy < partner.genome.repro_thresh * 0.7) continue;
@@ -1274,6 +1592,10 @@ export class World {
             bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
       incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
       wallCarry: 0,
+      shelterRelief: 0,
+      wallDigs: 0,
+      wallDeposits: 0,
+            cluster: null,
             bonds: [],
             dead: false,
           };
@@ -1311,6 +1633,10 @@ export class World {
             bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
       incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
       wallCarry: 0,
+      shelterRelief: 0,
+      wallDigs: 0,
+      wallDeposits: 0,
+            cluster: null,
             bonds: [],
             dead: false,
           };
@@ -1322,42 +1648,51 @@ export class World {
     }
 
     // ── 3. Field update ──────────────────────────────────────────────
-    convertDecayToFood(f0, f1);
-    photosynthesise(f0, walls);
+      if (profiling) markProfile('agents');
+    if (this._decayActive) convertDecayToFood(f0, f1);
+    photosynthesise(f0, walls, hasWalls);
     diffuseAndDecay(f0, DIFFUSE, DECAY_LOSS, FOOD_CAP);
-    diffuseAndDecay(f1, DIFFUSE, DECAY_DECAY, DECAY_CAP);
-    decayOnly(mut, MUTAGEN_DECAY);
+    if (this._decayActive) this._decayActive = diffuseAndDecay(f1, DIFFUSE, DECAY_DECAY, DECAY_CAP, true);
+    if (this._mutagenActive) this._mutagenActive = decayOnly(mut, MUTAGEN_DECAY);
     // Sound channels: only diffuse channels with recent emissions (cheap idle).
     for (let s = 0; s < this._soundFields.length; s++) {
       if (this.tick - this._soundLastEmit[s] < 60) {
         diffuseAndDecay(this._soundFields[s], SOUND_DIFFUSE, SOUND_DECAY, SOUND_CAP);
       }
     }
-    // Zero out walls — skip the entire pass when there are no walls. Only
-    // solid + porous types zero chemicals; membrane lets them pass through.
-    if (this._wallCount > 0) {
-      for (let i = 0; i < walls.length; i++) {
-        const wt = walls[i];
-        if (wt === WALL_SOLID || wt === WALL_POROUS) {
-          f0[i] = 0; f1[i] = 0; mut[i] = 0;
-          for (let s = 0; s < this._soundFields.length; s++) this._soundFields[s][i] = 0;
-        }
+    // Zero out opaque walls — glass and mud let chemistry/sound pass through.
+    if (hasWalls) {
+      const solidWalls = this._solidWalls();
+      for (let k = 0; k < solidWalls.length; k++) {
+        const i = solidWalls[k];
+        f0[i] = 0; f1[i] = 0; mut[i] = 0;
+        for (let s = 0; s < this._soundFields.length; s++) this._soundFields[s][i] = 0;
       }
     }
 
     // ── 4. Compact particles: remove dead, append births ─────────────
-    const alive = [];
-    for (let i = 0; i < this.particles.length; i++) {
-      if (!this.particles[i].dead) alive.push(this.particles[i]);
+    if (profiling) markProfile('fields');
+    const oldParticleCount = this.particles.length;
+    const birthCount = this.births.length;
+    let write = 0;
+    for (let read = 0; read < this.particles.length; read++) {
+      const p = this.particles[read];
+      if (!p.dead) this.particles[write++] = p;
     }
-    for (let i = 0; i < this.births.length; i++) alive.push(this.births[i]);
+    this.particles.length = write;
+    for (let i = 0; i < this.births.length; i++) this.particles.push(this.births[i]);
+    if (write !== oldParticleCount || birthCount > 0) {
+      this._brainsDirty = true;
+      this._gpuStateDirty = true;
+    }
     this.births.length = 0;
-    this.particles = alive;
 
     // ── 5. Clade census + speciation detection ───────────────────────
+    if (profiling) markProfile('compact');
     this.clades.sweep(this);
     this.updateClusters();
     this.smoothClusterEnergy();
+    if (profiling) markProfile('lineage');
 
     // ── 6. Pipeline NEXT tick's GPU compute (Phase 4f). Doesn't block.
     // Uses post-integration state so GPU sees latest positions; results
@@ -1369,16 +1704,44 @@ export class World {
         this._gpu.uploadExtras(this._extrasStaging);
         if (this._brainsDirty) {
           this._gpu.uploadBrains(this.particles);
+          this._gpu.uploadBrainState(this.particles);
           this._brainsDirty = false;
+          this._gpuStateDirty = false;
+        } else if (this._gpuStateDirty) {
+          this._gpu.uploadBrainState(this.particles);
+          this._gpuStateDirty = false;
         }
-        this._gpu.uploadBrainState(this.particles);
         this._gpu.dispatch();
-        this._gpuPending = this._gpu.readback();
+        const pending = {
+          done: false,
+          value: null,
+          error: null,
+          promise: null,
+          tick: this.tick,
+        };
+        pending.promise = this._gpu.readback().then(
+          (value) => {
+            pending.done = true;
+            pending.value = value;
+            return value;
+          },
+          (error) => {
+            pending.done = true;
+            pending.error = error;
+            throw error;
+          },
+        );
+        pending.promise.catch(() => {});
+        this._gpuPending = pending;
       } catch (err) {
         console.warn('[gpu] pipelined dispatch failed; disabling GPU', err);
         this._gpuEnabled = false;
         this._gpuPending = null;
       }
+    }
+    if (profiling) {
+      markProfile('gpuDispatch');
+      this._profileTicks++;
     }
   }
 
@@ -1391,6 +1754,7 @@ export class World {
     const N = ps.length;
     const f0 = this.field[0], f1 = this.field[1];
     const walls = this.walls;
+    const hasWalls = this._wallCount > 0;
     if (!this._extrasStaging || this._extrasStaging.length < this.maxParticles * EXTRAS_STRIDE) {
       this._extrasStaging = new Float32Array(this.maxParticles * EXTRAS_STRIDE);
     }
@@ -1420,7 +1784,7 @@ export class World {
       extras[o + 10] = p.incomingBondMsgR;
       extras[o + 11] = p.incomingBondMsgG;
       extras[o + 12] = p.incomingBondMsgB;
-      const cl = this._particleToCluster.get(p.id);
+      const cl = p.cluster;
       if (cl) {
         extras[o + 13] = Math.tanh((cl.cx - p.x) / 80);
         extras[o + 14] = Math.tanh((cl.cy - p.y) / 80);
@@ -1437,11 +1801,21 @@ export class World {
       extras[o + 18] = (p.wallCarry || 0) / WALL_CARRY_MAX;
       const wgx = clamp((p.x / CELL) | 0, 0, GW - 1);
       const wgy = clamp((p.y / CELL) | 0, 0, GH - 1);
-      const ws = scanWallProximity(walls, wgx, wgy);
-      extras[o + 19] = ws.wn;
-      extras[o + 20] = ws.ws;
-      extras[o + 21] = ws.we;
-      extras[o + 22] = ws.ww;
+      if (hasWalls) {
+        const ts = scanWallAndMudProximityInto(walls, wgx, wgy, this._terrainScanScratch);
+        extras[o + 19] = ts[0];
+        extras[o + 20] = ts[1];
+        extras[o + 21] = ts[2];
+        extras[o + 22] = ts[3];
+        extras[o + 23] = ts[4];
+        extras[o + 24] = ts[5];
+        extras[o + 25] = ts[6];
+        extras[o + 26] = ts[7];
+      } else {
+        extras[o + 19] = extras[o + 20] = extras[o + 21] = extras[o + 22] = 0;
+        extras[o + 23] = extras[o + 24] = extras[o + 25] = extras[o + 26] = 0;
+      }
+      extras[o + 27] = walls[sIdx] === WALL_POROUS ? 1 : 0;
     }
   }
 
@@ -1485,6 +1859,7 @@ export class World {
     this._clustersTick = this.tick;
 
     const ps = this.particles;
+    for (const p of ps) p.cluster = null;
     // Union-find via Map (sparse particle ids)
     const parent = new Map();
     const rankMap = new Map();
@@ -1534,6 +1909,7 @@ export class World {
     const clusters = [];
     const memberMap = this._particleToCluster;
     memberMap.clear();
+    const usedHumanNames = new Set();
     for (const [root, members] of groups) {
       if (members.length < MIN_NAMED_CLUSTER) continue;
       let cx = 0, cy = 0;
@@ -1547,6 +1923,14 @@ export class World {
       }
       cx /= members.length;
       cy /= members.length;
+      let spreadSum = 0, maxR2 = 0;
+      for (const p of members) {
+        const dx = p.x - cx;
+        const dy = p.y - cy;
+        const d2 = dx * dx + dy * dy;
+        spreadSum += Math.sqrt(d2);
+        if (d2 > maxR2) maxR2 = d2;
+      }
       // Dominant clade
       let topClade = -1, topCount = 0;
       for (const [cid, cnt] of cladeCount) {
@@ -1554,26 +1938,69 @@ export class World {
       }
       const clade = this.clades.clades.get(topClade);
       const baseName = clade ? clade.name : `cluster`;
-      // Name format: "<dominant clade> · ×N" (or "·band" if mixed)
       const isMixed = topCount < members.length;
-      const name = isMixed
-        ? `${baseName}-band ×${members.length}`
-        : `${baseName} ×${members.length}`;
+      const displayBase = uniqueClusterDisplayName(clusterDisplayName(baseName), usedHumanNames, smallestId);
+      const name = `${displayBase} ×${members.length}`;
       const cluster = {
         root,
         anchorId: smallestId,
         count: members.length,
         members,                  // actual particle refs — used by chase highlight
         cx, cy,
+        radius: Math.max(8, Math.sqrt(maxR2)),
+        spread: spreadSum / members.length,
         name,
+        baseName,
+        isMixed,
         species: clade?.species ?? 0,
       };
       clusters.push(cluster);
-      for (const p of members) memberMap.set(p.id, cluster);
+      for (const p of members) {
+        p.cluster = cluster;
+        memberMap.set(p.id, cluster);
+      }
     }
     // Sort by size descending — renderer caps how many flags it draws
     clusters.sort((a, b) => b.count - a.count);
     this._clusters = clusters;
+  }
+
+  clearWallMeta(idx) {
+    this.wallOwnerId[idx] = 0;
+    this.wallOwnerClusterId[idx] = 0;
+    this.wallOwnerCladeId[idx] = 0;
+    this.wallOwnerTick[idx] = 0;
+  }
+
+  setWallMeta(idx, p) {
+    const cluster = p.cluster;
+    this.wallOwnerId[idx] = p.id;
+    this.wallOwnerClusterId[idx] = cluster ? cluster.anchorId : 0;
+    this.wallOwnerCladeId[idx] = p.cladeId || 0;
+    this.wallOwnerTick[idx] = this.tick;
+  }
+
+  wallInfoAt(gx, gy) {
+    if (gx < 0 || gx >= GW || gy < 0 || gy >= GH) return null;
+    const idx = gy * GW + gx;
+    const type = this.walls[idx];
+    if (!type) return null;
+    const ownerId = this.wallOwnerId[idx] || 0;
+    const owner = ownerId ? this.particles.find(p => p.id === ownerId && !p.dead) || null : null;
+    const clusterAnchorId = this.wallOwnerClusterId[idx] || 0;
+    const cluster = clusterAnchorId
+      ? (this._clusters || []).find(c => c.anchorId === clusterAnchorId) || null
+      : null;
+    return {
+      idx, gx, gy, type,
+      ownerId,
+      ownerAlive: !!owner,
+      clusterAnchorId,
+      clusterName: cluster ? cluster.name : null,
+      clusterAlive: !!cluster,
+      cladeId: this.wallOwnerCladeId[idx] || 0,
+      depositedTick: this.wallOwnerTick[idx] || 0,
+    };
   }
 
   // ────────────────────────────────────────────────────────────── stats
@@ -1582,13 +2009,18 @@ export class World {
   // Called from the UI at ~6 Hz; cheap relative to a step.
   vitals() {
     const ps = this.particles;
-    let eSum = 0, eMin = Infinity, eMax = -Infinity, lowN = 0;
+    let eSum = 0, eMin = Infinity, eMax = -Infinity, lowN = 0, carrying = 0;
+    let shelterSum = 0, shelteredN = 0;
     const lowThresh = 1.0;
     let alive = 0;
     for (const p of ps) {
       if (p.dead) continue;
       alive++;
       eSum += p.energy;
+      if ((p.wallCarry || 0) > 0) carrying++;
+      const shelter = p.shelterRelief || 0;
+      shelterSum += shelter;
+      if (shelter > 0) shelteredN++;
       if (p.energy < lowThresh) lowN++;
       if (p.energy < eMin) eMin = p.energy;
       if (p.energy > eMax) eMax = p.energy;
@@ -1614,6 +2046,12 @@ export class World {
       lowFrac,
       meanFood,
       meanDecay,
+      walls: this._wallCount,
+      wallDigs: this.totalWallDigs,
+      wallDeposits: this.totalWallDeposits,
+      wallCarriers: carrying,
+      meanShelter: alive ? shelterSum / alive : 0,
+      shelteredFrac: alive ? shelteredN / alive : 0,
     };
   }
 
@@ -1663,6 +2101,20 @@ export class World {
   // ────────────────────────────────────────────────────────────── persistence
 
   toJSON() {
+    const wallMeta = [];
+    for (let i = 0; i < this.walls.length; i++) {
+      if (!this.walls[i]) continue;
+      const ownerId = this.wallOwnerId[i] || 0;
+      const tick = this.wallOwnerTick[i] || 0;
+      if (!ownerId && !tick) continue;
+      wallMeta.push([
+        i,
+        ownerId,
+        this.wallOwnerClusterId[i] || 0,
+        this.wallOwnerCladeId[i] || 0,
+        tick,
+      ]);
+    }
     return {
       version: 2,
       tick: this.tick,
@@ -1670,15 +2122,67 @@ export class World {
       field0: Array.from(this.field[0]),
       field1: Array.from(this.field[1]),
       mutagen: Array.from(this.mutagen),
+      totalWallDigs: this.totalWallDigs,
+      totalWallDeposits: this.totalWallDeposits,
+      wallMeta,
       clades: this.clades.toJSON(),
       particles: this.particles.map(p => ({
+        id: p.id,
         x: p.x, y: p.y, vx: p.vx, vy: p.vy,
         energy: p.energy, age: p.age, lineage: p.lineage,
         cladeId: p.cladeId,
         bonds: p.bonds.slice(),
+        wallCarry: p.wallCarry || 0,
+        shelterRelief: p.shelterRelief || 0,
+        wallDigs: p.wallDigs || 0,
+        wallDeposits: p.wallDeposits || 0,
         genome: genomeToJSON(p.genome),
       })),
     };
+  }
+
+  toWorldTemplateJSON() {
+    return {
+      kind: 'primordia.world-template.v1',
+      version: 1,
+      gw: GW,
+      gh: GH,
+      cell: CELL,
+      walls: Array.from(this.walls),
+      field0: Array.from(this.field[0], v => +v.toFixed(4)),
+      field1: Array.from(this.field[1], v => +v.toFixed(4)),
+      mutagen: Array.from(this.mutagen, v => +v.toFixed(4)),
+      wallCount: this._wallCount || 0,
+      note: 'Sterile terrain/field template; contains no particles or clades.',
+    };
+  }
+
+  fromWorldTemplateJSON(data) {
+    const template = data && data.kind === 'primordia.world-template.v1' ? data : (data && data.template);
+    if (!template || template.gw !== GW || template.gh !== GH || template.cell !== CELL) {
+      throw new Error('World template dimensions do not match this simulator build');
+    }
+    this.reset();
+    if (template.walls) this.walls.set(template.walls);
+    if (template.field0) this.field[0].set(template.field0);
+    if (template.field1) {
+      this.field[1].set(template.field1);
+      this._decayActive = arrayHasPositive(this.field[1]);
+    }
+    if (template.mutagen) {
+      this.mutagen.set(template.mutagen);
+      this._mutagenActive = arrayHasPositive(this.mutagen);
+    }
+    let wc = 0;
+    for (let i = 0; i < this.walls.length; i++) if (this.walls[i]) wc++;
+    this._wallCount = wc;
+    this._wallsVersion++;
+    this._clusters = [];
+    this._clustersTick = -10000;
+    this._particleToCluster.clear();
+    this._clusterNames.clear();
+    this._brainsDirty = true;
+    this._gpuStateDirty = true;
   }
 
   fromJSON(data) {
@@ -1691,14 +2195,35 @@ export class World {
       this._wallCount = wc;
     }
     if (data.field0) this.field[0].set(data.field0);
-    if (data.field1) this.field[1].set(data.field1);
-    if (data.mutagen) this.mutagen.set(data.mutagen);
+    if (data.field1) {
+      this.field[1].set(data.field1);
+      this._decayActive = arrayHasPositive(this.field[1]);
+    }
+    if (data.mutagen) {
+      this.mutagen.set(data.mutagen);
+      this._mutagenActive = arrayHasPositive(this.mutagen);
+    }
+    this.totalWallDigs = data.totalWallDigs || 0;
+    this.totalWallDeposits = data.totalWallDeposits || 0;
+    if (Array.isArray(data.wallMeta)) {
+      for (const row of data.wallMeta) {
+        const idx = row[0] | 0;
+        if (idx < 0 || idx >= this.walls.length) continue;
+        this.wallOwnerId[idx] = row[1] | 0;
+        this.wallOwnerClusterId[idx] = row[2] | 0;
+        this.wallOwnerCladeId[idx] = row[3] | 0;
+        this.wallOwnerTick[idx] = row[4] | 0;
+      }
+    }
     if (data.clades) this.clades.fromJSON(data.clades);
     this._brainsDirty = true;
+    this._gpuStateDirty = true;
     for (const op of (data.particles || [])) {
       const loadedGenome = genomeFromJSON(op.genome);
+      const loadedId = op.id || (++_id);
+      if (loadedId > _id) _id = loadedId;
       const p = {
-        id: ++_id,
+        id: loadedId,
         x: op.x, y: op.y, vx: op.vx, vy: op.vy,
         genome: loadedGenome,
         species: loadedGenome.species,
@@ -1711,7 +2236,11 @@ export class World {
         wantBond: 0, wantMate: 0,
         bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
       incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
-      wallCarry: 0,
+      wallCarry: op.wallCarry || 0,
+      shelterRelief: op.shelterRelief || 0,
+      wallDigs: op.wallDigs || 0,
+      wallDeposits: op.wallDeposits || 0,
+        cluster: null,
         bonds: Array.isArray(op.bonds) ? op.bonds.slice() : [],
         dead: false,
       };
@@ -1726,12 +2255,17 @@ export class World {
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
+function arrayHasPositive(a) {
+  for (let i = 0; i < a.length; i++) if (a[i] > 1e-5) return true;
+  return false;
+}
+
 // Maps brain output → [0,1] via sigmoid (smooth gate)
 function sigmoid01(x) { return 1 / (1 + Math.exp(-x)); }
 
 // Fast 5-point (von Neumann) diffuse + multiplicative decay. Walls handled
 // post-pass in step() — keeping this loop tight and branch-free.
-function diffuseAndDecay(f, d, dec, cap) {
+function diffuseAndDecay(f, d, dec, cap, trackActive = false) {
   if (!diffuseAndDecay._scratch || diffuseAndDecay._scratch.length !== f.length) {
     diffuseAndDecay._scratch = new Float32Array(f.length);
   }
@@ -1739,6 +2273,7 @@ function diffuseAndDecay(f, d, dec, cap) {
   const w = GW, h = GH;
   const keep = (1 - d) * (1 - dec);
   const share = (d * 0.25) * (1 - dec);
+  let active = false;
 
   // Interior cells (vectorisable hot loop)
   for (let y = 1; y < h - 1; y++) {
@@ -1746,7 +2281,9 @@ function diffuseAndDecay(f, d, dec, cap) {
     for (let x = 1; x < w - 1; x++) {
       const i = row + x;
       const v = f[i] * keep + (f[i - 1] + f[i + 1] + f[i - w] + f[i + w]) * share;
-      out[i] = v < 1e-5 ? 0 : (v > cap ? cap : v);
+      const next = v < 1e-5 ? 0 : (v > cap ? cap : v);
+      out[i] = next;
+      if (trackActive && next > 0) active = true;
     }
   }
   // Edges: replicate-boundary 5-point (no wraparound)
@@ -1758,7 +2295,9 @@ function diffuseAndDecay(f, d, dec, cap) {
       const right = x < w - 1 ? f[i + 1] : f[i];
       const down = f[i + w];
       const v = f[i] * keep + (left + right + f[i] + down) * share;
-      out[i] = v < 1e-5 ? 0 : (v > cap ? cap : v);
+      const next = v < 1e-5 ? 0 : (v > cap ? cap : v);
+      out[i] = next;
+      if (trackActive && next > 0) active = true;
     }
     // bottom
     {
@@ -1767,7 +2306,9 @@ function diffuseAndDecay(f, d, dec, cap) {
       const right = x < w - 1 ? f[i + 1] : f[i];
       const up = f[i - w];
       const v = f[i] * keep + (left + right + up + f[i]) * share;
-      out[i] = v < 1e-5 ? 0 : (v > cap ? cap : v);
+      const next = v < 1e-5 ? 0 : (v > cap ? cap : v);
+      out[i] = next;
+      if (trackActive && next > 0) active = true;
     }
   }
   for (let y = 1; y < h - 1; y++) {
@@ -1775,16 +2316,21 @@ function diffuseAndDecay(f, d, dec, cap) {
     {
       const i = y * w;
       const v = f[i] * keep + (f[i] + f[i + 1] + f[i - w] + f[i + w]) * share;
-      out[i] = v < 1e-5 ? 0 : (v > cap ? cap : v);
+      const next = v < 1e-5 ? 0 : (v > cap ? cap : v);
+      out[i] = next;
+      if (trackActive && next > 0) active = true;
     }
     // right col
     {
       const i = y * w + (w - 1);
       const v = f[i] * keep + (f[i - 1] + f[i] + f[i - w] + f[i + w]) * share;
-      out[i] = v < 1e-5 ? 0 : (v > cap ? cap : v);
+      const next = v < 1e-5 ? 0 : (v > cap ? cap : v);
+      out[i] = next;
+      if (trackActive && next > 0) active = true;
     }
   }
   f.set(out);
+  return trackActive ? active : true;
 }
 
 function convertDecayToFood(f0, f1) {
@@ -1800,10 +2346,16 @@ function convertDecayToFood(f0, f1) {
 }
 
 function decayOnly(f, k) {
+  let active = false;
   for (let i = 0; i < f.length; i++) {
     const v = f[i] * (1 - k);
-    f[i] = v < 1e-5 ? 0 : v;
+    if (v < 1e-5) f[i] = 0;
+    else {
+      f[i] = v;
+      active = true;
+    }
   }
+  return active;
 }
 
 // Ambient sunlight: every non-wall cell gains a trickle of food, tapered so
@@ -1816,16 +2368,42 @@ function decayOnly(f, k) {
 // y), but distribution forces migration / niche specialization: brains can
 // either evolve to camp the equator or to thrive in sparser regions with
 // less competition.
-function photosynthesise(f0, walls) {
+function photosynthesise(f0, walls, hasWalls = true) {
+  if (!photosynthesise._photo || photosynthesise._photo.length !== GH) {
+    const photo = photosynthesise._photo = new Float32Array(GH);
+    const soft = photosynthesise._soft = new Float32Array(GH);
+    for (let y = 0; y < GH; y++) {
+      const yn = (y / GH - 0.5) * 2;       // -1..1 (north pole..south pole)
+      const c = Math.cos(yn * Math.PI * 0.5);
+      const lat = 0.3 + 1.4 * c * c;
+      photo[y] = PHOTO * lat;
+      soft[y] = PHOTO_SOFT * (0.5 + 0.5 * lat);
+    }
+  }
+  const photo = photosynthesise._photo;
+  const soft = photosynthesise._soft;
+  if (!hasWalls) {
+    for (let y = 0; y < GH; y++) {
+      const localPhoto = photo[y];
+      const localSoft = soft[y];
+      for (let x = 0; x < GW; x++) {
+        const i = y * GW + x;
+        const v = f0[i];
+        if (v < FOOD_CAP) {
+          const taper = Math.max(0, 1 - v / localSoft);
+          f0[i] = v + localPhoto * taper;
+        }
+      }
+    }
+    return;
+  }
   for (let y = 0; y < GH; y++) {
     // Latitude factor: 1.7 at equator, 0.3 at poles, smooth transition.
-    const yn = (y / GH - 0.5) * 2;       // -1..1 (north pole..south pole)
-    const lat = 0.3 + 1.4 * Math.cos(yn * Math.PI * 0.5) ** 2;
-    const localPhoto = PHOTO * lat;
-    const localSoft = PHOTO_SOFT * (0.5 + 0.5 * lat);
+    const localPhoto = photo[y];
+    const localSoft = soft[y];
     for (let x = 0; x < GW; x++) {
       const i = y * GW + x;
-      if (walls[i]) continue;
+      if (walls[i] === WALL_SOLID) continue;
       const v = f0[i];
       if (v < FOOD_CAP) {
         const taper = Math.max(0, 1 - v / localSoft);

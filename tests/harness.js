@@ -60,6 +60,13 @@ export function captureMetrics(world) {
     n: ps.length,
     born: world.totalBorn,
     died: world.totalDied,
+    walls: world._wallCount || 0,
+    wallDigs: world.totalWallDigs || 0,
+    wallDeposits: world.totalWallDeposits || 0,
+    wallCarriers: ps.filter(p => (p.wallCarry || 0) > 0).length,
+    meanShelter: ps.length
+      ? ps.reduce((sum, p) => sum + (p.shelterRelief || 0), 0) / ps.length
+      : 0,
     aff: fmt(ps.map(p => p.genome.cluster_affinity || 0)),
     kin: fmt(ps.map(p => p.genome.kin_aversion || 0.5)),
     slots: fmt(ps.map(p => p.genome.brain.enabledCount())),
@@ -103,6 +110,7 @@ export function dumpMetrics(m) {
     `  slots:  min=${m.slots.min}  med=${m.slots.med}  max=${m.slots.max}  mean=${f(m.slots.mean)}`,
     `  pred:   min=${f(m.pred.min)}  med=${f(m.pred.med)}  max=${f(m.pred.max)}  mean=${f(m.pred.mean)}`,
     `  comm=${f(m.comm)}  depth=${f(m.depth)}  brain=${f(m.brain)}  total=${f(m.total)}`,
+    `  walls=${m.walls}  digs=${m.wallDigs}  builds=${m.wallDeposits}  carriers=${m.wallCarriers}  shelter=${f(m.meanShelter)}`,
     `  clusters=${m.clusters}`,
   ];
   return lines.join('\n');
@@ -125,6 +133,6 @@ export async function runTest(name, fn) {
     if (err.stack && !(err instanceof AssertionFail)) {
       console.error(err.stack.split('\n').slice(1, 5).map(l => '    ' + l).join('\n'));
     }
-    return false;
+    throw err;
   }
 }

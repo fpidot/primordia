@@ -45,7 +45,7 @@ await runTest('baseline-maze: 1.5k ticks, multi-wall preset', async () => {
 
   // Genome traits within sane ranges.
   assertInRange('aff.mean', m.aff.mean, -0.5, 0.6);
-  assertInRange('slots.mean', m.slots.mean, 1, 8);
+  assertInRange('slots.mean', m.slots.mean, 1, 10);
   assertInRange('pred.mean', m.pred.mean, -0.95, 0.95);
 
   // Comm should still register.

@@ -39,8 +39,8 @@ await runTest('baseline-soup: 2k ticks, seeded RNG', async () => {
   assertInRange('aff.mean', m.aff.mean, -0.5, 0.6);
   assertInRange('aff.max',  m.aff.max,  -0.5, 1.0);
   assertInRange('kin.mean', m.kin.mean, -0.5, 1.5);
-  assertInRange('slots.mean', m.slots.mean, 1, 8);
-  assertInRange('slots.max',  m.slots.max,  1, 8);
+  assertInRange('slots.mean', m.slots.mean, 1, 10);
+  assertInRange('slots.max',  m.slots.max,  1, 10);
   assertInRange('pred.mean', m.pred.mean, -0.95, 0.95);
 
   // Cohesion shouldn't go pathological.

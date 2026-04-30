@@ -90,6 +90,36 @@ const NAME_PREFIXES_BY_TRAIT = {
   default:    ['Drift',  'Tide',   'Shoal',  'Bloom',  'Pulse'],
 };
 
+export const CLUSTER_HUMAN_NAMES = [
+  'Abby', 'Abe', 'Ada', 'Alan', 'Al', 'Alice', 'Alicia', 'Amy',
+  'Ana', 'Andre', 'Andy', 'Angela', 'Angie', 'Ann', 'Anna', 'Annie',
+  'April', 'Art', 'Arthur', 'Barb', 'Barbara', 'Barry', 'Bea', 'Ben',
+  'Benny', 'Beth', 'Betty', 'Bill', 'Billy', 'Bob', 'Bobby', 'Brad',
+  'Brenda', 'Brian', 'Bruce', 'Cal', 'Carl', 'Carla', 'Carol', 'Carrie',
+  'Cathy', 'Charlie', 'Chris', 'Chuck', 'Cindy', 'Claire', 'Clara', 'Cleo',
+  'Connie', 'Corey', 'Dan', 'Dana', 'Danny', 'Darlene', 'Dave', 'David',
+  'Dawn', 'Deb', 'Debbie', 'Dennis', 'Diane', 'Dina', 'Don', 'Donna',
+  'Doug', 'Drew', 'Ed', 'Eddie', 'Elaine', 'Eli', 'Ellen', 'Emily',
+  'Eric', 'Erin', 'Eve', 'Frank', 'Fred', 'Gary', 'George', 'Gina',
+  'Greg', 'Hank', 'Harry', 'Helen', 'Henry', 'Ivy', 'Jack', 'Jackie',
+  'Jake', 'James', 'Jan', 'Jane', 'Janet', 'Jason', 'Jeff', 'Jen',
+  'Jenny', 'Jerry', 'Jess', 'Jessica', 'Jim', 'Jimmy', 'Joan', 'Joe',
+  'Joey', 'John', 'Johnny', 'Joy', 'Joyce', 'Judy', 'Julia', 'Julie',
+  'June', 'Justin', 'Karen', 'Kate', 'Katie', 'Kathy', 'Keith', 'Kelly',
+  'Ken', 'Kenny', 'Kevin', 'Kim', 'Kris', 'Kristen', 'Larry', 'Laura',
+  'Laurie', 'Leo', 'Linda', 'Lisa', 'Liz', 'Lori', 'Lou', 'Luke',
+  'Maggie', 'Mara', 'Mark', 'Marty', 'Mary', 'Matt', 'Meg', 'Megan',
+  'Michael', 'Mike', 'Mina', 'Molly', 'Nancy', 'Neil', 'Nick', 'Nicky',
+  'Nora', 'Oscar', 'Owen', 'Pam', 'Pat', 'Patrick', 'Paul', 'Paula',
+  'Peggy', 'Penny', 'Pete', 'Peter', 'Phil', 'Rachel', 'Rae', 'Rebecca',
+  'Renee', 'Rick', 'Rita', 'Rob', 'Robin', 'Ron', 'Ruth', 'Sally',
+  'Sam', 'Samantha', 'Sara', 'Sarah', 'Sasha', 'Scott', 'Sean', 'Shelly',
+  'Sid', 'Sol', 'Stan', 'Steve', 'Sue', 'Susan', 'Tammy', 'Ted',
+  'Terry', 'Theo', 'Tim', 'Tina', 'Tom', 'Tommy', 'Tony', 'Una',
+  'Vera', 'Victor', 'Vince', 'Walt', 'Walter', 'Will', 'Zoe',
+];
+const SPECIES_NAME_SET = new Set(SPECIES_NAMES.map(s => s.toLowerCase()));
+
 function generateCladeName(c, tracker) {
   const tags = tracker ? tracker.classifyClade(c) : [];
   const speciesName = (c.species != null && SPECIES_NAMES[c.species]) || 'unknown';
@@ -101,7 +131,9 @@ function generateCladeName(c, tracker) {
   const trait = (tags[0] && tags[0].name) || 'default';
   const pool = NAME_PREFIXES_BY_TRAIT[trait] || NAME_PREFIXES_BY_TRAIT.default;
   const prefix = pool[seed % pool.length];
-  return `${prefix}-${speciesName}`;
+  const givenPool = CLUSTER_HUMAN_NAMES.filter(n => !SPECIES_NAME_SET.has(n.toLowerCase()));
+  const given = givenPool[(seed * 17 + c.id) % givenPool.length];
+  return `${prefix}-${speciesName}-${given}`;
 }
 
 class Clade {
@@ -138,6 +170,11 @@ const EPOCHS = [
     name: 'Great Vocalization',
     description: 'sustained inter-particle signaling',
     holds: s => (s.meanSignal + s.meanSound) > 0.5,
+  },
+  {
+    name: 'Builders',
+    description: 'sustained organism-made excavation and wall construction',
+    holds: s => s.totalPop > 200 && s.wallActions > 100 && s.wallActionRate > 0.00012,
   },
   {
     name: 'Brain Renaissance',
@@ -327,6 +364,10 @@ export class CladeTracker {
       meanSlots: slotsN > 0 ? totalSlots / slotsN : 0,
       meanSignal: slotsN > 0 ? signalSum / slotsN : 0,
       meanSound: slotsN > 0 ? soundSum / slotsN : 0,
+      wallActions: (world.totalWallDigs || 0) + (world.totalWallDeposits || 0),
+      wallActionRate: totalAlive > 0 && world.tick > 0
+        ? ((world.totalWallDigs || 0) + (world.totalWallDeposits || 0)) / (totalAlive * world.tick)
+        : 0,
     };
 
     for (const ep of this.epochs) {
@@ -494,15 +535,26 @@ export class CladeTracker {
       meanFlash     * 0.30 +
       meanColorVar  * 0.30 +
       meanBondMsg   * 0.10);
+    const wallActions = (world.totalWallDigs || 0) + (world.totalWallDeposits || 0);
+    const wallActionRate = n > 0 && world.tick > 0 ? wallActions / (n * world.tick) : 0;
+    const c6 = Math.min(1, wallActionRate * 1200);
 
-    const total = 0.30 * c1 + 0.20 * c2 + 0.20 * c3 + 0.15 * c4 + 0.15 * c5;
+    const total = 0.26 * c1 + 0.18 * c2 + 0.18 * c3 + 0.14 * c4 + 0.14 * c5 + 0.10 * c6;
     const value = {
       total,
-      components: { brain: c1, radiation: c2, diversity: c3, depth: c4, comm: c5 },
+      components: {
+        brain: c1,
+        radiation: c2,
+        diversity: c3,
+        depth: c4,
+        comm: c5,
+        construction: c6,
+      },
       raw: {
         meanSlots, livingClades, variance, maxDepth,
         meanSignal, meanSound,
         meanAct, meanFlash, meanColorVar, meanBondMsg,
+        wallActions, wallActionRate,
       },
     };
     this._complexityCache = { tick: world.tick, value };

@@ -9,13 +9,19 @@
 </head>
 <body>
   <div class="app">
-    <aside class="sidebar left">
+    <aside class="sidebar left" data-active-panel="run">
       <header>
         <h1>Primordia</h1>
         <p class="tagline">an evolving particle ecosystem</p>
       </header>
 
-      <section>
+      <nav class="panel-tabs" aria-label="left sidebar panels">
+        <button type="button" class="active" data-panel-tab="run">Run</button>
+        <button type="button" data-panel-tab="world">World</button>
+        <button type="button" data-panel-tab="data">Data</button>
+      </nav>
+
+      <section class="panel-section" data-panel="run">
         <h2>Run</h2>
         <div class="row">
           <button id="btn-pause" class="primary">Pause</button>
@@ -29,30 +35,54 @@
         </div>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="run">
         <h2>Presets</h2>
+        <label>initial population <span class="val" id="ui-preset-pop-val">1800</span>
+          <input type="range" id="ui-preset-pop" min="0" max="5000" step="100" value="1800" />
+        </label>
         <div class="grid2">
           <button data-preset="soup">Fresh Soup</button>
           <button data-preset="predprey">Predator&ndash;Prey</button>
           <button data-preset="symbiotic">Symbiotic Web</button>
           <button data-preset="maze">Maze</button>
-          <button data-preset="empty">Empty</button>
         </div>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="world">
         <h2>World</h2>
-        <div class="grid2">
-          <button id="btn-randomize">Randomize</button>
-          <button id="btn-clear">Clear field</button>
-          <button id="btn-reset">Reset</button>
-          <button id="btn-save">Save</button>
-          <button id="btn-load">Load</button>
-          <button id="btn-export">Export</button>
+        <div class="button-group">
+          <div class="group-label">State</div>
+          <div class="grid2">
+            <button id="btn-save">Save</button>
+            <button id="btn-load">Load</button>
+            <button id="btn-export">Export</button>
+            <button id="btn-reset">Reset</button>
+          </div>
         </div>
+        <div class="button-group">
+          <div class="group-label">Population</div>
+          <div class="grid2">
+            <button id="btn-import-specimen">Import specimen</button>
+            <button id="btn-import-clade">Import clade</button>
+            <button id="btn-import-cluster">Import cluster</button>
+            <button id="btn-randomize">Randomize</button>
+          </div>
+        </div>
+        <div class="button-group">
+          <div class="group-label">Environment</div>
+          <div class="grid2">
+            <button id="btn-clear">Clear field</button>
+            <button id="btn-export-template">Export terrain</button>
+            <button id="btn-import-template">Import terrain</button>
+          </div>
+        </div>
+        <input id="file-import-specimen" type="file" accept="application/json,.json" hidden />
+        <input id="file-import-clade" type="file" accept="application/json,.json" hidden />
+        <input id="file-import-cluster" type="file" accept="application/json,.json" hidden />
+        <input id="file-import-template" type="file" accept="application/json,.json" hidden />
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="run">
         <h2>Camera</h2>
         <div class="grid2">
           <button id="btn-cam-fit">Fit world</button>
@@ -65,12 +95,12 @@
         </div>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="data">
         <h2>Evolutionary complexity</h2>
         <div id="ui-complexity" class="complexity"></div>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="world">
         <h2>God tools</h2>
         <div class="grid2">
           <select id="ui-exterminate-species" title="select species to exterminate">
@@ -90,18 +120,18 @@
         <p class="hint-text">auto-reseeds the active preset when the world stagnates</p>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="data">
         <h2>Population</h2>
         <div id="ui-stats" class="stats"></div>
         <canvas id="chart" width="240" height="80"></canvas>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="data">
         <h2>Mean genome</h2>
         <div id="ui-mean-genome" class="stats small"></div>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="data">
         <h2>Evolved attraction matrix</h2>
         <p class="hint-text">rows = emitter species · columns = target. blue = attract, red = repel</p>
         <canvas id="matrix" width="208" height="208"></canvas>
@@ -112,19 +142,25 @@
     <main class="stage">
       <canvas id="canvas-bg"></canvas>
       <canvas id="canvas-fg"></canvas>
-      <div id="hint" class="hint">drag to paint · click a particle to inspect</div>
+      <div id="hint" class="hint">drag to paint · click a particle or wall to inspect</div>
       <div id="specimen" class="specimen hidden"></div>
     </main>
 
-    <aside class="sidebar right">
-      <section>
+    <aside class="sidebar right" data-active-panel="tools">
+      <nav class="panel-tabs" aria-label="right sidebar panels">
+        <button type="button" class="active" data-panel-tab="tools">Tools</button>
+        <button type="button" data-panel-tab="lineages">Lineages</button>
+        <button type="button" data-panel-tab="log">Log</button>
+      </nav>
+
+      <section class="panel-section" data-panel="tools">
         <h2>Brush</h2>
         <div class="brushes">
           <button data-brush="none" class="active">None</button>
           <button data-brush="food">Food</button>
           <button data-brush="wall">Wall</button>
-          <button data-brush="membrane" title="blocks particles, passes chemicals/sound">Membrane</button>
-          <button data-brush="porous" title="passes particles, blocks chemicals">Porous</button>
+          <button data-brush="membrane" title="glass: blocks particles, passes chemicals/sound">Glass</button>
+          <button data-brush="porous" title="mud: passes particles and chemistry, but slows and drains">Mud</button>
           <button data-brush="mutagen">Mutagen</button>
           <button data-brush="spawn">Spawn</button>
           <button data-brush="erase">Erase</button>
@@ -140,49 +176,55 @@
         </label>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="tools">
         <h2>Visuals</h2>
         <label class="check"><input type="checkbox" id="ui-trails" checked /> Trails</label>
         <label class="check"><input type="checkbox" id="ui-show-field" checked /> Show field</label>
         <label class="check"><input type="checkbox" id="ui-show-walls" checked /> Show walls</label>
-        <label class="check"><input type="checkbox" id="ui-show-flags" checked /> Cluster flags</label>
+        <label class="check"><input type="checkbox" id="ui-show-flags" checked /> Cluster labels</label>
         <label class="check"><input type="checkbox" id="ui-bond-barrier" checked /> Bond barrier</label>
-        <label class="check"><input type="checkbox" id="ui-audio" /> Audio voices</label>
+          <label class="check"><input type="checkbox" id="ui-audio" /> Audio voices</label>
         <label>Volume <span class="val" id="ui-audio-vol-val">0.25</span>
           <input type="range" id="ui-audio-vol" min="0" max="1" step="0.05" value="0.25" />
         </label>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="tools">
         <h2>Compute</h2>
         <label class="check"><input type="checkbox" id="ui-gpu" disabled /> Use WebGPU <span class="tag-experimental">experimental</span></label>
         <p class="hint-text" id="ui-gpu-status">checking…</p>
-        <p class="hint-text">CTRNN dynamics drift under GPU f32 precision — outputs flicker and no fps gain at current N. Pending Phase 4f pipelining.</p>
+        <p class="hint-text">GPU compute is experimental and uses one-tick-lagged pair forces/brain outputs. CPU remains the reference path.</p>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="lineages">
         <h2>Top clades</h2>
         <div id="ui-clades" class="clades"></div>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="lineages">
         <h2>Top clusters</h2>
-        <p class="hint-text">bonded multi-cell beings · click zoom or chase</p>
+        <p class="hint-text">bonded multi-cell beings · zoom, chase, or export</p>
         <div id="ui-clusters" class="clusters"></div>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="lineages">
+        <h2>Best now</h2>
+        <p class="hint-text">curated specimens and clusters · export genomes</p>
+        <div id="ui-curated" class="curated"></div>
+      </section>
+
+      <section class="panel-section" data-panel="log">
         <h2>Events</h2>
         <div id="ui-events" class="events"></div>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="log">
         <h2>Fossils</h2>
         <p class="hint-text">long-lived particles preserved on death &middot; click to inspect</p>
         <div id="ui-fossils" class="fossils"></div>
       </section>
 
-      <section>
+      <section class="panel-section" data-panel="log">
         <h2>Notes</h2>
         <ul class="tips">
           <li>Genome &amp; chemistry are per-particle. Reproduction mutates; speciation forks new clades.</li>

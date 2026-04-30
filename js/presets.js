@@ -5,7 +5,7 @@ import { W, H, GW, GH, CELL, WALL_SOLID, WALL_MEMBRANE, WALL_POROUS } from './si
 import { NUM_SPECIES, makeGenome, randomMatrixRow } from './genome.js';
 
 export const PRESETS = {
-  soup, predprey, symbiotic, maze, empty,
+  soup, predprey, symbiotic, maze,
 };
 
 // Particle counts seeded by each preset. Kept here next to the preset bodies
@@ -15,7 +15,6 @@ export const PRESET_COUNTS = {
   predprey: 240 + 1400,
   symbiotic: NUM_SPECIES * 110,
   maze: NUM_SPECIES * 80,
-  empty: 0,
 };
 
 // Fresh Soup — random genomes, even species mix, scattered food.
@@ -37,7 +36,7 @@ function soup(world, count = 1800) {
 
 // Predator–Prey — two species, one preys on the other.
 // Species 0 (red) = predator, hunts species 2 (green); species 2 = prey, eats food.
-function predprey(world) {
+function predprey(world, count = PRESET_COUNTS.predprey) {
   world.reset();
   const predator = makeSeedGenome(0, {
     attraction: [-0.2,  0.0,  0.95, 0.0, 0.0, 0.0],
@@ -60,10 +59,12 @@ function predprey(world) {
 
   const predClade = world.beginClade(predator);
   const preyClade = world.beginClade(prey);
-  for (let i = 0; i < 240; i++) {
+  const predCount = Math.max(0, Math.round(count * (240 / PRESET_COUNTS.predprey)));
+  const preyCount = Math.max(0, count - predCount);
+  for (let i = 0; i < predCount; i++) {
     world.addParticle(Math.random() * W, Math.random() * H, jitterGenome(predator), 5, predClade);
   }
-  for (let i = 0; i < 1400; i++) {
+  for (let i = 0; i < preyCount; i++) {
     world.addParticle(Math.random() * W, Math.random() * H, jitterGenome(prey), 4, preyClade);
   }
   scatterFood(world, 0.6, 0.45);
@@ -71,8 +72,9 @@ function predprey(world) {
 
 // Symbiotic Web — every species mildly attracts the next-in-cycle and itself.
 // Wraps around all NUM_SPECIES so any palette size works.
-function symbiotic(world) {
+function symbiotic(world, count = PRESET_COUNTS.symbiotic) {
   world.reset();
+  const perSpecies = Math.max(0, Math.round(count / NUM_SPECIES));
   for (let s = 0; s < NUM_SPECIES; s++) {
     const next = (s + 1) % NUM_SPECIES;
     const a = new Float32Array(NUM_SPECIES);
@@ -92,7 +94,7 @@ function symbiotic(world) {
     const cx = (col + 0.5) / cols * W;
     const cy = (row + 0.5) / rows * H;
     const clade = world.beginClade(tpl);
-    for (let i = 0; i < 110; i++) {
+    for (let i = 0; i < perSpecies; i++) {
       const ang = Math.random() * Math.PI * 2;
       const r = Math.random() * 70;
       world.addParticle(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r, jitterGenome(tpl), 5, clade);
@@ -107,7 +109,7 @@ function symbiotic(world) {
 // (irregular patches of solid wall ~12-22 cells across, useful as
 // material for builder lineages). Wall thickness varies so some cells
 // can be punched through quickly while others form chunky barriers.
-function maze(world) {
+function maze(world, count = PRESET_COUNTS.maze) {
   world.reset();
 
   // Helpers
@@ -148,9 +150,11 @@ function maze(world) {
 
   // Partition segments — fewer and narrower-gapped so they actually
   // cut the world into rooms rather than scattering disconnected pieces.
-  // 4-7 segments with 1 (sometimes 2) gaps each. Thickness 2-5 cells.
+  // 4-7 segments with 1 (sometimes 2) gaps each. Thickness 3-7 cells:
+  // digging is now common enough that some barriers should be chunky, both
+  // as longer-term constraints and as usable raw material.
   const segCount = 4 + ((Math.random() * 4) | 0);   // 4..7
-  const types = [WALL_MEMBRANE, WALL_POROUS];        // force one of each
+  const types = [WALL_MEMBRANE, WALL_POROUS];        // force one glass and one mud segment
   for (let i = 2; i < segCount; i++) {
     const r = Math.random();
     types.push(r < 0.70 ? WALL_SOLID : (r < 0.85 ? WALL_MEMBRANE : WALL_POROUS));
@@ -165,7 +169,7 @@ function maze(world) {
     const lenMin = (horizontal ? GW : GH) * 0.50;     // longer than before
     const lenMax = (horizontal ? GW : GH) * 0.85;
     const segLen = (lenMin + Math.random() * (lenMax - lenMin)) | 0;
-    const thick = 2 + ((Math.random() * 4) | 0);      // 2..5 cells thick
+    const thick = 3 + ((Math.random() * 5) | 0);      // 3..7 cells thick
     if (horizontal) {
       const gy = (8 + Math.random() * (GH - 16 - thick)) | 0;
       const xStart = (Math.random() * (GW - segLen)) | 0;
@@ -211,7 +215,7 @@ function maze(world) {
   for (let b = 0; b < blobCount; b++) {
     const cx = (12 + Math.random() * (GW - 24)) | 0;
     const cy = (12 + Math.random() * (GH - 24)) | 0;
-    const radius = 6 + ((Math.random() * 6) | 0);    // 6..11 cell radius
+    const radius = 8 + ((Math.random() * 7) | 0);    // 8..14 cell radius
     paintBlob(cx, cy, radius);
   }
 
@@ -219,7 +223,7 @@ function maze(world) {
 
   // Seed particles distributed evenly across the world. Each species gets
   // one founder clade. Skip placement if cell is wall (retry up to 8x).
-  const perSpecies = 80;
+  const perSpecies = Math.max(0, Math.round(count / NUM_SPECIES));
   for (let s = 0; s < NUM_SPECIES; s++) {
     const founder = world.beginClade(makeGenome(s));
     for (let i = 0; i < perSpecies; i++) {
@@ -236,10 +240,6 @@ function maze(world) {
   }
 
   scatterFood(world, 0.5, 0.30);
-}
-
-function empty(world) {
-  world.reset();
 }
 
 // ─────────────────────────────────────────────────────────────── helpers

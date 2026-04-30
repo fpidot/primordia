@@ -6,12 +6,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const requested = new Set(process.argv.slice(2)
+  .map(f => f.replace(/\\/g, '/').split('/').pop()));
 const tests = readdirSync(here)
   .filter(f => f.endsWith('.test.js'))
+  .filter(f => requested.size === 0 || requested.has(f))
   .sort();
 
 console.log(`Running ${tests.length} test file(s):`);
 for (const t of tests) console.log(`  • ${t}`);
+
+if (requested.size > 0 && tests.length === 0) {
+  console.error(`No matching test files: ${[...requested].join(', ')}`);
+  process.exit(1);
+}
 
 let failures = 0;
 for (const t of tests) {

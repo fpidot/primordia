@@ -1,7 +1,7 @@
 // render.js — paints the chemical field (low-res, drawn via offscreen canvas)
 // and particles, both with a Camera transform applied for pan/zoom.
 
-import { GW, GH, W, H, CELL } from './sim.js';
+import { GW, GH, W, H, CELL, WALL_SOLID } from './sim.js';
 import { SPECIES_RGB, SPECIES_COLORS } from './genome.js';
 
 export class Camera {
@@ -230,8 +230,8 @@ export class Renderer {
     const showWalls = this.options.showWalls;
 
     for (let i = 0, di = 0; i < f0.length; i++, di += 4) {
-      if (walls[i]) {
-        // Transparent here; walls drawn from wallBuf with smoothing on.
+      if (walls[i] === WALL_SOLID) {
+        // Transparent here; opaque walls are drawn in the vector pass below.
         data[di] = 0; data[di + 1] = 0; data[di + 2] = 0; data[di + 3] = 0;
         continue;
       }
@@ -279,7 +279,12 @@ export class Renderer {
               if (walls[yy * GW + xx]) cnt++;
             }
           }
-          list.push({ type: wt, gx: x, gy: y, dens: cnt / 9 });
+          let edge = 0;
+          if (y === 0 || !walls[(y - 1) * GW + x]) edge |= 1;
+          if (x === GW - 1 || !walls[y * GW + x + 1]) edge |= 2;
+          if (y === GH - 1 || !walls[(y + 1) * GW + x]) edge |= 4;
+          if (x === 0 || !walls[y * GW + x - 1]) edge |= 8;
+          list.push({ type: wt, gx: x, gy: y, dens: cnt / 9, edge });
         }
       }
       this._wallCellList = list;
@@ -301,11 +306,18 @@ export class Renderer {
     // string so each unique fill triggers one fillStyle change at most.
     if (showWalls && this._wallCellList && this._wallCellList.length > 0) {
       const list = this._wallCellList;
+      const z = this.cam.zoom;
+      const pad = CELL * 2;
+      const minGX = Math.max(0, Math.floor((this.cam.x - this.cam.viewW / (2 * z) - pad) / CELL));
+      const maxGX = Math.min(GW - 1, Math.ceil((this.cam.x + this.cam.viewW / (2 * z) + pad) / CELL));
+      const minGY = Math.max(0, Math.floor((this.cam.y - this.cam.viewH / (2 * z) - pad) / CELL));
+      const maxGY = Math.min(GH - 1, Math.ceil((this.cam.y + this.cam.viewH / (2 * z) + pad) / CELL));
       // Bucket cells by colour key: "type|densBucket" → array of cells
       const buckets = this._wallBuckets || (this._wallBuckets = new Map());
       buckets.clear();
       for (let i = 0; i < list.length; i++) {
         const c = list[i];
+        if (c.gx < minGX || c.gx > maxGX || c.gy < minGY || c.gy > maxGY) continue;
         const dBucket = (c.dens * 8) | 0;        // 0..8
         const key = c.type * 16 + dBucket;
         let arr = buckets.get(key);
@@ -318,15 +330,15 @@ export class Renderer {
         const lerp = 1 - dens;
         let cr, cg, cb, alpha;
         if (wt === 2) {
-          cr = 28 + lerp * 14;
-          cg = 80 + lerp * 30;
-          cb = 110 + lerp * 30;
-          alpha = (130 + dens * 60) / 255;
+          cr = 80 + lerp * 35;
+          cg = 155 + lerp * 50;
+          cb = 190 + lerp * 45;
+          alpha = (95 + dens * 55) / 255;
         } else if (wt === 3) {
-          cr = 90 + lerp * 28;
-          cg = 74 + lerp * 22;
-          cb = 40 + lerp * 14;
-          alpha = (120 + dens * 70) / 255;
+          cr = 92 + lerp * 24;
+          cg = 76 + lerp * 16;
+          cb = 42 + lerp * 10;
+          alpha = (105 + dens * 60) / 255;
         } else {
           cr = 218 + lerp * 14;
           cg = 213 + lerp * 12;
@@ -339,12 +351,108 @@ export class Renderer {
           ctx.fillRect(c.gx * CELL, c.gy * CELL, CELL, CELL);
         }
       }
+      if (z > 0.75) {
+        const edgeBuckets = this._wallEdgeBuckets || (this._wallEdgeBuckets = new Map());
+        edgeBuckets.clear();
+        for (let i = 0; i < list.length; i++) {
+          const c = list[i];
+          if (!c.edge) continue;
+          if (c.gx < minGX || c.gx > maxGX || c.gy < minGY || c.gy > maxGY) continue;
+          let path = edgeBuckets.get(c.type);
+          if (!path) { path = new Path2D(); edgeBuckets.set(c.type, path); }
+          const x = c.gx * CELL;
+          const y = c.gy * CELL;
+          if (c.edge & 1) { path.moveTo(x, y); path.lineTo(x + CELL, y); }
+          if (c.edge & 2) { path.moveTo(x + CELL, y); path.lineTo(x + CELL, y + CELL); }
+          if (c.edge & 4) { path.moveTo(x + CELL, y + CELL); path.lineTo(x, y + CELL); }
+          if (c.edge & 8) { path.moveTo(x, y + CELL); path.lineTo(x, y); }
+        }
+        ctx.lineWidth = Math.max(0.35, 0.9 / z);
+        for (const [wt, path] of edgeBuckets) {
+          if (wt === 2) ctx.strokeStyle = 'rgba(175, 231, 247, 0.52)';
+          else if (wt === 3) ctx.strokeStyle = 'rgba(173, 138, 78, 0.42)';
+          else ctx.strokeStyle = 'rgba(255, 253, 235, 0.36)';
+          ctx.stroke(path);
+        }
+      }
     }
 
     // World boundary outline
     ctx.lineWidth = 2 / this.cam.zoom;
     ctx.strokeStyle = 'rgba(120,150,200,0.18)';
     ctx.strokeRect(0, 0, W, H);
+  }
+
+  renderClusterMembranes(ctx, world, z) {
+    const clusters = world._clusters || [];
+    if (!clusters.length) return;
+    const cap = Math.min(clusters.length, 12);
+    const bins = 14;
+    const chased = this.cam.resolveChasedCluster ? this.cam.resolveChasedCluster(world) : null;
+    const membraneClusters = clusters.slice(0, cap);
+    if (chased && !membraneClusters.some(c => c === chased || c.anchorId === chased.anchorId)) {
+      membraneClusters.push(chased);
+    }
+    const phase = (performance.now() % 1400) / 1400;
+    const chasePulse = 0.5 + 0.5 * Math.sin(phase * Math.PI * 2);
+    ctx.globalCompositeOperation = 'source-over';
+    for (let ci = 0; ci < membraneClusters.length; ci++) {
+      const c = membraneClusters[ci];
+      const ms = c.members;
+      if (!ms || ms.length < 4) continue;
+      const isChased = chased && (c === chased || c.anchorId === chased.anchorId);
+      const chaseBoost = isChased ? chasePulse : 0;
+      const rgb = this._predRimColors[c.species] || '255,255,255';
+      const pts = new Array(bins);
+      const step = Math.max(1, Math.floor(ms.length / 64));
+      for (let mi = 0; mi < ms.length; mi += step) {
+        const p = ms[mi];
+        if (!p || p.dead) continue;
+        const dx = p.x - c.cx;
+        const dy = p.y - c.cy;
+        const d2 = dx * dx + dy * dy;
+        const a = Math.atan2(dy, dx);
+        const bi = Math.min(bins - 1, Math.max(0, ((a + Math.PI) / (Math.PI * 2) * bins) | 0));
+        if (!pts[bi] || d2 > pts[bi].d2) pts[bi] = { x: p.x, y: p.y, d2 };
+      }
+      const ring = pts.filter(Boolean);
+      if (ring.length < 4) {
+        const rr = Math.max(8, (c.radius || 8) + 4 + chaseBoost * 2.5);
+        ctx.fillStyle = `rgba(${rgb}, ${isChased ? 0.10 + chaseBoost * 0.03 : 0.08})`;
+        ctx.strokeStyle = `rgba(${rgb}, ${isChased ? 0.48 + chaseBoost * 0.18 : 0.36})`;
+        ctx.lineWidth = Math.max(0.6, (isChased ? 1.45 : 1.1) / z);
+        ctx.beginPath();
+        ctx.arc(c.cx, c.cy, rr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        continue;
+      }
+      const pad = Math.max(4, 7 / Math.max(0.7, z)) + chaseBoost * 1.8;
+      for (const p of ring) {
+        const dx = p.x - c.cx;
+        const dy = p.y - c.cy;
+        const d = Math.sqrt(dx * dx + dy * dy) || 1;
+        p.x += dx / d * pad;
+        p.y += dy / d * pad;
+      }
+      ctx.fillStyle = `rgba(${rgb}, ${isChased ? 0.09 + chaseBoost * 0.025 : 0.075})`;
+      const strokeA = isChased ? 0.55 + chaseBoost * 0.18 : (z > 1.1 ? 0.45 : 0.32);
+      ctx.strokeStyle = `rgba(${rgb}, ${strokeA})`;
+      ctx.lineWidth = Math.max(0.7, (isChased ? 1.9 : 1.4) / z);
+      ctx.beginPath();
+      for (let i = 0; i < ring.length; i++) {
+        const p = ring[i];
+        const q = ring[(i + 1) % ring.length];
+        const mx = (p.x + q.x) * 0.5;
+        const my = (p.y + q.y) * 0.5;
+        if (i === 0) ctx.moveTo(mx, my);
+        ctx.quadraticCurveTo(q.x, q.y, (q.x + ring[(i + 2) % ring.length].x) * 0.5,
+          (q.y + ring[(i + 2) % ring.length].y) * 0.5);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
   }
 
   renderParticles(world) {
@@ -363,6 +471,13 @@ export class Renderer {
 
     // Switch to world coords for particle drawing
     this.cam.apply(ctx);
+    const z = this.cam.zoom;
+    const viewPad = 36 / Math.max(0.35, z);
+    const minX = this.cam.x - this.cam.viewW / (2 * z) - viewPad;
+    const maxX = this.cam.x + this.cam.viewW / (2 * z) + viewPad;
+    const minY = this.cam.y - this.cam.viewH / (2 * z) - viewPad;
+    const maxY = this.cam.y + this.cam.viewH / (2 * z) + viewPad;
+    if (z > 0.35) this.renderClusterMembranes(ctx, world, z);
 
     // Bond lines first, in normal compositing so additive glow lands on top.
     // Each bond is colored as a *lightened average* of its two endpoints'
@@ -371,7 +486,6 @@ export class Renderer {
     // green colony shows green-on-green edges. Bonds are batched per-color
     // (32-step quantisation) to keep stroke calls reasonable even at high N.
     const ps = world.particles;
-    const z = this.cam.zoom;
     if (z > 0.4) {
       ctx.globalCompositeOperation = 'source-over';
       ctx.lineWidth = Math.max(0.8, 1.7 / z);
@@ -396,6 +510,10 @@ export class Renderer {
           const jIdx = idIdx.get(pid);
           if (jIdx == null) continue;
           const q = ps[jIdx];
+          if ((p.x < minX && q.x < minX) || (p.x > maxX && q.x > maxX) ||
+              (p.y < minY && q.y < minY) || (p.y > maxY && q.y > maxY)) {
+            continue;
+          }
           const rgbB = SPECIES_RGB[q.genome.species];
           // SPECIES_RGB is float [0..1]. Average then lerp 35% toward white,
           // then convert to 0..255. Earlier `(rgbA[0]+rgbB[0])>>1` integer-
@@ -429,23 +547,40 @@ export class Renderer {
     // saturating dense clusters it was no longer visually distinct anyway,
     // and it cost a per-particle drawImage + composite-mode toggle per frame.
     ctx.globalCompositeOperation = 'source-over';
+    if (z < 0.85 && ps.length > 1200) {
+      const paths = this._speciesParticlePaths || (this._speciesParticlePaths = SPECIES_COLORS.map(() => new Path2D()));
+      for (let s = 0; s < paths.length; s++) paths[s] = new Path2D();
+      const r = Math.max(1.7, 2.2 / Math.max(0.55, z));
+      for (let i = 0; i < ps.length; i++) {
+        const p = ps[i];
+        if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
+        const path = paths[p.genome.species] || paths[0];
+        path.moveTo(p.x + r, p.y);
+        path.arc(p.x, p.y, r, 0, Math.PI * 2);
+      }
+      ctx.globalAlpha = 0.78;
+      for (let s = 0; s < paths.length; s++) {
+        ctx.fillStyle = SPECIES_COLORS[s];
+        ctx.fill(paths[s]);
+      }
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      this.renderClusterFlags(ctx, world);
+      return;
+    }
     for (let i = 0; i < ps.length; i++) {
       const p = ps[i];
+      if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
       const sp = p.genome.species;
-      const col = SPECIES_COLORS[sp];
+      const col = particleBodyColor(p, sp);
       // Base radius scales with energy; bonded particles look bigger so
       // multi-cellular colonies read as distinct entities.
       const bondScale = Math.sqrt(1 + (p.bonds ? p.bonds.length : 0));
       const r = (1.6 + Math.min(1.0, p.energy * 0.06)) * bondScale;
 
-      // Signaling halo + sonar-ping ring.
-      //   • sustained component: only kicks in well above the comm baseline
-      //     (sigmoid≈0.6 random init), so a still population is dim.
-      //   • flash component: discrete event from sim.js when signal crosses
-      //     the 0.65 threshold from below (sigMean > 0.65). signalFlash
-      //     starts at 1 on the rising edge and decays at 0.85/tick. The
-      //     halo brightens, AND we draw an expanding ring (small at flash=1,
-      //     widening as it decays — reads as a "ping" outward).
+      // Signaling wave. Sustained calls get a soft glow; fresh signal events
+      // draw two staggered rings so communication reads as a radiating wave,
+      // not a single flashing halo.
       const sigStrength = (p.signalR + p.signalG + p.signalB) / 3;
       const sustained = Math.max(0, sigStrength - 0.7) * 1.6;          // 0..0.48
       const flash = p.signalFlash || 0;                                 // 0..1
@@ -454,23 +589,28 @@ export class Renderer {
         const sr = (p.signalR * 255) | 0;
         const sg = (p.signalG * 255) | 0;
         const sb = (p.signalB * 255) | 0;
-        ctx.fillStyle = `rgb(${sr},${sg},${sb})`;
-        // Subtler flashes: lower base alpha (was 0.7 → 0.4), smaller radius
-        // multipliers, more zoom dampening (1/z instead of 1/sqrt(z)) since
-        // many particles flash simultaneously and the field was too busy.
-        ctx.globalAlpha = Math.min(0.5, haloA * 0.4);
-        ctx.beginPath();
         const zClamp = z > 1 ? 1 / z : 1;
-        const haloR = r * (1.4 + (flash * 2.2 + sustained * 1.2) * zClamp);
-        ctx.arc(p.x, p.y, haloR, 0, Math.PI * 2);
-        ctx.fill();
-        // Ping ring — only on a fresh flash event, expanding as it fades.
-        if (flash > 0.05) {
-          const ringR = r * (1.3 + (1 - flash) * 3.2 * zClamp);
-          ctx.strokeStyle = `rgba(${sr},${sg},${sb},${flash * 0.5})`;
-          ctx.lineWidth = Math.max(0.5, 1.0 / z);
+        if (sustained > 0.04) {
+          ctx.fillStyle = `rgb(${sr},${sg},${sb})`;
+          ctx.globalAlpha = Math.min(0.18, sustained * 0.22);
           ctx.beginPath();
-          ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
+          const haloR = r * (1.25 + sustained * 1.1 * zClamp);
+          ctx.arc(p.x, p.y, haloR, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (flash > 0.05) {
+          const fade = 1 - flash;
+          const outerR = r * (2.1 + fade * 2.0 * zClamp);
+          const innerR = outerR * 0.66;
+          const widths = Math.max(0.45, 0.9 / z);
+          ctx.lineWidth = widths;
+          ctx.strokeStyle = `rgba(${sr},${sg},${sb},${flash * 0.30})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, innerR, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.strokeStyle = `rgba(${sr},${sg},${sb},${flash * 0.42})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, outerR, 0, Math.PI * 2);
           ctx.stroke();
         }
       }
@@ -590,49 +730,29 @@ export class Renderer {
         }
       }
 
+      if ((p.wallCarry || 0) > 0 && z > 0.45) {
+        const carry = Math.min(5, p.wallCarry || 0);
+        const sideA = ang + Math.PI * 0.5;
+        const ox = Math.cos(sideA) * (r + 1.6);
+        const oy = Math.sin(sideA) * (r + 1.6);
+        const cr = 0.85 + carry * 0.24;
+        ctx.globalAlpha = Math.min(0.9, 0.55 + carry * 0.07);
+        ctx.fillStyle = '#d6c08a';
+        ctx.strokeStyle = 'rgba(46,38,28,0.72)';
+        ctx.lineWidth = Math.max(0.45, 0.8 / z);
+        ctx.beginPath();
+        ctx.moveTo(p.x + ox, p.y + oy - cr);
+        ctx.lineTo(p.x + ox + cr, p.y + oy);
+        ctx.lineTo(p.x + ox, p.y + oy + cr);
+        ctx.lineTo(p.x + ox - cr, p.y + oy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
-
-    // Chased-cluster highlight — when the camera is following a cluster, draw
-    // a pulsing ring around every member so it's unmistakable which group is
-    // being tracked. Phase ties to wall clock so cadence stays steady at any
-    // sim speed.
-    if (this.cam.followClusterMembers && world._particleToCluster) {
-      const cluster = this.cam.resolveChasedCluster(world);
-      if (cluster && cluster.members) {
-        const phase = (performance.now() % 1200) / 1200;
-        const pulse = 0.5 + 0.5 * Math.sin(phase * Math.PI * 2);
-        const ringR = 4 + pulse * 3;
-        const sp = cluster.species;
-        const col = SPECIES_COLORS[sp] || '#ffffff';
-        ctx.strokeStyle = col;
-        ctx.lineWidth = Math.max(1.2, 2.2 / z);
-        ctx.globalAlpha = 0.55 + 0.35 * pulse;
-        ctx.beginPath();
-        for (const m of cluster.members) {
-          if (m.dead) continue;
-          ctx.moveTo(m.x + ringR, m.y);
-          ctx.arc(m.x, m.y, ringR, 0, Math.PI * 2);
-        }
-        ctx.stroke();
-        // Centroid crosshair so it's clear what the camera is locked onto
-        ctx.globalAlpha = 0.7;
-        ctx.lineWidth = Math.max(1, 1.2 / z);
-        const cR = 14 + pulse * 4;
-        ctx.beginPath();
-        ctx.moveTo(cluster.cx - cR, cluster.cy);
-        ctx.lineTo(cluster.cx - cR * 0.4, cluster.cy);
-        ctx.moveTo(cluster.cx + cR * 0.4, cluster.cy);
-        ctx.lineTo(cluster.cx + cR, cluster.cy);
-        ctx.moveTo(cluster.cx, cluster.cy - cR);
-        ctx.lineTo(cluster.cx, cluster.cy - cR * 0.4);
-        ctx.moveTo(cluster.cx, cluster.cy + cR * 0.4);
-        ctx.lineTo(cluster.cx, cluster.cy + cR);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
-    }
 
     // Cluster flags — drawn last in screen space so labels stay readable
     // regardless of zoom level.
@@ -668,6 +788,36 @@ export class Renderer {
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
+
+  renderClusterFlags(ctx, world) {
+    if (!this.options.showFlags || !world._clusters || world._clusters.length === 0) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const cam = this.cam;
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    ctx.font = `${11 * dpr}px ui-monospace, "Cascadia Mono", Menlo, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    const cap = Math.min(world._clusters.length, this.MAX_FLAGS);
+    for (let i = 0; i < cap; i++) {
+      const c = world._clusters[i];
+      const s = cam.worldToScreen(c.cx, c.cy);
+      if (s.x < -100 || s.x > this.fg.width + 100 ||
+          s.y < -40  || s.y > this.fg.height + 40) continue;
+      const sp = c.species;
+      const col = SPECIES_COLORS[sp] || '#fff';
+      const labelY = s.y - 10 * dpr;
+      const text = c.name;
+      const tw = ctx.measureText(text).width + 8 * dpr;
+      const th = 14 * dpr;
+      ctx.fillStyle = 'rgba(10, 14, 22, 0.78)';
+      roundRect(ctx, s.x - tw / 2, labelY - th, tw, th, 3 * dpr);
+      ctx.fill();
+      ctx.fillStyle = col;
+      ctx.fillRect(s.x - tw / 2, labelY - th, 2 * dpr, th);
+      ctx.fillStyle = '#e6ecf2';
+      ctx.fillText(text, s.x, labelY - 2 * dpr);
+    }
+  }
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -682,6 +832,28 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
+}
+
+function particleBodyColor(p, sp) {
+  if (p._renderColor && p._renderColorSpecies === sp) return p._renderColor;
+  const rgb = SPECIES_RGB[sp] || [1, 1, 1];
+  let h = ((p.id || 1) * 1103515245 + 12345) >>> 0;
+  const jr = ((h & 0xff) / 255 - 0.5) * 20;
+  h = (h ^ (h >>> 13)) >>> 0;
+  const jg = ((h & 0xff) / 255 - 0.5) * 20;
+  h = Math.imul(h ^ (h >>> 16), 2246822519) >>> 0;
+  const jb = ((h & 0xff) / 255 - 0.5) * 20;
+  const shade = 0.94 + (((h >>> 8) & 0xff) / 255) * 0.13;
+  const r = clamp8(rgb[0] * 255 * shade + jr);
+  const g = clamp8(rgb[1] * 255 * shade + jg);
+  const b = clamp8(rgb[2] * 255 * shade + jb);
+  p._renderColorSpecies = sp;
+  p._renderColor = `rgb(${r},${g},${b})`;
+  return p._renderColor;
+}
+
+function clamp8(v) {
+  return v < 0 ? 0 : (v > 255 ? 255 : v | 0);
 }
 
 // Tiny line-chart for population history.

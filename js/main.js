@@ -50,6 +50,9 @@ let acc = 0;
 let fpsAcc = 0;
 let fpsFrames = 0;
 let statsTimer = 0;
+let chartTimer = 0;
+const STEP_FRAME_BUDGET_MS = 12;
+const MAX_STEP_BACKLOG = 12;
 
 async function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
@@ -57,11 +60,14 @@ async function frame(now) {
 
   if (!ui.paused) {
     acc += ui.speed;
+    if (acc > MAX_STEP_BACKLOG) acc = MAX_STEP_BACKLOG;
     let steps = 0;
+    const stepStart = performance.now();
     while (acc >= 1 && steps < 8) {
       await world.step();
       acc -= 1;
       steps++;
+      if (performance.now() - stepStart > STEP_FRAME_BUDGET_MS) break;
     }
   }
 
@@ -69,12 +75,16 @@ async function frame(now) {
   renderer.render(world);
   audioHum.tick(world, dt, camera);
 
-  if (world.tick % 4 === 0) {
+  if (!ui.paused && world.tick % 4 === 0) {
     chart.push(world.tick, world.populationBySpecies());
   }
-  chart.draw();
 
   statsTimer += dt;
+  chartTimer += dt;
+  if (chartTimer > 0.16) {
+    chart.draw();
+    chartTimer = 0;
+  }
   if (statsTimer > 0.16) {
     ui.refreshStats();
     statsTimer = 0;
@@ -118,4 +128,4 @@ gpu.init().then(ok => {
   ui.onGPUStatusChange?.(gpu.describe());
 });
 
-window.__primordia = { world, renderer, ui, camera, gpu, audioHum };
+window.__primordia = { world, renderer, ui, camera, chart, gpu, audioHum, PRESETS };

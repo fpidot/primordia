@@ -15,6 +15,34 @@ python -m http.server 8765
 npm test
 ```
 
+## CPU timing probe
+
+```sh
+npm run bench:cpu -- maze 1200 1500 0xC0FFEE
+```
+
+The CPU probe reports timing plus construction diagnostics (`wallDigs`,
+`wallDeposits`, and live `wallCarriers`) so builder regressions are easy to
+spot during performance work.
+
+## Browser timing probe
+
+Start the local server first, then run:
+
+```sh
+npm run bench:browser -- maze 6 4
+node tools/bench-browser.js maze 6 4 9230 --gpu
+```
+
+The browser probe launches Chrome/Edge through the DevTools protocol and
+reports FPS, sim ticks/sec, GPU availability, and WebGPU readback timings.
+
+## Preset population
+
+The Presets panel includes an initial-population slider. Presets scale their
+starting population to that value, including zero-particle starts for terrain
+inspection or manual seeding.
+
 ## Architecture
 
 - `js/sim.js` — particle pair-force, bond network, energy economy, wall types

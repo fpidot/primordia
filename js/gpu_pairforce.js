@@ -12,8 +12,9 @@
 //      using GPU-resident brain weights and persistent state, writes brain
 //      outputs and updated state to the result buffer.
 //
-// The CPU consumes a 32-float-per-particle ParticleResult struct that bundles
-// forces, stats, brain outputs, and the new brain state. CPU then runs:
+// The CPU consumes a compact 40-float-per-particle ParticleResult struct that
+// bundles forces, minimal stats, and brain outputs. Hidden brain state stays
+// resident on the GPU between dispatches and is only reset on structural changes. CPU then runs:
 // integration, brushes, predation drains, bond physics, reproduction, deaths,
 // field updates, and brain mutation on births.
 //
@@ -29,10 +30,10 @@ import {
 
 // ── Layouts ─────────────────────────────────────────────────────────
 const PARTICLE_STRIDE_F32 = 16;
-const RESULT_STRIDE_F32   = 48;       // forces+stats(12) + outputs(16) + h(8) + quadrants(8) + pad(4)
-const EXTRAS_STRIDE_F32   = 24;       // 6 chem + 4 sound + 3 bondMsg + 4 cluster + 1 alarm + 1 wallCarry + 4 wallProx + pad
+const RESULT_STRIDE_F32   = 30;       // forces+stats(12) + outputs(18); h stays GPU-resident
+const EXTRAS_STRIDE_F32   = 28;       // 6 chem + 4 sound + 3 bondMsg + 4 cluster + 1 alarm + 1 wallCarry + 4 wallProx + 4 mudProx + 1 mud
 const BRAIN_STRIDE_F32    = BRAIN_PACK_STRIDE;
-const STATE_STRIDE_F32    = N_HIDDEN_MAX;
+const STATE_STRIDE_F32    = N_HIDDEN_MAX + 8; // h state + GPU-only quadrant scratch
 const PARAMS_SIZE         = 32;
 const WORKGROUP_SIZE      = 64;
 const CROWD_RADIUS        = 14.0;
@@ -46,7 +47,10 @@ const CROWD_RADIUS        = 14.0;
 //   15    : cluster.size  (saturating curve over member count)
 //   16    : cluster.member (1.0 if in any named cluster else 0)
 //   17    : cluster.alarm  (Phase 6c — fast cluster-wide broadcast)
-//   18..19: pad
+//   18    : wall.carry
+//   19..22: wall proximity n/s/e/w
+//   23..26: mud proximity n/s/e/w
+//   27    : terrain.mud underfoot
 const EXTRAS_BOND_MSG_R_OFFSET = 10;
 const EXTRAS_BOND_MSG_G_OFFSET = 11;
 const EXTRAS_BOND_MSG_B_OFFSET = 12;
@@ -70,20 +74,10 @@ export const RES_OWNN        = 8;
 export const RES_ALIENN      = 9;
 export const RES_CROWD       = 10;
 // 11: pad
-// Thread B-2 layout: outputs grew 16→18 to add OUT_DIG / OUT_DEPOSIT, so
-// h-state and quadrant blocks shift down by 2. Total stride still 48.
+// Thread B-2 layout: outputs grew 16→18 to add OUT_DIG / OUT_DEPOSIT.
+// Directional quadrant stats and hidden brain state stay GPU-only, so readback
+// fits in 30 floats.
 export const RES_OUT0        = 12;   // brain outputs 0..17 occupy 12..29
-export const RES_H0          = 30;   // brain state 0..7 occupies 30..37
-// Phase 5b — per-quadrant directional stats. Order: NE, SE, SW, NW.
-export const RES_QCNT0       = 38;
-export const RES_QCNT1       = 39;
-export const RES_QCNT2       = 40;
-export const RES_QCNT3       = 41;
-export const RES_QSIG0       = 42;
-export const RES_QSIG1       = 43;
-export const RES_QSIG2       = 44;
-export const RES_QSIG3       = 45;
-// 46..47: pad to 48 (vec4 alignment)
 
 // ── WGSL ────────────────────────────────────────────────────────────
 const WGSL = /* wgsl */ `
@@ -132,14 +126,6 @@ struct ParticleResult {
   o8:  f32, o9:  f32, o10: f32, o11: f32,
   o12: f32, o13: f32, o14: f32, o15: f32,
   o16: f32, o17: f32,
-  // New brain state 0..7 (offsets shifted +2 vs Phase 6b)
-  h0: f32, h1: f32, h2: f32, h3: f32,
-  h4: f32, h5: f32, h6: f32, h7: f32,
-  // Phase 5b — per-quadrant counts (NE, SE, SW, NW) and signal magnitudes
-  qcnt0: f32, qcnt1: f32, qcnt2: f32, qcnt3: f32,
-  qsig0: f32, qsig1: f32, qsig2: f32, qsig3: f32,
-  // 46..47: pad
-  pad3: f32, pad4: f32,
 };
 
 struct Params {
@@ -193,13 +179,15 @@ fn pair_force(@builtin(global_invocation_id) id: vec3u) {
   if (i >= params.particle_count) { return; }
   let p = particles[i];
   if (p.alive == 0u) {
+    let so = i * STATE_STRIDE;
     results[i].fx = 0.0; results[i].fy = 0.0;
     results[i].nbVx = 0.0; results[i].nbVy = 0.0;
     results[i].sigR = 0.0; results[i].sigG = 0.0; results[i].sigB = 0.0;
     results[i].sigN = 0.0; results[i].ownN = 0.0; results[i].alienN = 0.0;
     results[i].crowd = 0.0;
-    results[i].qcnt0 = 0.0; results[i].qcnt1 = 0.0; results[i].qcnt2 = 0.0; results[i].qcnt3 = 0.0;
-    results[i].qsig0 = 0.0; results[i].qsig1 = 0.0; results[i].qsig2 = 0.0; results[i].qsig3 = 0.0;
+    for (var q: u32 = 0u; q < 8u; q = q + 1u) {
+      brainState[so + N_HIDDEN + q] = 0.0;
+    }
     return;
   }
 
@@ -311,14 +299,15 @@ fn pair_force(@builtin(global_invocation_id) id: vec3u) {
   results[i].crowd = crowd;
   // Phase 5b — per-quadrant outputs. Signals are stored as means (per-quadrant
   // sum / count) so the brain shader can use them directly without divide.
-  results[i].qcnt0 = qcnt0;
-  results[i].qcnt1 = qcnt1;
-  results[i].qcnt2 = qcnt2;
-  results[i].qcnt3 = qcnt3;
-  results[i].qsig0 = select(0.0, qsig0 / qsigN0, qsigN0 > 0.0);
-  results[i].qsig1 = select(0.0, qsig1 / qsigN1, qsigN1 > 0.0);
-  results[i].qsig2 = select(0.0, qsig2 / qsigN2, qsigN2 > 0.0);
-  results[i].qsig3 = select(0.0, qsig3 / qsigN3, qsigN3 > 0.0);
+  let so = i * STATE_STRIDE;
+  brainState[so + N_HIDDEN + 0u] = qcnt0;
+  brainState[so + N_HIDDEN + 1u] = qcnt1;
+  brainState[so + N_HIDDEN + 2u] = qcnt2;
+  brainState[so + N_HIDDEN + 3u] = qcnt3;
+  brainState[so + N_HIDDEN + 4u] = select(0.0, qsig0 / qsigN0, qsigN0 > 0.0);
+  brainState[so + N_HIDDEN + 5u] = select(0.0, qsig1 / qsigN1, qsigN1 > 0.0);
+  brainState[so + N_HIDDEN + 6u] = select(0.0, qsig2 / qsigN2, qsigN2 > 0.0);
+  brainState[so + N_HIDDEN + 7u] = select(0.0, qsig3 / qsigN3, qsigN3 > 0.0);
 }
 
 fn act(actId: u32, x: f32) -> f32 {
@@ -376,14 +365,14 @@ fn brain_forward(@builtin(global_invocation_id) id: vec3u) {
   inp[20] = extras[eo + 10u];     // Phase 5a → 6b — bond.msg.r (was 'bond.msg')
   // Phase 5b — directional sensors. Counts normalized via tanh; signals are
   // already means in [0, ~1] so re-tanh maps them into [-1, 1] symmetrically.
-  inp[21] = tanh(res.qcnt0 * 0.3);
-  inp[22] = tanh(res.qcnt1 * 0.3);
-  inp[23] = tanh(res.qcnt2 * 0.3);
-  inp[24] = tanh(res.qcnt3 * 0.3);
-  inp[25] = tanh(res.qsig0 * 2.0 - 1.0);
-  inp[26] = tanh(res.qsig1 * 2.0 - 1.0);
-  inp[27] = tanh(res.qsig2 * 2.0 - 1.0);
-  inp[28] = tanh(res.qsig3 * 2.0 - 1.0);
+  inp[21] = tanh(brainState[so + N_HIDDEN + 0u] * 0.3);
+  inp[22] = tanh(brainState[so + N_HIDDEN + 1u] * 0.3);
+  inp[23] = tanh(brainState[so + N_HIDDEN + 2u] * 0.3);
+  inp[24] = tanh(brainState[so + N_HIDDEN + 3u] * 0.3);
+  inp[25] = tanh(brainState[so + N_HIDDEN + 4u] * 2.0 - 1.0);
+  inp[26] = tanh(brainState[so + N_HIDDEN + 5u] * 2.0 - 1.0);
+  inp[27] = tanh(brainState[so + N_HIDDEN + 6u] * 2.0 - 1.0);
+  inp[28] = tanh(brainState[so + N_HIDDEN + 7u] * 2.0 - 1.0);
   inp[29] = extras[eo + 11u];     // Phase 6b — bond.msg.g
   inp[30] = extras[eo + 12u];     // Phase 6b — bond.msg.b
   inp[31] = extras[eo + 13u];     // Phase 6a — cluster.dx (relative to centroid)
@@ -396,6 +385,11 @@ fn brain_forward(@builtin(global_invocation_id) id: vec3u) {
   inp[38] = extras[eo + 20u];     // Thread B-2 — wall.s
   inp[39] = extras[eo + 21u];     // Thread B-2 — wall.e
   inp[40] = extras[eo + 22u];     // Thread B-2 — wall.w
+  inp[41] = extras[eo + 23u];     // mud.n proximity
+  inp[42] = extras[eo + 24u];     // mud.s
+  inp[43] = extras[eo + 25u];     // mud.e
+  inp[44] = extras[eo + 26u];     // mud.w
+  inp[45] = extras[eo + 27u];     // terrain.mud underfoot
 
   // Forward — compute new hidden state
   var h_new: array<f32, ${N_HIDDEN_MAX}>;
@@ -419,7 +413,9 @@ fn brain_forward(@builtin(global_invocation_id) id: vec3u) {
     h_new[k] = act(actId, s);
   }
 
-  // Persist new state on GPU and write copy to result for CPU readback
+  // Persist new hidden state on GPU. The CPU does not need this every tick:
+  // children start with fresh transient state, saves omit it, and CPU fallback
+  // can tolerate a cold state after GPU mode is toggled off.
   for (var k: u32 = 0u; k < N_HIDDEN; k = k + 1u) {
     brainState[so + k] = h_new[k];
   }
@@ -477,10 +473,6 @@ fn brain_forward(@builtin(global_invocation_id) id: vec3u) {
   results[i].o12 = out_12; results[i].o13 = out_13;
   results[i].o14 = out_14; results[i].o15 = out_15;
   results[i].o16 = out_16; results[i].o17 = out_17;
-  results[i].h0 = h_new[0]; results[i].h1 = h_new[1];
-  results[i].h2 = h_new[2]; results[i].h3 = h_new[3];
-  results[i].h4 = h_new[4]; results[i].h5 = h_new[5];
-  results[i].h6 = h_new[6]; results[i].h7 = h_new[7];
 }
 `;
 
@@ -705,20 +697,22 @@ export class GPUPairForce {
     this._brainsUploadedCount = count;
   }
 
-  // Upload current per-particle h state. Cheap (8 floats × N).
+  // Upload current per-particle h state. The tail of each state row is
+  // GPU-only quadrant scratch, reset here because pair_force will refill it.
   uploadBrainState(particles) {
     const count = Math.min(particles.length, this.maxParticles);
     const arr = this.brainStateStaging;
     for (let i = 0; i < count; i++) {
       const h = particles[i].genome.brain.h;
       const o = i * STATE_STRIDE_F32;
-      for (let k = 0; k < STATE_STRIDE_F32; k++) arr[o + k] = h[k];
+      for (let k = 0; k < N_HIDDEN_MAX; k++) arr[o + k] = h[k] || 0;
+      for (let k = N_HIDDEN_MAX; k < STATE_STRIDE_F32; k++) arr[o + k] = 0;
     }
     this.device.queue.writeBuffer(this.brainStateBuf, 0, arr.buffer, 0, count * STATE_STRIDE_F32 * 4);
   }
 
   // Upload chem-extras (CPU pre-samples field around each particle).
-  // Layout per particle: food, decay, food.dx, food.dy, decay.dx, decay.dy, sound[0..3], pad×2.
+  // Layout per particle: chem, sound, bond messages, cluster state, wall sensors, mud sensors.
   uploadExtras(extras) {
     // `extras` is a Float32Array supplied by sim (already sized maxParticles×EXTRAS_STRIDE_F32)
     const count = Math.min(this._uploadedCount, this.maxParticles);

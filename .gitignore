@@ -9,3 +9,10 @@ node_modules/
 
 # Local Claude state
 .claude/settings.local.json
+
+# Local benchmark/browser artifacts
+.chrome-smoke-profile*/
+.edge-smoke-profile*/
+*.cpuprofile
+primordia-*-smoke*.png
+primordia-smoke*.png

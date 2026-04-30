@@ -8,11 +8,9 @@
 //   • predationGain or red-signal level → "hostile" gate (discord vs chord).
 //   • particle.id   → which note within the 6-note set, for per-individual voice.
 //
-// Pitch alphabet — C major:
-//   chord set    = root, third, fifth across two octaves (C E G C' E' G')
-//   discord set  = the rest of the C major scale (D F A B D' F') used by
-//                  particles whose vocalisation is "hostile" — produces a
-//                  recognisable dissonant texture without leaving the key.
+// Pitch alphabet:
+//   chord set    = C7 color tones across two octaves (C E G Bb ...)
+//   discord set  = softer passing tones (D A Bb ...) for hostile calls.
 //
 // Timbre per channel × mode:
 //   ch0 deep:   sine        / triangle + bend     — horn vs growl
@@ -27,28 +25,22 @@
 
 import { W } from './sim.js';
 
-// --- pitch alphabets in Hz, C Lydian dominant (Lydian b7) ----------------
+// --- pitch alphabets in Hz, softened C7 palette --------------------------
 //
-// Scale: C  D  E  F#  G  A  Bb
-// Characteristic notes vs major: raised 4th (#4) + lowered 7th (b7).
-// Yields a bright-but-uneasy quality somewhere between Lydian's lift and
-// Mixolydian's bluesy droop. Pleasant for organism vocalisations because
-// no two scale tones form a tritone-fifth (4 → b7 is a major 3rd), and
-// the b7 prevents the major-7 brightness from feeling saccharine.
-//
-// Chord set (consonant) = root7 voicing: C E G Bb across two octaves.
-// Discord set = remaining scale tones: D F# A across two octaves.
+// Chord set = root-7 voicing: C E G Bb across two octaves. Hostile calls use
+// D/A/Bb passing tones: still tense, but less sharp than the old frequent #4.
 
-const C2 = 65.41,  D2 = 73.42,  E2 = 82.41,  Fs2 = 92.50;
+const C2 = 65.41,  D2 = 73.42,  E2 = 82.41;
 const G2 = 98.00,  A2 = 110.00, Bb2 = 116.54;
-const C3 = 130.81, D3 = 146.83, E3 = 164.81, Fs3 = 185.00;
+const C3 = 130.81, D3 = 146.83, E3 = 164.81;
 const G3 = 196.00, A3 = 220.00, Bb3 = 233.08;
-const C4 = 261.63, D4 = 293.66, E4 = 329.63, Fs4 = 369.99;
+const C4 = 261.63, D4 = 293.66, E4 = 329.63;
 const G4 = 392.00, A4 = 440.00, Bb4 = 466.16;
-const C5 = 523.25, D5 = 587.33, E5 = 659.25, Fs5 = 739.99;
+const C5 = 523.25, D5 = 587.33, E5 = 659.25;
 const G5 = 783.99, A5 = 880.00, Bb5 = 932.33;
-const C6 = 1046.50, D6 = 1174.66, E6 = 1318.51, Fs6 = 1479.98;
-const A6 = 1760.00;
+const C6 = 1046.50, D6 = 1174.66, E6 = 1318.51;
+const G6 = 1567.98, A6 = 1760.00, Bb6 = 1864.66;
+const D7 = 2349.32, A7 = 3520.00;
 
 // Instrument families. Species map onto these so different species sound
 // audibly different — independent of pitch register (channel) and note
@@ -71,21 +63,22 @@ const INSTRUMENTS = [
   ['sine',     'triangle', 4.5, 5.5, 0.9, 'sine',     0.0, 1.5, 'vibes'],
 ];
 
-// Two-octave C7 (Lydian dominant tonic) arpeggio per channel
+// Wider C7 arpeggio per channel; repeated chord tones span a little farther
+// so dense populations do not hammer the same few notes as often.
 const CHORD = [
-  [C2, E2, G2, Bb2, C3, E3],   // ch0 deep
-  [C3, E3, G3, Bb3, C4, E4],   // ch1 bass
-  [C4, E4, G4, Bb4, C5, E5],   // ch2 mid
-  [C5, E5, G5, Bb5, C6, E6],   // ch3 high
+  [C2, E2, G2, Bb2, C3, E3, G3, Bb3],   // ch0 deep
+  [C3, E3, G3, Bb3, C4, E4, G4, Bb4],   // ch1 bass
+  [C4, E4, G4, Bb4, C5, E5, G5, Bb5],   // ch2 mid
+  [C5, E5, G5, Bb5, C6, E6, G6, Bb6],   // ch3 high
 ];
 
-// Non-chord scale tones — D, F#, A across two octaves. F# is the signature
-// lydian colour; A is the natural 6 that makes Dm vs C7 ambiguity.
+// Softer hostile passing tones. This keeps attacks recognisable while avoiding
+// the old frequent #4 that could make dense soups feel needlessly sharp.
 const DISCORD = [
-  [D2, Fs2, A2, D3, Fs3, A3],   // ch0
-  [D3, Fs3, A3, D4, Fs4, A4],   // ch1
-  [D4, Fs4, A4, D5, Fs5, A5],   // ch2
-  [D5, Fs5, A5, D6, Fs6, A6],   // ch3
+  [D2, A2, Bb2, D3, A3, Bb3, D4, A4],   // ch0
+  [D3, A3, Bb3, D4, A4, Bb4, D5, A5],   // ch1
+  [D4, A4, Bb4, D5, A5, Bb5, D6, A6],   // ch2
+  [D5, A5, Bb5, D6, A6, Bb6, D7, A7],   // ch3
 ];
 
 // Root note transpose: −6 semitones (down half an octave) shifts the
@@ -105,24 +98,21 @@ const BEAT_DUR_S = 60 / BPM;
 const LONG_EIGHTH_S  = BEAT_DUR_S * (2 / 3);
 const SHORT_EIGHTH_S = BEAT_DUR_S * (1 / 3);
 
-const MAX_VOICES      = 8;
-const COOLDOWN_S      = 0.22;
+const MAX_VOICES      = 6;
+const COOLDOWN_S      = 0.28;
 const ATTACK_THRESH   = 0.18;
 const AMP_FLOOR       = 0.40;
-const SLOTS_PER_TICK  = 4;
+const SLOTS_PER_TICK  = 3;
+const DEATH_CHORUS_MIN = 48;
+const DEATH_CHORUS_POP_FRAC = 0.035;
+const ORNAMENT_SIGNAL_GATE = 0.82;
+const ORNAMENT_COOLDOWN_S = 1.4;
 
-// Hostile vocalisation gate — broadened so discord notes actually fire on a
-// fresh soup. Earlier (predationGain > 0.25 || signalR > 0.78) almost never
-// triggered with random-init brains. Now: any of (a) noticeable predation
-// drive, (b) strong red signal, (c) anti-social cohesion, (d) starving-low
-// energy below a quarter of repro threshold all route to discord. Roughly
-// 15-25% of voices in a typical run come out hostile under this gate.
+// Discord is reserved for clearer aggressive signals so the default sound bed
+// stays calmer over long runs.
 function isHostile(p) {
-  if ((p.predationGain || 0) > 0.10) return true;
-  if ((p.signalR || 0) > 0.65) return true;
-  const g = p.genome;
-  if (g && g.cohesion < -0.05) return true;
-  if (g && p.energy < g.repro_thresh * 0.25) return true;
+  if ((p.predationGain || 0) > 0.28) return true;
+  if ((p.signalR || 0) > 0.82) return true;
   return false;
 }
 
@@ -140,6 +130,12 @@ export class AudioVoices {
     this._nextOnsetT = 0;     // next swing-quantised trigger time (ctx clock)
     this._swingSlot = 0;      // 0 = down-beat just fired, next gap is short
                               // 1 = up-beat just fired, next gap is long
+    this._deathWindow = { count: 0, xSum: 0 };
+    this._wallWindow = [];
+    this._ornament = null;
+    this._wallOrnament = null;
+    this._lastOrnamentT = -999;
+    this._lastWallOrnamentT = -999;
   }
 
   enable() {
@@ -154,11 +150,25 @@ export class AudioVoices {
       this.ctx = new Ctx();
       this.master = this.ctx.createGain();
       this.master.gain.value = 0;
-      this.master.connect(this.ctx.destination);
+      this.limiter = this.ctx.createDynamicsCompressor();
+      this.limiter.threshold.value = -18;
+      this.limiter.knee.value = 18;
+      this.limiter.ratio.value = 5;
+      this.limiter.attack.value = 0.006;
+      this.limiter.release.value = 0.18;
+      this.master.connect(this.limiter);
+      this.limiter.connect(this.ctx.destination);
       this.master.gain.setTargetAtTime(this.masterVolume, this.ctx.currentTime, 0.05);
       this._noiseBuffer = this._makeNoiseBuffer();
       this._nextOnsetT = this.ctx.currentTime + 0.05;
       this._swingSlot = 0;
+      this._deathWindow.count = 0;
+      this._deathWindow.xSum = 0;
+      this._wallWindow.length = 0;
+      this._ornament = null;
+      this._wallOrnament = null;
+      this._lastOrnamentT = -999;
+      this._lastWallOrnamentT = -999;
       this.enabled = true;
       return true;
     } catch (err) {
@@ -170,6 +180,11 @@ export class AudioVoices {
   disable() {
     if (!this.ctx) { this.enabled = false; return; }
     this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+    this._deathWindow.count = 0;
+    this._deathWindow.xSum = 0;
+    this._wallWindow.length = 0;
+    this._ornament = null;
+    this._wallOrnament = null;
     this.enabled = false;
   }
 
@@ -191,7 +206,13 @@ export class AudioVoices {
   }
 
   tick(world, dtSec, camera = null) {
-    if (!this.ctx || !this.enabled || !world.particles) return;
+    if (!this.ctx || !this.enabled || !world.particles) {
+      if (world) {
+        if (world._wallSoundEvents) world._wallSoundEvents.length = 0;
+        if (world._deathSoundEvents) world._deathSoundEvents.length = 0;
+      }
+      return;
+    }
     this._lastTickT += dtSec;
     if (this._lastTickT < 0.033) return;
     this._lastTickT = 0;
@@ -251,6 +272,20 @@ export class AudioVoices {
       candidates.push(p);
     }
 
+    if (this._ornament && now >= this._ornament.t) {
+      const p = this._ornament.p;
+      this._ornament = null;
+      if (p && !p.dead && this._activeVoices < MAX_VOICES) {
+        this._lastTrigger.set(p.id, now);
+        this._playVoice(p, world, { ornament: true });
+      }
+    }
+    if (this._wallOrnament && now >= this._wallOrnament.t) {
+      const ev = this._wallOrnament.ev;
+      this._wallOrnament = null;
+      if (ev) this._playWallEvent(ev, true);
+    }
+
     // Swing-meter gate. Voices may only trigger on swing-quantised eighth-
     // note onsets. If the current ctx time is before the next scheduled
     // onset, hold candidates for now (they'll either re-qualify next tick
@@ -265,7 +300,21 @@ export class AudioVoices {
           this._lastTrigger.set(p.id, now);
           this._playVoice(p, world);
         }
+        this._scheduleOrnament(candidates[0], now);
       }
+      const deathGate = Math.max(DEATH_CHORUS_MIN, Math.floor(ps.length * DEATH_CHORUS_POP_FRAC));
+      if (this._deathWindow.count >= deathGate) {
+        this._playDeathCue(this._deathWindow.xSum / this._deathWindow.count,
+          Math.min(1, this._deathWindow.count / (deathGate * 2)));
+      }
+      if (this._wallWindow.length > 0) {
+        const slots = Math.min(4, this._wallWindow.length);
+        for (let i = 0; i < slots; i++) this._playWallEvent(this._wallWindow[i], false);
+        if (this._wallWindow.length >= 3) this._scheduleWallOrnament(this._wallWindow[0], now);
+        this._wallWindow.length = 0;
+      }
+      this._deathWindow.count = 0;
+      this._deathWindow.xSum = 0;
       // Advance to the next swing-eighth onset whether or not anything
       // played; silence in a slot is fine, but the meter keeps marching.
       // swingSlot toggles each onset: 0→down-beat, 1→up-beat, 0→down-beat.
@@ -293,34 +342,42 @@ export class AudioVoices {
     // per tick so a digging colony can't drown the soundscape.
     const evs = world._wallSoundEvents;
     if (evs && evs.length > 0) {
-      let fired = 0;
       for (const ev of evs) {
-        if (fired >= 4) break;
-        if (ev.kind === 'grunt') this._playGrunt(ev.x);
-        else if (ev.kind === 'plop') this._playPlop(ev.x);
-        fired++;
+        if (this._wallWindow.length >= 16) break;
+        this._wallWindow.push(ev);
       }
       evs.length = 0;
+    }
+
+    // Death cue: only if enough particles died inside the current musical
+    // note window. Single deaths stay silent; collapse waves get a mournful
+    // slide once on the next swing onset.
+    const deaths = world._deathSoundEvents;
+    if (deaths && deaths.length > 0) {
+      for (const ev of deaths) {
+        this._deathWindow.count++;
+        this._deathWindow.xSum += ev.x || W * 0.5;
+      }
+      deaths.length = 0;
     }
   }
 
   // Short percussive scratch — bandpass-filtered noise burst, suggests
-  // friction/scraping. ~150ms, low-mid centered. Routed through a dedicated
-  // bus gain (≈3× master) so wall events stand out vs the lowpass-warm
-  // music — earlier 0.5 peak got swamped by simultaneous voice triggers.
-  _playGrunt(px) {
+  // friction/scraping. ~150ms, low-mid centered. Kept gentle: earlier boosted
+  // wall events could read as random loud claps in dense builder epochs.
+  _playGrunt(px, ornament = false) {
     const ctx = this.ctx;
     const t = ctx.currentTime;
     const noise = ctx.createBufferSource();
     noise.buffer = this._noiseBuffer;
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(220 + Math.random() * 80, t);
-    filter.frequency.exponentialRampToValueAtTime(100, t + 0.12);
+    filter.frequency.setValueAtTime((220 + Math.random() * 80) * (ornament ? 1.25 : 1), t);
+    filter.frequency.exponentialRampToValueAtTime(100 * (ornament ? 1.15 : 1), t + 0.12);
     filter.Q.value = 4;
     const env = ctx.createGain();
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(1.6, t + 0.005);
+    env.gain.linearRampToValueAtTime(0.22 * (ornament ? 0.55 : 1), t + 0.006);
     env.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
     noise.connect(filter).connect(env);
     let last = env;
@@ -341,17 +398,16 @@ export class AudioVoices {
   }
 
   // Short rounded thud — sine drop suggests setting something down. ~120ms.
-  // Same loudness boost as grunt so wall events cut through.
-  _playPlop(px) {
+  _playPlop(px, ornament = false) {
     const ctx = this.ctx;
     const t = ctx.currentTime;
     const osc = ctx.createOscillator();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(420, t);
-    osc.frequency.exponentialRampToValueAtTime(70, t + 0.12);
+    osc.frequency.setValueAtTime(ornament ? 520 : 420, t);
+    osc.frequency.exponentialRampToValueAtTime(ornament ? 95 : 70, t + 0.12);
     const env = ctx.createGain();
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(1.5, t + 0.008);
+    env.gain.linearRampToValueAtTime(0.24 * (ornament ? 0.55 : 1), t + 0.010);
     env.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
     osc.connect(env);
     let last = env;
@@ -371,12 +427,98 @@ export class AudioVoices {
     };
   }
 
-  _playVoice(p, world = null) {
+  _playDeathCue(px, intensity = 0.5) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const dur = 0.42 + intensity * 0.28;
+    const peak = 0.12 + intensity * 0.08;
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(196, t);
+    osc.frequency.exponentialRampToValueAtTime(92, t + dur);
+
+    const formant = ctx.createBiquadFilter();
+    formant.type = 'lowpass';
+    formant.frequency.setValueAtTime(720, t);
+    formant.frequency.exponentialRampToValueAtTime(360, t + dur);
+    formant.Q.value = 5.5;
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(peak, t + 0.035);
+    env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(formant).connect(env);
+
+    let last = env;
+    if (ctx.createStereoPanner) {
+      const pan = ctx.createStereoPanner();
+      const xn = (px || 0) / Math.max(1, W);
+      pan.pan.value = Math.max(-1, Math.min(1, xn * 2 - 1));
+      env.connect(pan);
+      last = pan;
+    }
+    last.connect(this.master);
+    osc.start(t);
+    osc.stop(t + dur + 0.04);
+    osc.onended = () => {
+      try { osc.disconnect(); formant.disconnect(); env.disconnect();
+        if (last !== env) last.disconnect(); } catch {}
+    };
+  }
+
+  _scheduleOrnament(p, now) {
+    if (!p || this._ornament || now - this._lastOrnamentT < ORNAMENT_COOLDOWN_S) return;
+    const sig = ((p.signalR || 0) + (p.signalG || 0) + (p.signalB || 0)) / 3;
+    if (sig < ORNAMENT_SIGNAL_GATE || (p.soundAmp || 0) < 0.50) return;
+    const seed = ((p.id * 1664525 + (((now * 1000) | 0) * 1013904223)) >>> 0);
+    const graceBeforeDownbeat = (seed & 1) === 1;
+    let delay;
+    if (graceBeforeDownbeat) {
+      const nextDownbeatGap = this._swingSlot === 0
+        ? LONG_EIGHTH_S + SHORT_EIGHTH_S
+        : SHORT_EIGHTH_S;
+      delay = Math.max(0.035, nextDownbeatGap - BEAT_DUR_S / 8);
+    } else {
+      const longGap = this._swingSlot === 0
+        ? LONG_EIGHTH_S
+        : SHORT_EIGHTH_S + LONG_EIGHTH_S;
+      delay = longGap * 0.5;
+    }
+    this._ornament = { t: now + delay, p };
+    this._lastOrnamentT = now;
+  }
+
+  _scheduleWallOrnament(ev, now) {
+    if (!ev || this._wallOrnament || now - this._lastWallOrnamentT < ORNAMENT_COOLDOWN_S) return;
+    const seed = ((((ev.id || 1) * 1103515245) + ((((now * 1000) | 0) * 2654435761) >>> 0)) >>> 0);
+    const graceBeforeDownbeat = (seed & 1) === 1;
+    let delay;
+    if (graceBeforeDownbeat) {
+      const nextDownbeatGap = this._swingSlot === 0
+        ? LONG_EIGHTH_S + SHORT_EIGHTH_S
+        : SHORT_EIGHTH_S;
+      delay = Math.max(0.035, nextDownbeatGap - BEAT_DUR_S / 8);
+    } else {
+      const longGap = this._swingSlot === 0
+        ? LONG_EIGHTH_S
+        : SHORT_EIGHTH_S + LONG_EIGHTH_S;
+      delay = longGap * 0.5;
+    }
+    this._wallOrnament = { t: now + delay, ev };
+    this._lastWallOrnamentT = now;
+  }
+
+  _playWallEvent(ev, ornament = false) {
+    if (ev.kind === 'grunt') this._playGrunt(ev.x, ornament);
+    else if (ev.kind === 'plop') this._playPlop(ev.x, ornament);
+  }
+
+  _playVoice(p, world = null, opts = {}) {
     const ctx = this.ctx;
     const ch = ((p.soundCh | 0) % 4 + 4) % 4;
-    const variant = ((p.id | 0) % 6 + 6) % 6;
     const hostile = isHostile(p);
     const set = hostile ? DISCORD[ch] : CHORD[ch];
+    const variant = ((p.id | 0) % set.length + set.length) % set.length;
     const baseFreq = set[variant];
     const detune = (((p.id * 31337) >>> 0) % 200 - 100) / 10000;   // ±0.01
     // Key = base transpose (constant) + per-epoch transpose. Both as
@@ -384,7 +526,8 @@ export class AudioVoices {
     const halfSteps = world && world.clades ? (world.clades.epochsStarted || 0) : 0;
     const totalSemis = KEY_BASE_SEMITONES + halfSteps;
     const keyMult = Math.pow(2, totalSemis / 12);
-    const freq = baseFreq * (1 + detune) * keyMult;
+    let freq = baseFreq * (1 + detune) * keyMult;
+    if (opts.ornament) freq *= Math.pow(2, 7 / 12);
 
     // Per-particle trait modulation so listeners can tell apart calling kind:
     //   • energyN    → envelope decay length (energetic = lingering ring)
@@ -393,7 +536,7 @@ export class AudioVoices {
     const gn = p.genome;
     const energyN   = Math.max(0, Math.min(1, (p.energy || 4) / 8));
     const cohesionN = gn ? Math.max(0, Math.min(1, (gn.cohesion + 0.5) / 1.5)) : 0.5;
-    const slotsN    = gn && gn.brain ? gn.brain.enabledCount() / 8 : 0.5;
+    const slotsN    = gn && gn.brain ? gn.brain.enabledCount() / 10 : 0.5;
 
     const t = ctx.currentTime;
     const instForAttack = INSTRUMENTS[(p.species | 0) % INSTRUMENTS.length];
@@ -401,10 +544,16 @@ export class AudioVoices {
     const attack = (hostile
       ? 0.003 + (1 - cohesionN) * 0.005
       : 0.008 + (1 - cohesionN) * 0.018) * attackMul;
-    const dur = (hostile ? 0.10 : 0.16)
-              + Math.min(0.3, p.soundAmp) * 0.30
-              + energyN * 0.18;
-    const peak = Math.min(0.55, p.soundAmp * (hostile ? 0.9 : 0.7));
+    const rareKey = ((p.id * 1103515245 + ((world && world.tick) || 0) * 2654435761) >>> 0) % 113;
+    const rareMode = (!hostile && p.soundAmp > 0.55)
+      ? (rareKey === 0 ? 'boop' : (rareKey === 1 ? 'boing' : ''))
+      : '';
+    let dur = (hostile ? 0.10 : 0.16)
+            + Math.min(0.3, p.soundAmp) * 0.30
+            + energyN * 0.18;
+    if (rareMode) dur += 0.16;
+    if (opts.ornament) dur *= 0.48;
+    const peak = Math.min(0.45, p.soundAmp * (hostile ? 0.65 : 0.55)) * (opts.ornament ? 0.52 : 1);
 
     const env = ctx.createGain();
     env.gain.setValueAtTime(0, t);
@@ -413,7 +562,46 @@ export class AudioVoices {
 
     const sources = [];
 
-    if (hostile && ch === 3) {
+    if (rareMode === 'boop') {
+      // Rare pitched vocal-ish "boop": two formant bands over a sine carrier.
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq * 0.92, t);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.04, t + dur * 0.45);
+      const formA = ctx.createBiquadFilter();
+      formA.type = 'bandpass';
+      formA.frequency.value = 720 + ch * 120;
+      formA.Q.value = 8;
+      const formB = ctx.createBiquadFilter();
+      formB.type = 'bandpass';
+      formB.frequency.value = 1250 + variant * 55;
+      formB.Q.value = 5;
+      const mixA = ctx.createGain();
+      const mixB = ctx.createGain();
+      mixA.gain.value = 0.75;
+      mixB.gain.value = 0.34;
+      osc.connect(formA).connect(mixA).connect(env);
+      osc.connect(formB).connect(mixB).connect(env);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
+      sources.push(osc, formA, formB, mixA, mixB);
+    } else if (rareMode === 'boing') {
+      // Rare resonant spring/boing: pitch bends through a narrow bandpass.
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq * 0.65, t);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.55, t + 0.045);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.82, t + dur);
+      const reson = ctx.createBiquadFilter();
+      reson.type = 'bandpass';
+      reson.frequency.setValueAtTime(freq * 2.2, t);
+      reson.frequency.exponentialRampToValueAtTime(freq * 1.1, t + dur);
+      reson.Q.value = 13;
+      osc.connect(reson).connect(env);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
+      sources.push(osc, reson);
+    } else if (hostile && ch === 3) {
       // Highest hostile register: a filtered noise burst.
       const noise = ctx.createBufferSource();
       noise.buffer = this._noiseBuffer;

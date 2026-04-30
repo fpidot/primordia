@@ -5,6 +5,8 @@
   "scripts": {
     "test": "node tests/run-all.js",
     "test:soup": "node tests/baseline-soup.test.js",
-    "test:maze": "node tests/baseline-maze.test.js"
+    "test:maze": "node tests/baseline-maze.test.js",
+    "bench:cpu": "node tools/bench-cpu.js",
+    "bench:browser": "node tools/bench-browser.js"
   }
 }

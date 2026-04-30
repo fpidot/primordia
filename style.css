@@ -49,10 +49,54 @@ html, body {
   margin: 0 0 16px; color: var(--fg-dim); font-size: 11px;
 }
 
+.panel-tabs {
+  position: sticky;
+  top: -14px;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  padding: 6px 0 0;
+  margin: -2px 0 6px;
+  background: linear-gradient(180deg, var(--bg-2) 0%, rgba(14,18,24,0.96) 78%, rgba(14,18,24,0));
+  border-bottom: 1px solid var(--line);
+}
+.panel-tabs button {
+  padding: 7px 4px 6px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-dim);
+  transform: none;
+}
+.panel-tabs button:hover {
+  background: rgba(255,255,255,0.035);
+  border-color: rgba(86,194,230,0.35);
+}
+.panel-tabs button.active {
+  color: var(--fg);
+  background: linear-gradient(180deg, rgba(86,194,230,0.10), rgba(86,194,230,0.03));
+  border-color: var(--accent);
+}
+.panel-section { display: none; }
+.sidebar[data-active-panel="run"] .panel-section[data-panel="run"],
+.sidebar[data-active-panel="world"] .panel-section[data-panel="world"],
+.sidebar[data-active-panel="data"] .panel-section[data-panel="data"],
+.sidebar[data-active-panel="tools"] .panel-section[data-panel="tools"],
+.sidebar[data-active-panel="lineages"] .panel-section[data-panel="lineages"],
+.sidebar[data-active-panel="log"] .panel-section[data-panel="log"] {
+  display: block;
+}
+
 section {
   border-top: 1px solid var(--line);
   padding: 12px 0 14px;
 }
+.panel-tabs + section,
 section:first-of-type { border-top: none; padding-top: 0; }
 
 h2 {
@@ -78,11 +122,40 @@ button:hover { background: #1d2330; border-color: #2e3a4d; }
 button:active { transform: translateY(1px); }
 button.primary { background: linear-gradient(180deg, #1f3a4a, #16252f); border-color: #2a4d63; }
 button.active { background: linear-gradient(180deg, #2a3858, #1a2540); border-color: var(--accent-2); }
+.panel-tabs button {
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.panel-tabs button:hover {
+  background: rgba(255,255,255,0.035);
+  border-color: rgba(86,194,230,0.35);
+}
+.panel-tabs button.active {
+  color: var(--fg);
+  background: linear-gradient(180deg, rgba(86,194,230,0.10), rgba(86,194,230,0.03));
+  border-color: var(--accent);
+}
+.panel-tabs button:active { transform: none; }
 
 .row { display: flex; gap: 6px; }
 .row > * { flex: 1; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .grid2 > * { width: 100%; }
+.button-group {
+  margin: 0 0 10px;
+}
+.button-group:last-of-type { margin-bottom: 0; }
+.button-group > button { width: 100%; }
+.group-label {
+  margin: 0 0 5px;
+  color: var(--fg-dim);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
 
 label {
   display: block;
@@ -199,7 +272,7 @@ select {
 }
 .clade-row {
   display: grid;
-  grid-template-columns: 14px auto 1fr auto auto;
+  grid-template-columns: 14px minmax(0, 1fr) minmax(42px, 0.7fr) auto auto auto auto;
   align-items: center;
   gap: 6px;
   padding: 3px 5px;
@@ -232,14 +305,31 @@ select {
 .clade-row .id {
   color: var(--fg);
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .clade-row .meta {
   color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .clade-row .pop {
   color: var(--fg);
   text-align: right;
 }
+.clade-row .btn-mini {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--fg-dim);
+  padding: 2px 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+}
+.clade-row .btn-mini:hover { color: var(--fg); border-color: var(--accent); }
 .clade-row canvas {
   grid-column: 1 / -1;
   width: 100%;
@@ -254,7 +344,7 @@ select {
 }
 .cluster-row {
   display: grid;
-  grid-template-columns: 14px 1fr auto auto auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto auto auto auto;
   align-items: center;
   gap: 6px;
   padding: 4px 6px;
@@ -291,9 +381,53 @@ select {
 }
 .cluster-row .btn-mini:hover { color: var(--fg); border-color: var(--accent); }
 .cluster-row .btn-mini.active { color: var(--accent); border-color: var(--accent); }
+.curated {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.curated-row {
+  display: grid;
+  grid-template-columns: 12px minmax(50px, 0.7fr) minmax(38px, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.curated-row .swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+.curated-row .label {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.curated-row .who,
+.curated-row .metric {
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.curated-row .btn-mini {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--fg-dim);
+  padding: 2px 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+}
+.curated-row .btn-mini:hover { color: var(--fg); border-color: var(--accent); }
 
-/* Preset buttons get a small subscript count showing how many particles
-   the preset seeds, so users see scale without reading presets.js. */
 button[data-preset] {
   display: flex;
   flex-direction: column;
@@ -302,13 +436,6 @@ button[data-preset] {
   line-height: 1.2;
   padding: 6px 8px;
 }
-.preset-count {
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--fg-dim);
-  letter-spacing: 0.05em;
-}
-button[data-preset]:hover .preset-count { color: var(--fg); }
 
 /* Vitals subsection within stats — visually separated from species rows */
 .row-stat.vitals-divider {
@@ -545,8 +672,12 @@ button[data-preset]:hover .preset-count { color: var(--fg); }
   display: flex; gap: 6px;
   margin: 6px 0 4px;
 }
-.specimen .btn-chase {
+.specimen .btn-chase,
+.specimen .btn-chase-cluster,
+.specimen .btn-duplicate-specimen,
+.specimen .btn-export-specimen {
   flex: 1;
+  min-width: 0;
   background: var(--bg-3);
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -555,8 +686,12 @@ button[data-preset]:hover .preset-count { color: var(--fg); }
   font-size: 11px;
   cursor: pointer;
 }
-.specimen .btn-chase:hover { background: #1d2330; }
-.specimen .btn-chase.active {
+.specimen .btn-chase:hover,
+.specimen .btn-chase-cluster:hover,
+.specimen .btn-duplicate-specimen:hover,
+.specimen .btn-export-specimen:hover { background: #1d2330; }
+.specimen .btn-chase.active,
+.specimen .btn-chase-cluster.active {
   background: linear-gradient(180deg, #1f3a4a, #16252f);
   border-color: var(--accent);
   color: var(--accent);
@@ -570,6 +705,16 @@ button[data-preset]:hover .preset-count { color: var(--fg); }
   vertical-align: middle;
   box-shadow: 0 0 6px currentColor;
 }
+.wall-chip {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  display: inline-block;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.20);
+}
+.wall-solid { background: #ddd5c8; }
+.wall-glass { background: #3a829d; }
+.wall-mud { background: #9c7a45; }
 .specimen h3 {
   margin: 8px 0 4px;
   font-size: 10px;
