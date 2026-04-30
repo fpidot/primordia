@@ -367,6 +367,11 @@ export class World {
     this.totalBorn = 0;
     this.totalDied = 0;
     this._wallCount = 0;
+    // Bump version so the renderer's wall cache key changes — without this,
+    // the previous preset's walls keep displaying until the user paints
+    // something new (the underlying data is empty, but the cached cell
+    // list never gets invalidated).
+    this._wallsVersion++;
     this._brainsDirty = true;
     this.clades = new CladeTracker();
     // Clusters are recomputed on a 12-tick cadence; if we don't clear here,
