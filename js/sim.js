@@ -238,6 +238,7 @@ export class World {
     // GPU pair-force kernel — set later via attachGPU().
     this._gpu = null;
     this._gpuResults = null;
+    this._gpuPending = null;           // Phase 4f — pipelined readback promise
     this._brainsDirty = true;          // re-upload brain weights when any brain changed
     this._extrasStaging = null;        // Float32Array(maxParticles × EXTRAS_STRIDE) — lazy alloc
     this._gpuValidate = false;
@@ -251,6 +252,7 @@ export class World {
     this._gpuEnabled = !!enabled && !!this._gpu;
     if (!this._gpuEnabled) {
       this._gpuResults = null;
+      this._gpuPending = null;
     } else {
       // First GPU-enabled tick must (re)upload all brain weights so the brain
       // kernel doesn't run with the GPU buffer's zeroed initial state.
@@ -373,6 +375,9 @@ export class World {
     // list never gets invalidated).
     this._wallsVersion++;
     this._brainsDirty = true;
+    // Phase 4f — drop any in-flight GPU readback so the next tick doesn't
+    // apply results computed against the previous (now-replaced) world.
+    this._gpuPending = null;
     this.clades = new CladeTracker();
     // Clusters are recomputed on a 12-tick cadence; if we don't clear here,
     // stale cluster flags + chase locks survive the preset switch until the
@@ -534,88 +539,30 @@ export class World {
       }
     }
 
-    // ── GPU pair-force + stats + brain forward pass ──────────────────
-    // Upload particles, attractions, brain weights (only if dirty), brain
-    // state, and chem extras pre-sampled from the field. Dispatch the four
-    // compute pipelines (clear hash → build hash → pair_force → brain_forward)
-    // and await the readback. When GPU mode is on, the CPU loop skips:
-    //   * pair-force math and stat accumulation (from 4d)
-    //   * brain input building and CTRNN forward (4e)
+    // ── GPU pair-force + brain forward (pipelined) ───────────────────
+    // Phase 4f: GPU compute is pipelined one tick ahead of CPU work.
+    // At the start of each tick we await the previous tick's readback;
+    // those results drive THIS tick's CPU integration. After CPU work
+    // completes (positions/state updated for this tick) we kick off the
+    // next dispatch + readback without awaiting — letting GPU compute
+    // overlap with the next frame's CPU work + the JS event loop.
+    //
+    // Net effect: GPU forces & brain outputs are 1 tick stale, which is
+    // tolerable because (a) CTRNNs already have internal lag from the
+    // recurrent state machine, (b) typical particle motion is <1 px/tick
+    // so positions are virtually identical between adjacent ticks. CPU-
+    // only mode is unchanged.
     let useGpuPairs = false;
-    if (this._gpuEnabled && this._gpu && N > 0) {
+    if (this._gpuPending) {
       try {
-        // Pre-sample field at each particle's cell — used as brain inputs
-        if (!this._extrasStaging || this._extrasStaging.length < this.maxParticles * EXTRAS_STRIDE) {
-          this._extrasStaging = new Float32Array(this.maxParticles * EXTRAS_STRIDE);
-        }
-        const extras = this._extrasStaging;
-        const sf0 = this._soundFields[0], sf1 = this._soundFields[1],
-              sf2 = this._soundFields[2], sf3 = this._soundFields[3];
-        for (let i = 0; i < N; i++) {
-          const p = ps[i];
-          const o = i * EXTRAS_STRIDE;
-          if (p.dead) {
-            for (let k = 0; k < EXTRAS_STRIDE; k++) extras[o + k] = 0;
-            continue;
-          }
-          const sgx = clamp((p.x / CELL) | 0, 1, GW - 2);
-          const sgy = clamp((p.y / CELL) | 0, 1, GH - 2);
-          const sIdx = sgy * GW + sgx;
-          extras[o + 0] = Math.tanh(f0[sIdx] * 0.5);
-          extras[o + 1] = Math.tanh(f1[sIdx] * 0.3);
-          extras[o + 2] = Math.tanh((f0[sIdx + 1] - f0[sIdx - 1]) * 1.0);
-          extras[o + 3] = Math.tanh((f0[sIdx + GW] - f0[sIdx - GW]) * 1.0);
-          extras[o + 4] = Math.tanh((f1[sIdx + 1] - f1[sIdx - 1]) * 1.0);
-          extras[o + 5] = Math.tanh((f1[sIdx + GW] - f1[sIdx - GW]) * 1.0);
-          extras[o + 6] = Math.tanh(sf0[sIdx] * 0.6);
-          extras[o + 7] = Math.tanh(sf1[sIdx] * 0.6);
-          extras[o + 8] = Math.tanh(sf2[sIdx] * 0.6);
-          extras[o + 9] = Math.tanh(sf3[sIdx] * 0.6);
-          extras[o + 10] = p.incomingBondMsgR;    // Phase 6b — bondMsg R channel
-          extras[o + 11] = p.incomingBondMsgG;    // Phase 6b — G channel
-          extras[o + 12] = p.incomingBondMsgB;    // Phase 6b — B channel
-          // Phase 6a — cluster geometry. Lookup once; if absent, all zeros.
-          const cl = this._particleToCluster.get(p.id);
-          if (cl) {
-            extras[o + 13] = Math.tanh((cl.cx - p.x) / 80);   // dx normalized
-            extras[o + 14] = Math.tanh((cl.cy - p.y) / 80);
-            extras[o + 15] = Math.tanh(Math.log2(cl.count + 1) * 0.3);
-            extras[o + 16] = 1;
-            extras[o + 17] = cl.alarm || 0;                  // Phase 6c
-          } else {
-            extras[o + 13] = 0;
-            extras[o + 14] = 0;
-            extras[o + 15] = 0;
-            extras[o + 16] = 0;
-            extras[o + 17] = 0;
-          }
-          extras[o + 18] = (p.wallCarry || 0) / WALL_CARRY_MAX;   // Thread B-2
-          // Wall proximity sensors — N/S/E/W cardinal scan
-          {
-            const wgx = clamp((p.x / CELL) | 0, 0, GW - 1);
-            const wgy = clamp((p.y / CELL) | 0, 0, GH - 1);
-            const ws = scanWallProximity(walls, wgx, wgy);
-            extras[o + 19] = ws.wn;
-            extras[o + 20] = ws.ws;
-            extras[o + 21] = ws.we;
-            extras[o + 22] = ws.ww;
-          }
-        }
-
-        this._gpu.upload(ps);
-        this._gpu.uploadExtras(extras);
-        if (this._brainsDirty) {
-          this._gpu.uploadBrains(ps);
-          this._brainsDirty = false;
-        }
-        this._gpu.uploadBrainState(ps);
-        this._gpu.dispatch();
-        this._gpuResults = await this._gpu.readback();
-        useGpuPairs = true;
+        this._gpuResults = await this._gpuPending;
+        this._gpuPending = null;
+        if (this._gpuEnabled && N > 0) useGpuPairs = true;
       } catch (err) {
-        console.warn('[gpu] dispatch failed; falling back to CPU', err);
+        console.warn('[gpu] pipelined readback failed; falling back to CPU', err);
         this._gpuEnabled = false;
         this._gpuResults = null;
+        this._gpuPending = null;
       }
     } else {
       this._gpuResults = null;
@@ -1411,6 +1358,91 @@ export class World {
     this.clades.sweep(this);
     this.updateClusters();
     this.smoothClusterEnergy();
+
+    // ── 6. Pipeline NEXT tick's GPU compute (Phase 4f). Doesn't block.
+    // Uses post-integration state so GPU sees latest positions; results
+    // come back at the start of next tick.
+    if (this._gpuEnabled && this._gpu && this.particles.length > 0 && !this._gpuPending) {
+      try {
+        this._buildGpuExtras();
+        this._gpu.upload(this.particles);
+        this._gpu.uploadExtras(this._extrasStaging);
+        if (this._brainsDirty) {
+          this._gpu.uploadBrains(this.particles);
+          this._brainsDirty = false;
+        }
+        this._gpu.uploadBrainState(this.particles);
+        this._gpu.dispatch();
+        this._gpuPending = this._gpu.readback();
+      } catch (err) {
+        console.warn('[gpu] pipelined dispatch failed; disabling GPU', err);
+        this._gpuEnabled = false;
+        this._gpuPending = null;
+      }
+    }
+  }
+
+  // Fill the extras staging buffer from current particle/world state. Called
+  // before GPU dispatch so the brain_forward shader has chem-field samples,
+  // bond-network messages, cluster geometry, and wall sensors that the CPU
+  // computes more easily than the GPU.
+  _buildGpuExtras() {
+    const ps = this.particles;
+    const N = ps.length;
+    const f0 = this.field[0], f1 = this.field[1];
+    const walls = this.walls;
+    if (!this._extrasStaging || this._extrasStaging.length < this.maxParticles * EXTRAS_STRIDE) {
+      this._extrasStaging = new Float32Array(this.maxParticles * EXTRAS_STRIDE);
+    }
+    const extras = this._extrasStaging;
+    const sf0 = this._soundFields[0], sf1 = this._soundFields[1],
+          sf2 = this._soundFields[2], sf3 = this._soundFields[3];
+    for (let i = 0; i < N; i++) {
+      const p = ps[i];
+      const o = i * EXTRAS_STRIDE;
+      if (p.dead) {
+        for (let k = 0; k < EXTRAS_STRIDE; k++) extras[o + k] = 0;
+        continue;
+      }
+      const sgx = clamp((p.x / CELL) | 0, 1, GW - 2);
+      const sgy = clamp((p.y / CELL) | 0, 1, GH - 2);
+      const sIdx = sgy * GW + sgx;
+      extras[o + 0] = Math.tanh(f0[sIdx] * 0.5);
+      extras[o + 1] = Math.tanh(f1[sIdx] * 0.3);
+      extras[o + 2] = Math.tanh((f0[sIdx + 1] - f0[sIdx - 1]) * 1.0);
+      extras[o + 3] = Math.tanh((f0[sIdx + GW] - f0[sIdx - GW]) * 1.0);
+      extras[o + 4] = Math.tanh((f1[sIdx + 1] - f1[sIdx - 1]) * 1.0);
+      extras[o + 5] = Math.tanh((f1[sIdx + GW] - f1[sIdx - GW]) * 1.0);
+      extras[o + 6] = Math.tanh(sf0[sIdx] * 0.6);
+      extras[o + 7] = Math.tanh(sf1[sIdx] * 0.6);
+      extras[o + 8] = Math.tanh(sf2[sIdx] * 0.6);
+      extras[o + 9] = Math.tanh(sf3[sIdx] * 0.6);
+      extras[o + 10] = p.incomingBondMsgR;
+      extras[o + 11] = p.incomingBondMsgG;
+      extras[o + 12] = p.incomingBondMsgB;
+      const cl = this._particleToCluster.get(p.id);
+      if (cl) {
+        extras[o + 13] = Math.tanh((cl.cx - p.x) / 80);
+        extras[o + 14] = Math.tanh((cl.cy - p.y) / 80);
+        extras[o + 15] = Math.tanh(Math.log2(cl.count + 1) * 0.3);
+        extras[o + 16] = 1;
+        extras[o + 17] = cl.alarm || 0;
+      } else {
+        extras[o + 13] = 0;
+        extras[o + 14] = 0;
+        extras[o + 15] = 0;
+        extras[o + 16] = 0;
+        extras[o + 17] = 0;
+      }
+      extras[o + 18] = (p.wallCarry || 0) / WALL_CARRY_MAX;
+      const wgx = clamp((p.x / CELL) | 0, 0, GW - 1);
+      const wgy = clamp((p.y / CELL) | 0, 0, GH - 1);
+      const ws = scanWallProximity(walls, wgx, wgy);
+      extras[o + 19] = ws.wn;
+      extras[o + 20] = ws.ws;
+      extras[o + 21] = ws.we;
+      extras[o + 22] = ws.ww;
+    }
   }
 
   // Cluster-wide energy smoothing — every CLUSTER_SMOOTH_INTERVAL ticks,
