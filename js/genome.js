@@ -89,6 +89,18 @@ export function makeGenome(species, rng = Math.random, opts = {}) {
     // hard if I catch it" (this trait); enables evolved roles like "spare
     // your symbiote, exterminate your competitor".
     prey_preference: makePreyPref(rng),
+    // Wall-deposit affinity ∈ [-1, 1]. Builders (positive) prefer placing
+    // walls adjacent to existing walls — extends structures into useful
+    // forms. Scatterers (negative) prefer isolated cells — territorial
+    // markers, scattered obstacles. Applied at deposit time when picking
+    // among candidate cells.
+    wall_affinity: (rng() - 0.5) * 0.6,
+    // Prey-trap-walling tendency ∈ [-1, 1]. Couples deposit choice to the
+    // particle's strongest prey_preference: positive → prefer cells next
+    // to many of that prey species (trap-building); negative → away from
+    // them (territorial avoidance). Combined with wall_affinity at the
+    // candidate-scoring step.
+    prey_walling: (rng() - 0.5) * 0.4,
     brain: opts.brain || makeBrain(rng, 4),
   };
 }
@@ -110,6 +122,8 @@ export function cloneGenome(g) {
     prey_preference: g.prey_preference
       ? Float32Array.from(g.prey_preference)
       : new Float32Array(NUM_SPECIES),
+    wall_affinity: g.wall_affinity ?? 0,
+    prey_walling: g.prey_walling ?? 0,
     brain: g.brain ? cloneBrain(g.brain) : makeBrain(),
   };
 }
@@ -137,6 +151,8 @@ export function mutate(g, rng = Math.random, boost = 1) {
   for (let i = 0; i < NUM_SPECIES; i++) {
     out.prey_preference[i] = clamp(out.prey_preference[i] + gauss(rng, r * 0.5), -1, 1);
   }
+  out.wall_affinity = clamp((out.wall_affinity ?? 0) + gauss(rng, r * 0.6), -1, 1);
+  out.prey_walling = clamp((out.prey_walling ?? 0) + gauss(rng, r * 0.4), -1, 1);
 
   // Mutate brain (clones + perturbs)
   out.brain = g.brain ? mutateBrain(g.brain, rng, g.mut_rate, boost) : makeBrain(rng);
@@ -175,6 +191,8 @@ export function crossoverGenome(a, b, rng = Math.random) {
       if (rng() < 0.5) out.prey_preference[i] = b.prey_preference[i];
     }
   }
+  if (rng() < 0.5) out.wall_affinity = b.wall_affinity ?? 0;
+  if (rng() < 0.5) out.prey_walling = b.prey_walling ?? 0;
   if (rng() < 0.5) out.species = b.species;
   out.brain = a.brain && b.brain ? crossoverBrain(a.brain, b.brain, rng)
                                  : (b.brain ? cloneBrain(b.brain) : cloneBrain(a.brain));
@@ -219,6 +237,8 @@ export function genomeToJSON(g) {
     cluster_affinity: g.cluster_affinity ?? 0,
     kin_aversion: g.kin_aversion ?? 0.5,
     prey_preference: g.prey_preference ? Array.from(g.prey_preference) : null,
+    wall_affinity: g.wall_affinity ?? 0,
+    prey_walling: g.prey_walling ?? 0,
     brain: g.brain ? brainToJSON(g.brain) : null,
   };
 }
@@ -251,6 +271,8 @@ export function genomeFromJSON(o) {
           return a;
         })()
       : new Float32Array(NUM_SPECIES),
+    wall_affinity: o.wall_affinity ?? 0,
+    prey_walling: o.prey_walling ?? 0,
     brain: o.brain ? brainFromJSON(o.brain) : makeBrain(),
   };
 }

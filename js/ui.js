@@ -21,7 +21,7 @@ export class UI {
     this.paused = false;
     this.speed = 1;
     this.activeBrush = 'none';
-    this.brushSize = 3;
+    this.brushSize = 2;
     this.brushStrength = 1;
     this.spawnSpecies = 0;
     this.dragging = false;
@@ -399,10 +399,14 @@ export class UI {
 
   applyBrushAt(x, y) {
     if (this.activeBrush === 'none') return;
-    // Brush radius in world px; multiplier 18 keeps default size 3 → ~54 px.
+    // Brush radius in world px; multiplier 5 = CELL, so size 1 paints a
+    // 2-cell-diameter line matching the maze generator's narrow walls.
+    // Size 5 paints a 10-cell-thick blob. World-space radius is constant
+    // regardless of zoom — painting at high zoom produces the same on-
+    // ground footprint as at full-fit zoom.
     this.world.brushApply(
       this.activeBrush, x, y,
-      this.brushSize * 18,
+      this.brushSize * 5,
       this.brushStrength,
       this.spawnSpecies,
     );

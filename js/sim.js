@@ -1038,11 +1038,15 @@ export class World {
       const digSig = sigmoid01(out[OUT_DIG]);
       const depSig = sigmoid01(out[OUT_DEPOSIT]);
       if (depSig > 0.6 && p.wallCarry > 0) {
-        // Deposit candidate cells in priority order: current cell first,
-        // then the cell *behind* velocity (lets a moving particle wall
-        // off its trail — a builder leaving its tunnel sealed). Speeds up
-        // emergence of useful structures by widening the action space
-        // beyond "block your own current cell".
+        // Build candidate cells: current + cell behind velocity. Score each
+        // by genome traits and pick the highest-scoring open cell.
+        //   wall_affinity > 0 → prefer cells adjacent to existing walls
+        //                       (extend structures); < 0 → isolated
+        //                       (scatter / mark territory)
+        //   prey_walling   > 0 → prefer cells near *favoured* prey species
+        //                       (trap-building); < 0 → away (territorial
+        //                       avoidance). Favoured prey = species with
+        //                       max prey_preference value.
         const sp = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
         const dgx = clamp((p.x / CELL) | 0, 0, GW - 1);
         const dgy = clamp((p.y / CELL) | 0, 0, GH - 1);
@@ -1052,21 +1056,73 @@ export class World {
           const by = clamp(dgy - Math.round(p.vy / sp), 0, GH - 1);
           if (bx !== dgx || by !== dgy) candidates.push([bx, by]);
         }
-        let placed = false;
-        for (const [tx, ty] of candidates) {
-          const didx = ty * GW + tx;
-          if (walls[didx] === 0) {
-            walls[didx] = WALL_SOLID;
-            this._wallCount++;
-            this._wallsVersion++;
-            p.wallCarry--;
-            p.energy -= WALL_DEPOSIT_COST;
-            this._wallSoundEvents.push({ kind: 'plop', x: p.x, y: p.y, id: p.id });
-            placed = true;
-            break;
+        const wallAff = p.genome.wall_affinity || 0;
+        const preyWall = p.genome.prey_walling || 0;
+        // Favoured prey species (only matters when prey_walling != 0)
+        let targetPrey = -1;
+        if (Math.abs(preyWall) > 0.05 && p.genome.prey_preference) {
+          let best = -Infinity;
+          for (let s = 0; s < NUM_SPECIES; s++) {
+            if (p.genome.prey_preference[s] > best) {
+              best = p.genome.prey_preference[s];
+              targetPrey = s;
+            }
           }
         }
-        // (placed=false simply means surrounded by walls — no-op)
+        let bestIdx = -1, bestTx = -1, bestTy = -1, bestScore = -Infinity;
+        for (const [tx, ty] of candidates) {
+          const didx = ty * GW + tx;
+          if (walls[didx] !== 0) continue;
+          let score = 0;
+          // Wall-adjacency component
+          if (Math.abs(wallAff) > 0.05) {
+            let nbWalls = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+              const yy = ty + dy;
+              if (yy < 0 || yy >= GH) continue;
+              for (let dx = -1; dx <= 1; dx++) {
+                const xx = tx + dx;
+                if (xx < 0 || xx >= GW) continue;
+                if (dx === 0 && dy === 0) continue;
+                if (walls[yy * GW + xx]) nbWalls++;
+              }
+            }
+            score += wallAff * (nbWalls / 8);    // -1..1 weighted
+          }
+          // Prey-walling component — count target-species particles within
+          // a small radius via the spatial hash (3×3 hash cells).
+          if (targetPrey >= 0) {
+            const cwx = (tx * CELL + CELL * 0.5);
+            const cwy = (ty * CELL + CELL * 0.5);
+            const hcx = (cwx / HASH_CELL) | 0;
+            const hcy = (cwy / HASH_CELL) | 0;
+            let preyCount = 0;
+            const hcx0 = Math.max(0, hcx - 1), hcx1 = Math.min(HW - 1, hcx + 1);
+            const hcy0 = Math.max(0, hcy - 1), hcy1 = Math.min(HH - 1, hcy + 1);
+            for (let yy = hcy0; yy <= hcy1; yy++) {
+              for (let xx = hcx0; xx <= hcx1; xx++) {
+                let j = this.cellHead[yy * HW + xx];
+                while (j !== -1) {
+                  const q = ps[j];
+                  if (q && !q.dead && q.species === targetPrey) preyCount++;
+                  j = this.cellNext[j];
+                }
+              }
+            }
+            score += preyWall * Math.min(1, preyCount / 6);
+          }
+          if (score > bestScore) {
+            bestScore = score; bestIdx = didx; bestTx = tx; bestTy = ty;
+          }
+        }
+        if (bestIdx >= 0) {
+          walls[bestIdx] = WALL_SOLID;
+          this._wallCount++;
+          this._wallsVersion++;
+          p.wallCarry--;
+          p.energy -= WALL_DEPOSIT_COST;
+          this._wallSoundEvents.push({ kind: 'plop', x: p.x, y: p.y, id: p.id });
+        }
       } else if (digSig > 0.6 && p.wallCarry < WALL_CARRY_MAX) {
         // Cell in front of velocity (rounded). Particles too slow to have a
         // direction skip (digging while sitting still doesn't make sense).
