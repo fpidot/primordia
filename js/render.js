@@ -443,11 +443,16 @@ export class Renderer {
         ctx.fillStyle = `rgb(${sr},${sg},${sb})`;
         ctx.globalAlpha = Math.min(0.85, haloA * 0.7);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, r * (2.0 + flash * 4 + sustained * 2), 0, Math.PI * 2);
+        // Zoom-clamp: at high zoom, additive flash radius is dampened by
+        // 1/sqrt(z) so it doesn't dominate the view. At z=1 unchanged; at
+        // z=4 → flash component halved, etc.
+        const zClamp = z > 1 ? 1 / Math.sqrt(z) : 1;
+        const haloR = r * (2.0 + (flash * 4 + sustained * 2) * zClamp);
+        ctx.arc(p.x, p.y, haloR, 0, Math.PI * 2);
         ctx.fill();
         // Ping ring — only on a fresh flash event, expanding as it fades
         if (flash > 0.05) {
-          const ringR = r * (1.6 + (1 - flash) * 6);
+          const ringR = r * (1.6 + (1 - flash) * 6 * zClamp);
           ctx.strokeStyle = `rgba(${sr},${sg},${sb},${flash * 0.85})`;
           ctx.lineWidth = Math.max(0.6, 1.4 / z);
           ctx.beginPath();

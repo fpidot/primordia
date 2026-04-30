@@ -279,7 +279,7 @@ export class World {
       cladeId: 0,
       signalR: 0, signalG: 0, signalB: 0,
       prevSignalR: 0, prevSignalG: 0, prevSignalB: 0,
-      signalFlash: 0, signalAboveLast: 0,
+      signalFlash: 0, signalAboveLast: 0, signalAboveSince: 0,
       predationGain: 0,
       soundCh: 0, soundAmp: 0,
       wantBond: 0, wantMate: 0,
@@ -986,8 +986,22 @@ export class World {
       let above = p.signalAboveLast || 0;
       if (sigMean > 0.65) above = 1;
       else if (sigMean < 0.55) above = 0;
+      // Plateau refire — particles whose signal stays above threshold get a
+      // fresh flash every ~30 ticks (jittered per-particle so colonies don't
+      // strobe in unison). Without this, sustained signalers were visually
+      // silent after their initial rising-edge ping; user couldn't tell at a
+      // glance who was actively communicating.
       if (above && !p.signalAboveLast) {
-        p.signalFlash = 1;     // rising edge → fresh flash event
+        p.signalFlash = 1;
+        p.signalAboveSince = this.tick;
+      } else if (above) {
+        const heldFor = this.tick - (p.signalAboveSince || this.tick);
+        const period = 28 + (p.id % 9);   // 28..36 ticks per particle
+        if (heldFor > 0 && heldFor % period === 0) {
+          p.signalFlash = 0.8;            // slightly dimmer than rising edge
+        } else {
+          p.signalFlash *= 0.85;
+        }
       } else {
         p.signalFlash *= 0.85;
       }
