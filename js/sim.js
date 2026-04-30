@@ -982,16 +982,15 @@ export class World {
       // re-fire the flash every couple of ticks instead of once per real
       // signaling event. State stays "above" between [0.55↑, 0.65↓] so
       // jitter inside the band doesn't refire.
-      // Flash detection — fires only on *actual signaling events*, not as a
-      // standing identifier of "who can signal". Two paths:
-      //   (a) rising-edge crossing of mean signal through 0.65 (with 0.55
-      //       hysteresis to ignore jitter)
-      //   (b) per-channel delta: any RGB channel jumps by > 0.18 tick-to-tick
-      //       (relative to the new prevSignalR/G/B captured above), which
-      //       indicates a brain whose output toggled deliberately
-      // Static high-signal particles produce no flash after the initial
-      // rising-edge — they're just glowing, not signaling. Dynamic brains
-      // that toggle their output between states pulse visibly.
+      // Flash detection. Mean signal > 0.65 means the particle is actively
+      // broadcasting, so we want the user to see them flash continuously
+      // (not just on the rising edge). Three paths:
+      //   (a) rising edge through 0.65 (with 0.55 hysteresis)
+      //   (b) plateau refire: while held above threshold, flash every
+      //       28..36 ticks (jittered per particle so colonies don't strobe
+      //       in unison)
+      //   (c) per-channel delta: any RGB channel jumps > 0.18 tick-to-tick
+      //       (catches dynamic toggling even below threshold)
       const sigMean = (p.signalR + p.signalG + p.signalB) / 3;
       let above = p.signalAboveLast || 0;
       if (sigMean > 0.65) above = 1;
@@ -1001,7 +1000,16 @@ export class World {
       const dB = Math.abs(p.signalB - prevB);
       const dMax = Math.max(dR, dG, dB);
       if (above && !p.signalAboveLast) {
-        p.signalFlash = 1;                   // rising-edge event
+        p.signalFlash = 1;                          // rising edge
+        p.signalAboveSince = this.tick;
+      } else if (above) {
+        const heldFor = this.tick - (p.signalAboveSince || this.tick);
+        const period = 28 + (p.id % 9);             // 28..36 ticks
+        if (heldFor > 0 && heldFor % period === 0) {
+          p.signalFlash = 0.85;                     // plateau refire
+        } else {
+          p.signalFlash *= 0.85;
+        }
       } else if (dMax > 0.18) {
         p.signalFlash = Math.max(p.signalFlash, Math.min(1, dMax * 4));
       } else {

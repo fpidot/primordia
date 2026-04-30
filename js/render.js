@@ -311,11 +311,13 @@ export class Renderer {
             cb = (40 + lerp * 14)       * stipple | 0;
             alpha = ((120 + dens * 70)  * stipple) | 0;
           } else {
-            // Solid — slate (current)
-            cr = 40 + (lerp * 18) | 0;
-            cg = 46 + (lerp * 24) | 0;
-            cb = 64 + (lerp * 22) | 0;
-            alpha = (160 + dens * 95) | 0;
+            // Solid — off-white (warm bone). Body around 232,228,218 with a
+            // faint warm tint at exposed edges so the wall reads as a light
+            // material rather than dark slate.
+            cr = 218 + (lerp * 14) | 0;
+            cg = 213 + (lerp * 12) | 0;
+            cb = 200 + (lerp * 6)  | 0;
+            alpha = (180 + dens * 75) | 0;
           }
           wd[di]     = cr;
           wd[di + 1] = cg;
@@ -499,18 +501,30 @@ export class Renderer {
       ctx.globalAlpha = 0.72 * eFrac;
 
       if (isSpiky) {
-        // 5-pointed star — outer radius ~1.4× body, inner ~0.55×. Sharper
-        // for stronger predators.
+        // 5-pointed star — softer than before. Inner radius now ~0.7× outer
+        // (was ~0.5×), so the points read like rounded petals rather than
+        // sharp barbs. Sharpness still grows with predationGain but stays
+        // gentle. Same elongation along velocity as ovals (rx/ry split +
+        // rotation `ang`) so fast-moving predators streak like their oval
+        // cousins; slow ones look like 5-petalled rosettes.
         const sharpness = Math.min(1, (p.predationGain - 0.18) / 0.5);    // 0..1
-        const outerR = (rx + ry) * 0.65 * (1.2 + sharpness * 0.5);
-        const innerR = (rx + ry) * 0.32 * (1 - sharpness * 0.3);
+        const baseOuter = (rx + ry) * 0.55 * (1.05 + sharpness * 0.25);
+        const baseInner = baseOuter * (0.78 - sharpness * 0.15);          // 0.63..0.78
         const points = 5;
+        const cosA = Math.cos(ang), sinA = Math.sin(ang);
+        // Per-axis scale: stretch along velocity by rx/ry ratio so motion
+        // streaks the star the same way it streaks ovals.
+        const sx = rx / r, sy = ry / r;
         ctx.beginPath();
         for (let s = 0; s < points * 2; s++) {
-          const radius = (s & 1) ? innerR : outerR;
-          const a = ang - Math.PI / 2 + (s / (points * 2)) * Math.PI * 2;
-          const px = p.x + Math.cos(a) * radius;
-          const py = p.y + Math.sin(a) * radius;
+          const radius = (s & 1) ? baseInner : baseOuter;
+          const a = -Math.PI / 2 + (s / (points * 2)) * Math.PI * 2;
+          // Vertex in star-local space, then anisotropic stretch (sx, sy),
+          // then rotate by velocity angle, then translate to particle pos.
+          const lx = Math.cos(a) * radius * sx;
+          const ly = Math.sin(a) * radius * sy;
+          const px = p.x + lx * cosA - ly * sinA;
+          const py = p.y + lx * sinA + ly * cosA;
           if (s === 0) ctx.moveTo(px, py);
           else ctx.lineTo(px, py);
         }
