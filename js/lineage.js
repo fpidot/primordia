@@ -166,6 +166,10 @@ export class CladeTracker {
       sustained: 0,
       startedAt: 0,
     }));
+    // Lifetime count of epoch starts — audio.js reads this each frame and
+    // transposes the key by `epochsStarted` half-steps so each new age
+    // shifts the music up. Resets to 0 on world.reset (new tracker).
+    this.epochsStarted = 0;
   }
 
   // Called when particle is born (externally via brush/preset, or via reproduction).
@@ -332,8 +336,9 @@ export class CladeTracker {
         if (!ep.active && ep.sustained >= 4) {
           ep.active = true;
           ep.startedAt = world.tick;
+          this.epochsStarted++;
           this.pushEvent(world.tick, 'epoch',
-            `★ Age of ${ep.name} begins — ${ep.description}`,
+            `★ Age of ${ep.name} begins — key shifts +${this.epochsStarted} half-step${this.epochsStarted === 1 ? '' : 's'}`,
             '#ffd166');
         }
       } else {

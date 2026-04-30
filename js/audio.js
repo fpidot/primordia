@@ -203,10 +203,11 @@ export class AudioVoices {
     // Chase-mode threshold relaxation. With audibility filtered to a single
     // ~10–50-member cluster, default amp/attack/cooldown gates produce near-
     // silence (the gates were tuned assuming 5000-particle scanning). Relax
-    // them so cluster voices trigger about as often as ambient soup did.
-    const ampFloor    = chasedCluster ? 0.28 : AMP_FLOOR;
-    const attackThr   = chasedCluster ? 0.10 : ATTACK_THRESH;
+    // dramatically: drop the rising-attack requirement entirely and lower
+    // the floor so any non-trivially-emitting member triggers.
+    const ampFloor    = chasedCluster ? 0.10 : AMP_FLOOR;
     const cooldownS   = chasedCluster ? 0.10 : COOLDOWN_S;
+    const skipAttack  = !!chasedCluster;
 
     const candidates = [];
     for (let i = 0; i < ps.length; i++) {
@@ -216,7 +217,7 @@ export class AudioVoices {
       const prev = this._lastSoundAmp.get(p.id) || 0;
       this._lastSoundAmp.set(p.id, amp);
       if (amp < ampFloor) continue;
-      if (amp - prev < attackThr) continue;
+      if (!skipAttack && (amp - prev < ATTACK_THRESH)) continue;
       const lastT = this._lastTrigger.get(p.id) || 0;
       if (now - lastT < cooldownS) continue;
       // Audibility gate
@@ -234,7 +235,7 @@ export class AudioVoices {
       for (let i = 0; i < slots; i++) {
         const p = candidates[i];
         this._lastTrigger.set(p.id, now);
-        this._playVoice(p);
+        this._playVoice(p, world);
       }
     }
 
@@ -330,7 +331,7 @@ export class AudioVoices {
     };
   }
 
-  _playVoice(p) {
+  _playVoice(p, world = null) {
     const ctx = this.ctx;
     const ch = ((p.soundCh | 0) % 4 + 4) % 4;
     const variant = ((p.id | 0) % 6 + 6) % 6;
@@ -338,7 +339,12 @@ export class AudioVoices {
     const set = hostile ? DISCORD[ch] : CHORD[ch];
     const baseFreq = set[variant];
     const detune = (((p.id * 31337) >>> 0) % 200 - 100) / 10000;   // ±0.01
-    const freq = baseFreq * (1 + detune);
+    // Epoch transpose — each named age that has started bumps the key up
+    // one half-step. Uses 12-tone equal temperament so the Lydian b7
+    // intervals are preserved through any transposition.
+    const halfSteps = world && world.clades ? (world.clades.epochsStarted || 0) : 0;
+    const epochMult = halfSteps ? Math.pow(2, halfSteps / 12) : 1;
+    const freq = baseFreq * (1 + detune) * epochMult;
 
     // Per-particle trait modulation so listeners can tell apart calling kind:
     //   • energyN    → envelope decay length (energetic = lingering ring)

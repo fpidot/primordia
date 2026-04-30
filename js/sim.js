@@ -100,9 +100,9 @@ const MATE_GATE = 0.52;            // mating slightly stricter than bonding
 const BOND_DEATH_DRAIN = 1.5;
 
 // Wall manipulation (Thread B-2) — particles can dig adjacent solid walls
-// and deposit carried material at their current cell.
+// and deposit carried material near their current position.
 const WALL_DIG_COST     = 0.30;
-const WALL_DEPOSIT_COST = 0.10;
+const WALL_DEPOSIT_COST = 0.05;     // halved from 0.10 to encourage building
 const WALL_CARRY_MAX    = 5;
 const WALL_SCAN_RANGE   = 6;       // grid cells; sensor reach for wall.{n,s,e,w}
 
@@ -1038,17 +1038,35 @@ export class World {
       const digSig = sigmoid01(out[OUT_DIG]);
       const depSig = sigmoid01(out[OUT_DEPOSIT]);
       if (depSig > 0.6 && p.wallCarry > 0) {
+        // Deposit candidate cells in priority order: current cell first,
+        // then the cell *behind* velocity (lets a moving particle wall
+        // off its trail — a builder leaving its tunnel sealed). Speeds up
+        // emergence of useful structures by widening the action space
+        // beyond "block your own current cell".
+        const sp = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
         const dgx = clamp((p.x / CELL) | 0, 0, GW - 1);
         const dgy = clamp((p.y / CELL) | 0, 0, GH - 1);
-        const didx = dgy * GW + dgx;
-        if (walls[didx] === 0) {
-          walls[didx] = WALL_SOLID;
-          this._wallCount++;
-          this._wallsVersion++;
-          p.wallCarry--;
-          p.energy -= WALL_DEPOSIT_COST;
-          this._wallSoundEvents.push({ kind: 'plop', x: p.x, y: p.y, id: p.id });
+        const candidates = [[dgx, dgy]];
+        if (sp > 0.1) {
+          const bx = clamp(dgx - Math.round(p.vx / sp), 0, GW - 1);
+          const by = clamp(dgy - Math.round(p.vy / sp), 0, GH - 1);
+          if (bx !== dgx || by !== dgy) candidates.push([bx, by]);
         }
+        let placed = false;
+        for (const [tx, ty] of candidates) {
+          const didx = ty * GW + tx;
+          if (walls[didx] === 0) {
+            walls[didx] = WALL_SOLID;
+            this._wallCount++;
+            this._wallsVersion++;
+            p.wallCarry--;
+            p.energy -= WALL_DEPOSIT_COST;
+            this._wallSoundEvents.push({ kind: 'plop', x: p.x, y: p.y, id: p.id });
+            placed = true;
+            break;
+          }
+        }
+        // (placed=false simply means surrounded by walls — no-op)
       } else if (digSig > 0.6 && p.wallCarry < WALL_CARRY_MAX) {
         // Cell in front of velocity (rounded). Particles too slow to have a
         // direction skip (digging while sitting still doesn't make sense).

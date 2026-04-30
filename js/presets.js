@@ -101,46 +101,60 @@ function symbiotic(world) {
   scatterFood(world, 0.5, 0.32);
 }
 
-// Maze — programmatically generated each load. Several straight wall
-// segments with random orientation, position, length, and type, with
-// gaps left mid-segment and a guaranteed mix of all three wall types.
-// Constraints aim for a maze that's traversable but partitions the
-// world enough to exercise directional sensors + bondMsg.
+// Maze — programmatically generated each load. Mix of partition walls
+// (long straight segments with one or two narrow gaps, encouraging
+// quasi-discontinuous regions that reward digging) and feedstock blobs
+// (irregular patches of solid wall ~12-22 cells across, useful as
+// material for builder lineages). Wall thickness varies so some cells
+// can be punched through quickly while others form chunky barriers.
 function maze(world) {
   world.reset();
 
-  // Helpers — same as before
+  // Helpers
   const setWall = (gx, gy, type) => {
     if (gx < 0 || gx >= GW || gy < 0 || gy >= GH) return;
     const idx = gy * GW + gx;
     if (!world.walls[idx]) world._wallCount++;
     world.walls[idx] = type;
   };
-  const paintLineH = (gy, x0, x1, type) => {
+  // Paint a horizontal line of given thickness (width along y axis)
+  const paintLineH = (gy, x0, x1, type, thick) => {
     for (let x = x0; x <= x1; x++) {
-      setWall(x, gy, type);
-      setWall(x, gy + 1, type);
+      for (let dy = 0; dy < thick; dy++) setWall(x, gy + dy, type);
     }
   };
-  const paintLineV = (gx, y0, y1, type) => {
+  const paintLineV = (gx, y0, y1, type, thick) => {
     for (let y = y0; y <= y1; y++) {
-      setWall(gx, y, type);
-      setWall(gx + 1, y, type);
+      for (let dx = 0; dx < thick; dx++) setWall(gx + dx, y, type);
+    }
+  };
+  // Irregular roundish blob of solid wall — feedstock for diggers/builders.
+  // Uses a sum of two off-centre disc tests for a non-circular outline.
+  const paintBlob = (cx, cy, radius) => {
+    const r2 = radius * radius;
+    const ox = (Math.random() - 0.5) * radius * 0.5;
+    const oy = (Math.random() - 0.5) * radius * 0.5;
+    const r2b = (radius * 0.7) ** 2;
+    for (let dy = -radius - 2; dy <= radius + 2; dy++) {
+      for (let dx = -radius - 2; dx <= radius + 2; dx++) {
+        const gx = cx + dx, gy = cy + dy;
+        if (gx < 0 || gx >= GW || gy < 0 || gy >= GH) continue;
+        const d1 = dx * dx + dy * dy;
+        const d2 = (dx - ox) ** 2 + (dy - oy) ** 2;
+        if (d1 <= r2 || d2 <= r2b) setWall(gx, gy, WALL_SOLID);
+      }
     }
   };
 
-  // Wall budget — aim for ~5–8% of grid cells walled, distributed across
-  // 6–10 segments. Type mix tilted toward solid (most), with at least
-  // one membrane and one porous segment guaranteed.
-  const segCount = 6 + ((Math.random() * 5) | 0);   // 6..10
-  const types = [];
-  // Force variety: 1 membrane, 1 porous, rest solid biased
-  types.push(WALL_MEMBRANE, WALL_POROUS);
+  // Partition segments — fewer and narrower-gapped so they actually
+  // cut the world into rooms rather than scattering disconnected pieces.
+  // 4-7 segments with 1 (sometimes 2) gaps each. Thickness 2-5 cells.
+  const segCount = 4 + ((Math.random() * 4) | 0);   // 4..7
+  const types = [WALL_MEMBRANE, WALL_POROUS];        // force one of each
   for (let i = 2; i < segCount; i++) {
     const r = Math.random();
-    types.push(r < 0.65 ? WALL_SOLID : (r < 0.83 ? WALL_MEMBRANE : WALL_POROUS));
+    types.push(r < 0.70 ? WALL_SOLID : (r < 0.85 ? WALL_MEMBRANE : WALL_POROUS));
   }
-  // Shuffle so the membrane/porous aren't always at the front
   for (let i = types.length - 1; i > 0; i--) {
     const j = (Math.random() * (i + 1)) | 0;
     [types[i], types[j]] = [types[j], types[i]];
@@ -148,47 +162,57 @@ function maze(world) {
 
   for (let s = 0; s < segCount; s++) {
     const horizontal = Math.random() < 0.5;
-    const lenMin = (horizontal ? GW : GH) * 0.25;
-    const lenMax = (horizontal ? GW : GH) * 0.55;
+    const lenMin = (horizontal ? GW : GH) * 0.50;     // longer than before
+    const lenMax = (horizontal ? GW : GH) * 0.85;
     const segLen = (lenMin + Math.random() * (lenMax - lenMin)) | 0;
+    const thick = 2 + ((Math.random() * 4) | 0);      // 2..5 cells thick
     if (horizontal) {
-      const gy = (8 + Math.random() * (GH - 16)) | 0;
+      const gy = (8 + Math.random() * (GH - 16 - thick)) | 0;
       const xStart = (Math.random() * (GW - segLen)) | 0;
       const xEnd = xStart + segLen;
-      // 0–2 random gaps within the segment for traversability
+      const numGaps = 1 + (Math.random() < 0.35 ? 1 : 0);   // mostly 1 gap
       const gaps = [];
-      const numGaps = 1 + ((Math.random() * 2) | 0);
       for (let g = 0; g < numGaps; g++) {
         const gx = xStart + ((segLen * (0.2 + Math.random() * 0.6)) | 0);
-        const gw = 6 + ((Math.random() * 8) | 0);
+        const gw = 5 + ((Math.random() * 5) | 0);            // narrower gaps
         gaps.push([gx - (gw >> 1), gx + (gw >> 1)]);
       }
-      let cursor = xStart;
       gaps.sort((a, b) => a[0] - b[0]);
+      let cursor = xStart;
       for (const [g0, g1] of gaps) {
-        if (cursor < g0) paintLineH(gy, cursor, g0 - 1, types[s]);
+        if (cursor < g0) paintLineH(gy, cursor, g0 - 1, types[s], thick);
         cursor = Math.max(cursor, g1 + 1);
       }
-      if (cursor <= xEnd) paintLineH(gy, cursor, xEnd, types[s]);
+      if (cursor <= xEnd) paintLineH(gy, cursor, xEnd, types[s], thick);
     } else {
-      const gx = (8 + Math.random() * (GW - 16)) | 0;
+      const gx = (8 + Math.random() * (GW - 16 - thick)) | 0;
       const yStart = (Math.random() * (GH - segLen)) | 0;
       const yEnd = yStart + segLen;
+      const numGaps = 1 + (Math.random() < 0.35 ? 1 : 0);
       const gaps = [];
-      const numGaps = 1 + ((Math.random() * 2) | 0);
       for (let g = 0; g < numGaps; g++) {
         const gy = yStart + ((segLen * (0.2 + Math.random() * 0.6)) | 0);
-        const gw = 6 + ((Math.random() * 8) | 0);
+        const gw = 5 + ((Math.random() * 5) | 0);
         gaps.push([gy - (gw >> 1), gy + (gw >> 1)]);
       }
-      let cursor = yStart;
       gaps.sort((a, b) => a[0] - b[0]);
+      let cursor = yStart;
       for (const [g0, g1] of gaps) {
-        if (cursor < g0) paintLineV(gx, cursor, g0 - 1, types[s]);
+        if (cursor < g0) paintLineV(gx, cursor, g0 - 1, types[s], thick);
         cursor = Math.max(cursor, g1 + 1);
       }
-      if (cursor <= yEnd) paintLineV(gx, cursor, yEnd, types[s]);
+      if (cursor <= yEnd) paintLineV(gx, cursor, yEnd, types[s], thick);
     }
+  }
+
+  // 1-3 feedstock blobs of solid wall. Placed away from segment edges so
+  // they don't accidentally seal off rooms.
+  const blobCount = 1 + ((Math.random() * 3) | 0);
+  for (let b = 0; b < blobCount; b++) {
+    const cx = (12 + Math.random() * (GW - 24)) | 0;
+    const cy = (12 + Math.random() * (GH - 24)) | 0;
+    const radius = 6 + ((Math.random() * 6) | 0);    // 6..11 cell radius
+    paintBlob(cx, cy, radius);
   }
 
   world._wallsVersion++;

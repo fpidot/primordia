@@ -21,7 +21,7 @@ export class UI {
     this.paused = false;
     this.speed = 1;
     this.activeBrush = 'none';
-    this.brushSize = 12;
+    this.brushSize = 3;
     this.brushStrength = 1;
     this.spawnSpecies = 0;
     this.dragging = false;
@@ -399,9 +399,10 @@ export class UI {
 
   applyBrushAt(x, y) {
     if (this.activeBrush === 'none') return;
+    // Brush radius in world px; multiplier 18 keeps default size 3 → ~54 px.
     this.world.brushApply(
       this.activeBrush, x, y,
-      this.brushSize * 6,
+      this.brushSize * 18,
       this.brushStrength,
       this.spawnSpecies,
     );
