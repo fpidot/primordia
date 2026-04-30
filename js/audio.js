@@ -65,7 +65,7 @@ const INSTRUMENTS = [
   //  partialType, subOctaveAmount, attackMul, name]
   ['sine',     'triangle', 4.0, 5.5, 1.0, 'sine',     0.0, 1.4, 'flute'],
   ['triangle', 'triangle', 5.0, 6.5, 1.5, 'sine',     0.0, 1.6, 'organ'],
-  ['square',   'sawtooth', 2.6, 3.6, 0.6, 'sine',     0.0, 0.9, 'clarinet'],
+  ['triangle', 'sawtooth', 1.8, 2.8, 0.5, 'sine',     0.0, 1.0, 'clarinet'],
   ['sine',     'triangle', 2.0, 3.0, 0.8, 'sine',     0.7, 1.2, 'tuba'],
   ['triangle', 'sawtooth', 3.4, 4.5, 0.7, 'sawtooth', 0.0, 0.8, 'nylon'],
   ['sine',     'triangle', 4.5, 5.5, 0.9, 'sine',     0.0, 1.5, 'vibes'],
@@ -87,6 +87,23 @@ const DISCORD = [
   [D4, Fs4, A4, D5, Fs5, A5],   // ch2
   [D5, Fs5, A5, D6, Fs6, A6],   // ch3
 ];
+
+// Root note transpose: −6 semitones (down half an octave) shifts the
+// default pitch register lower for a more grounded jazz feel. Combines
+// multiplicatively with the per-epoch transpose, so the music ascends
+// from there as ages start.
+const KEY_BASE_SEMITONES = -6;
+
+// Swing-meter quantisation. Voices fire only on swing-quantised eighth-
+// note onsets — gives the soundscape a gentle jazzy lilt instead of an
+// even flow of notes.
+//   BPM      → quarter-note (beat) length in seconds
+//   Long 8th → 2/3 of a beat (the down-beat 8th)
+//   Short 8th → 1/3 of a beat (the swung "and")
+const BPM = 96;
+const BEAT_DUR_S = 60 / BPM;
+const LONG_EIGHTH_S  = BEAT_DUR_S * (2 / 3);
+const SHORT_EIGHTH_S = BEAT_DUR_S * (1 / 3);
 
 const MAX_VOICES      = 8;
 const COOLDOWN_S      = 0.22;
@@ -120,6 +137,9 @@ export class AudioVoices {
     this._activeVoices = 0;
     this._lastTickT = 0;
     this._noiseBuffer = null;
+    this._nextOnsetT = 0;     // next swing-quantised trigger time (ctx clock)
+    this._swingSlot = 0;      // 0 = down-beat just fired, next gap is short
+                              // 1 = up-beat just fired, next gap is long
   }
 
   enable() {
@@ -137,6 +157,8 @@ export class AudioVoices {
       this.master.connect(this.ctx.destination);
       this.master.gain.setTargetAtTime(this.masterVolume, this.ctx.currentTime, 0.05);
       this._noiseBuffer = this._makeNoiseBuffer();
+      this._nextOnsetT = this.ctx.currentTime + 0.05;
+      this._swingSlot = 0;
       this.enabled = true;
       return true;
     } catch (err) {
@@ -229,14 +251,32 @@ export class AudioVoices {
       candidates.push(p);
     }
 
-    if (candidates.length > 0 && this._activeVoices < MAX_VOICES) {
-      candidates.sort((a, b) => b.soundAmp - a.soundAmp);
-      const slots = Math.min(MAX_VOICES - this._activeVoices, candidates.length, SLOTS_PER_TICK);
-      for (let i = 0; i < slots; i++) {
-        const p = candidates[i];
-        this._lastTrigger.set(p.id, now);
-        this._playVoice(p, world);
+    // Swing-meter gate. Voices may only trigger on swing-quantised eighth-
+    // note onsets. If the current ctx time is before the next scheduled
+    // onset, hold candidates for now (they'll either re-qualify next tick
+    // or get superseded by louder ones — whichever wins is what fires
+    // when the onset hits).
+    if (now >= this._nextOnsetT) {
+      if (candidates.length > 0 && this._activeVoices < MAX_VOICES) {
+        candidates.sort((a, b) => b.soundAmp - a.soundAmp);
+        const slots = Math.min(MAX_VOICES - this._activeVoices, candidates.length, SLOTS_PER_TICK);
+        for (let i = 0; i < slots; i++) {
+          const p = candidates[i];
+          this._lastTrigger.set(p.id, now);
+          this._playVoice(p, world);
+        }
       }
+      // Advance to the next swing-eighth onset whether or not anything
+      // played; silence in a slot is fine, but the meter keeps marching.
+      // swingSlot toggles each onset: 0→down-beat, 1→up-beat, 0→down-beat.
+      // After a down-beat we wait long_eighth (2/3 beat) for the up-beat;
+      // after the up-beat we wait short_eighth (1/3 beat) for the next
+      // down-beat. That's the standard jazz swing feel.
+      const gap = this._swingSlot === 0 ? LONG_EIGHTH_S : SHORT_EIGHTH_S;
+      // If we've drifted very far behind (e.g., tab paused), snap forward
+      // rather than burst-fire — keeps tempo rather than catching up.
+      this._nextOnsetT = Math.max(this._nextOnsetT + gap, now + gap * 0.5);
+      this._swingSlot = 1 - this._swingSlot;
     }
 
     if (this._lastSoundAmp.size > 4000) {
@@ -339,12 +379,12 @@ export class AudioVoices {
     const set = hostile ? DISCORD[ch] : CHORD[ch];
     const baseFreq = set[variant];
     const detune = (((p.id * 31337) >>> 0) % 200 - 100) / 10000;   // ±0.01
-    // Epoch transpose — each named age that has started bumps the key up
-    // one half-step. Uses 12-tone equal temperament so the Lydian b7
-    // intervals are preserved through any transposition.
+    // Key = base transpose (constant) + per-epoch transpose. Both as
+    // half-step offsets in 12-TET so Lydian b7 intervals are preserved.
     const halfSteps = world && world.clades ? (world.clades.epochsStarted || 0) : 0;
-    const epochMult = halfSteps ? Math.pow(2, halfSteps / 12) : 1;
-    const freq = baseFreq * (1 + detune) * epochMult;
+    const totalSemis = KEY_BASE_SEMITONES + halfSteps;
+    const keyMult = Math.pow(2, totalSemis / 12);
+    const freq = baseFreq * (1 + detune) * keyMult;
 
     // Per-particle trait modulation so listeners can tell apart calling kind:
     //   • energyN    → envelope decay length (energetic = lingering ring)

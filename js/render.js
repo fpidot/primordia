@@ -160,17 +160,11 @@ export class Renderer {
     this.fieldBuf.height = GH;
     this.fieldCtx = this.fieldBuf.getContext('2d');
     this.fieldImage = this.fieldCtx.createImageData(GW, GH);
-    // Separate walls buffer — built only when the wall set changes, then
-    // drawn over the field with image-smoothing on so wall edges anti-alias
-    // (bilinear filter feathers between solid-density cells and transparent
-    // empty cells). The field itself stays nearest-neighbour so chemical
-    // blobs keep their crisp cellular look.
-    this.wallBuf = document.createElement('canvas');
-    this.wallBuf.width = GW;
-    this.wallBuf.height = GH;
-    this.wallCtx = this.wallBuf.getContext('2d');
-    this.wallImage = this.wallCtx.createImageData(GW, GH);
+    // Walls render via a vector pass per cell (see renderField), so we just
+    // cache a list of {type, gx, gy, density} that gets rebuilt only when
+    // the wall set changes. No raster buffer = no zoom-dependent blockiness.
     this._wallSig = -1;
+    this._wallCellList = [];
     // Predator rim color cache — one "offset" hue per species derived by
     // brightening + slight hue rotation so the rim differs from the body
     // but reads as related, not as a universal red. Computed once at
@@ -262,25 +256,19 @@ export class Renderer {
     }
     this.fieldCtx.putImageData(this.fieldImage, 0, 0);
 
-    // 2. Rebuild walls buffer if the wall set changed. Density-shaded edges
-    //    (3×3 neighbour count) give soft anti-aliased borders. Three wall
-    //    types render with distinct palettes:
-    //      • solid    (1) → slate     · opaque
-    //      • membrane (2) → cyan/teal · semi-translucent (chems pass through)
-    //      • porous   (3) → warm ochre · stippled feel    (particles pass)
+    // 2. Rebuild walls cache when the wall set changes. We keep a list of
+    //    {type, gx, gy, dens} per wall cell so the per-frame draw can be a
+    //    fast vector pass — fillRect at world coordinates so walls stay
+    //    crisp at any zoom (the old buffer-and-bilinear approach showed
+    //    blocky pixelation when zoomed in next to the crisp particles).
     const wallSig = world._wallsVersion ?? world._wallCount;
     if (this._wallSig !== wallSig) {
       this._wallSig = wallSig;
-      const wd = this.wallImage.data;
+      const list = [];
       for (let y = 0; y < GH; y++) {
         for (let x = 0; x < GW; x++) {
-          const idx = y * GW + x;
-          const di = idx * 4;
-          const wt = walls[idx];
-          if (!wt) {
-            wd[di] = 0; wd[di + 1] = 0; wd[di + 2] = 0; wd[di + 3] = 0;
-            continue;
-          }
+          const wt = walls[y * GW + x];
+          if (!wt) continue;
           let cnt = 0;
           for (let dy = -1; dy <= 1; dy++) {
             const yy = y + dy;
@@ -291,41 +279,10 @@ export class Renderer {
               if (walls[yy * GW + xx]) cnt++;
             }
           }
-          const dens = cnt / 9;
-          const lerp = 1 - dens;
-          let cr, cg, cb, alpha;
-          if (wt === 2) {
-            // Membrane — cyan/teal, more translucent so it visually reads as
-            // "chemicals pass through". Stipple via a faint XOR pattern.
-            const stipple = ((x ^ y) & 1) ? 1 : 0.85;
-            cr = (28 + lerp * 14)       * stipple | 0;
-            cg = (80 + lerp * 30)       * stipple | 0;
-            cb = (110 + lerp * 30)      * stipple | 0;
-            alpha = ((130 + dens * 60)  * stipple) | 0;
-          } else if (wt === 3) {
-            // Porous — warm ochre stippled stronger so it reads as "particles
-            // pass through". More holes than membrane.
-            const stipple = (((x + y) & 3) === 0) ? 0.5 : 1;
-            cr = (90 + lerp * 28)       * stipple | 0;
-            cg = (74 + lerp * 22)       * stipple | 0;
-            cb = (40 + lerp * 14)       * stipple | 0;
-            alpha = ((120 + dens * 70)  * stipple) | 0;
-          } else {
-            // Solid — off-white (warm bone). Body around 232,228,218 with a
-            // faint warm tint at exposed edges so the wall reads as a light
-            // material rather than dark slate.
-            cr = 218 + (lerp * 14) | 0;
-            cg = 213 + (lerp * 12) | 0;
-            cb = 200 + (lerp * 6)  | 0;
-            alpha = (180 + dens * 75) | 0;
-          }
-          wd[di]     = cr;
-          wd[di + 1] = cg;
-          wd[di + 2] = cb;
-          wd[di + 3] = alpha;
+          list.push({ type: wt, gx: x, gy: y, dens: cnt / 9 });
         }
       }
-      this.wallCtx.putImageData(this.wallImage, 0, 0);
+      this._wallCellList = list;
     }
 
     // 3. Clear bg canvas (in screen space) and blit the field with camera transform
@@ -337,12 +294,51 @@ export class Renderer {
     // Field stays crisp (cellular look)
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.fieldBuf, 0, 0, GW, GH, 0, 0, W, H);
-    // Walls smoothed (anti-aliased edges)
-    if (showWalls && world._wallCount > 0) {
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(this.wallBuf, 0, 0, GW, GH, 0, 0, W, H);
-      ctx.imageSmoothingEnabled = false;
+
+    // Walls — vector pass per cell at world coordinates so they stay crisp
+    // at any zoom. Color/alpha derive from the cached neighbour-density
+    // value computed in the rebuild pass. We bucket by quantised color
+    // string so each unique fill triggers one fillStyle change at most.
+    if (showWalls && this._wallCellList && this._wallCellList.length > 0) {
+      const list = this._wallCellList;
+      // Bucket cells by colour key: "type|densBucket" → array of cells
+      const buckets = this._wallBuckets || (this._wallBuckets = new Map());
+      buckets.clear();
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        const dBucket = (c.dens * 8) | 0;        // 0..8
+        const key = c.type * 16 + dBucket;
+        let arr = buckets.get(key);
+        if (!arr) { arr = []; buckets.set(key, arr); }
+        arr.push(c);
+      }
+      for (const [key, arr] of buckets) {
+        const wt = (key / 16) | 0;
+        const dens = (key % 16) / 8;
+        const lerp = 1 - dens;
+        let cr, cg, cb, alpha;
+        if (wt === 2) {
+          cr = 28 + lerp * 14;
+          cg = 80 + lerp * 30;
+          cb = 110 + lerp * 30;
+          alpha = (130 + dens * 60) / 255;
+        } else if (wt === 3) {
+          cr = 90 + lerp * 28;
+          cg = 74 + lerp * 22;
+          cb = 40 + lerp * 14;
+          alpha = (120 + dens * 70) / 255;
+        } else {
+          cr = 218 + lerp * 14;
+          cg = 213 + lerp * 12;
+          cb = 200 + lerp * 6;
+          alpha = (180 + dens * 75) / 255;
+        }
+        ctx.fillStyle = `rgba(${cr | 0},${cg | 0},${cb | 0},${alpha.toFixed(3)})`;
+        for (let i = 0; i < arr.length; i++) {
+          const c = arr[i];
+          ctx.fillRect(c.gx * CELL, c.gy * CELL, CELL, CELL);
+        }
+      }
     }
 
     // World boundary outline
