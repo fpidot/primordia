@@ -27,33 +27,44 @@
 
 import { W } from './sim.js';
 
-// --- pitch alphabets in Hz, indexed by [channel][noteVariant] -------------
+// --- pitch alphabets in Hz, C Lydian dominant (Lydian b7) ----------------
+//
+// Scale: C  D  E  F#  G  A  Bb
+// Characteristic notes vs major: raised 4th (#4) + lowered 7th (b7).
+// Yields a bright-but-uneasy quality somewhere between Lydian's lift and
+// Mixolydian's bluesy droop. Pleasant for organism vocalisations because
+// no two scale tones form a tritone-fifth (4 → b7 is a major 3rd), and
+// the b7 prevents the major-7 brightness from feeling saccharine.
+//
+// Chord set (consonant) = root7 voicing: C E G Bb across two octaves.
+// Discord set = remaining scale tones: D F# A across two octaves.
 
-const C2 = 65.41,  D2 = 73.42,  E2 = 82.41,  F2 = 87.31;
-const G2 = 98.00,  A2 = 110.00, B2 = 123.47;
-const C3 = 130.81, D3 = 146.83, E3 = 164.81, F3 = 174.61;
-const G3 = 196.00, A3 = 220.00, B3 = 246.94;
-const C4 = 261.63, D4 = 293.66, E4 = 329.63, F4 = 349.23;
-const G4 = 392.00, A4 = 440.00, B4 = 493.88;
-const C5 = 523.25, D5 = 587.33, E5 = 659.25, F5 = 698.46;
-const G5 = 783.99, A5 = 880.00, B5 = 987.77;
-const C6 = 1046.50, D6 = 1174.66, E6 = 1318.51, F6 = 1396.91;
-const G6 = 1567.98;
+const C2 = 65.41,  D2 = 73.42,  E2 = 82.41,  Fs2 = 92.50;
+const G2 = 98.00,  A2 = 110.00, Bb2 = 116.54;
+const C3 = 130.81, D3 = 146.83, E3 = 164.81, Fs3 = 185.00;
+const G3 = 196.00, A3 = 220.00, Bb3 = 233.08;
+const C4 = 261.63, D4 = 293.66, E4 = 329.63, Fs4 = 369.99;
+const G4 = 392.00, A4 = 440.00, Bb4 = 466.16;
+const C5 = 523.25, D5 = 587.33, E5 = 659.25, Fs5 = 739.99;
+const G5 = 783.99, A5 = 880.00, Bb5 = 932.33;
+const C6 = 1046.50, D6 = 1174.66, E6 = 1318.51, Fs6 = 1479.98;
+const A6 = 1760.00;
 
-// Two-octave C major chord arpeggio per channel (root, third, fifth × 2)
+// Two-octave C7 (Lydian dominant tonic) arpeggio per channel
 const CHORD = [
-  [C2, E2, G2, C3, E3, G3],   // ch0 deep
-  [C3, E3, G3, C4, E4, G4],   // ch1 bass
-  [C4, E4, G4, C5, E5, G5],   // ch2 mid
-  [C5, E5, G5, C6, E6, G6],   // ch3 high
+  [C2, E2, G2, Bb2, C3, E3],   // ch0 deep
+  [C3, E3, G3, Bb3, C4, E4],   // ch1 bass
+  [C4, E4, G4, Bb4, C5, E5],   // ch2 mid
+  [C5, E5, G5, Bb5, C6, E6],   // ch3 high
 ];
 
-// Non-chord scale tones (D F A B × 2 octaves, dropping a couple to keep it 6)
+// Non-chord scale tones — D, F#, A across two octaves. F# is the signature
+// lydian colour; A is the natural 6 that makes Dm vs C7 ambiguity.
 const DISCORD = [
-  [D2, F2, A2, B2, D3, F3],   // ch0
-  [D3, F3, A3, B3, D4, F4],   // ch1
-  [D4, F4, A4, B4, D5, F5],   // ch2
-  [D5, F5, A5, B5, D6, F6],   // ch3
+  [D2, Fs2, A2, D3, Fs3, A3],   // ch0
+  [D3, Fs3, A3, D4, Fs4, A4],   // ch1
+  [D4, Fs4, A4, D5, Fs5, A5],   // ch2
+  [D5, Fs5, A5, D6, Fs6, A6],   // ch3
 ];
 
 const MAX_VOICES      = 8;
@@ -214,21 +225,15 @@ export class AudioVoices {
     }
 
     // Wall-action one-shots (Thread B-2): grunt for dig, plop for deposit.
-    // Drain world._wallSoundEvents regardless of audibility filter ABOVE; the
-    // filter still applies per-event so chase / zoom modes only hear local
-    // events. Cap how many fire per tick so a colony of digger-builders
-    // doesn't drown out everything else.
+    // Camera-localization filter is INTENTIONALLY bypassed — these events
+    // are rare and significant ("oh, something is digging right now"), so
+    // we play them whether or not the user is zoomed/chasing. Still capped
+    // per tick so a digging colony can't drown the soundscape.
     const evs = world._wallSoundEvents;
     if (evs && evs.length > 0) {
       let fired = 0;
       for (const ev of evs) {
         if (fired >= 4) break;
-        if (chasedCluster) {
-          if (!ptc || !ptc.has(ev.id)) continue;
-          if (ptc.get(ev.id) !== chasedCluster) continue;
-        } else if (inView) {
-          if (!inView({ x: ev.x, y: ev.y })) continue;
-        }
         if (ev.kind === 'grunt') this._playGrunt(ev.x);
         else if (ev.kind === 'plop') this._playPlop(ev.x);
         fired++;

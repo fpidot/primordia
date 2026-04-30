@@ -490,7 +490,18 @@ export class Renderer {
       const rx = r * (1 + elong * 0.7);
       const ry = r * (1 - elong * 0.4);
       const ang = speed > 0.05 ? Math.atan2(p.vy, p.vx) : 0;
-      const isSpiky = p.predationGain > 0.18;
+      // Shape selection — three modes:
+      //   • spiky star  (predator drive >  0.18 AND > digger drive)
+      //   • diamond     (digger drive  >  0.18 AND >= predator drive)
+      //   • ellipse     (default)
+      // For particles that qualify as both, the stronger trait wins. Digger
+      // drive uses the brain's OUT_DIG bias as a structural proxy (since
+      // OUT_DIG fires only intermittently when the cell ahead is solid).
+      const predDrive = p.predationGain || 0;
+      const digBias = (p.genome && p.genome.brain) ? p.genome.brain.biasO[16] : -2;
+      const digDrive = Math.tanh(digBias + 0.6);   // shift so init bias 0 → 0.5
+      const isSpiky = predDrive > 0.18 && predDrive >= digDrive;
+      const isDiamond = !isSpiky && digDrive > 0.18 && digDrive > predDrive;
 
       ctx.fillStyle = col;
       // Visual-only energy dimming: low-energy particles look ghostly so the
@@ -535,6 +546,36 @@ export class Renderer {
         const rim = this._predRimColors[sp];
         ctx.strokeStyle = `rgba(${rim}, ${0.7 + sharpness * 0.3})`;
         ctx.lineWidth = Math.max(0.5, 1.2 / z);
+        ctx.stroke();
+      } else if (isDiamond) {
+        // 4-point diamond — same anisotropic stretch + rotation as ovals so
+        // diggers also streak when they're moving fast. Diamond shape reads
+        // as "compact tool" vs the predator's "petal" star.
+        const sx = rx / r, sy = ry / r;
+        const cosA = Math.cos(ang), sinA = Math.sin(ang);
+        // Local diamond vertices: long axis ±diamondLen, short axis ±diamondWid
+        const diamondLen = r * 1.15;
+        const diamondWid = r * 0.65;
+        const verts = [
+          [ diamondLen * sx,  0          ],
+          [ 0,                diamondWid * sy],
+          [-diamondLen * sx,  0          ],
+          [ 0,               -diamondWid * sy],
+        ];
+        ctx.beginPath();
+        for (let v = 0; v < 4; v++) {
+          const [lx, ly] = verts[v];
+          const px = p.x + lx * cosA - ly * sinA;
+          const py = p.y + lx * sinA + ly * cosA;
+          if (v === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        // Subtle outline in the species' own offset hue.
+        const rim = this._predRimColors[sp];
+        ctx.strokeStyle = `rgba(${rim}, 0.6)`;
+        ctx.lineWidth = Math.max(0.5, 1.0 / z);
         ctx.stroke();
       } else {
         ctx.beginPath();
