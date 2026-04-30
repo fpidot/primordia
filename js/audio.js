@@ -50,6 +50,27 @@ const G5 = 783.99, A5 = 880.00, Bb5 = 932.33;
 const C6 = 1046.50, D6 = 1174.66, E6 = 1318.51, Fs6 = 1479.98;
 const A6 = 1760.00;
 
+// Instrument families. Species map onto these so different species sound
+// audibly different — independent of pitch register (channel) and note
+// (variant). Each family is a small synth recipe tuned for a recognisable
+// timbre. Five families cover 16 species via modulo:
+//   0 flute       — pure sine + sine octave partial; bright but soft
+//   1 organ       — triangle + sine fifth + sine octave; sustained
+//   2 clarinet    — square through narrow lowpass; woody mid-range
+//   3 tuba        — sine + sub-octave; fat warm low end
+//   4 nylon       — triangle with slight sawtooth partial; gentle pluck
+//   5 vibes       — sine with mild metallic tremolo; bell-like
+const INSTRUMENTS = [
+  // [oscNeutral, oscHostile, lpRatioNeutral, lpRatioHostile, partialMul,
+  //  partialType, subOctaveAmount, attackMul, name]
+  ['sine',     'triangle', 4.0, 5.5, 1.0, 'sine',     0.0, 1.4, 'flute'],
+  ['triangle', 'triangle', 5.0, 6.5, 1.5, 'sine',     0.0, 1.6, 'organ'],
+  ['square',   'sawtooth', 2.6, 3.6, 0.6, 'sine',     0.0, 0.9, 'clarinet'],
+  ['sine',     'triangle', 2.0, 3.0, 0.8, 'sine',     0.7, 1.2, 'tuba'],
+  ['triangle', 'sawtooth', 3.4, 4.5, 0.7, 'sawtooth', 0.0, 0.8, 'nylon'],
+  ['sine',     'triangle', 4.5, 5.5, 0.9, 'sine',     0.0, 1.5, 'vibes'],
+];
+
 // Two-octave C7 (Lydian dominant tonic) arpeggio per channel
 const CHORD = [
   [C2, E2, G2, Bb2, C3, E3],   // ch0 deep
@@ -329,9 +350,11 @@ export class AudioVoices {
     const slotsN    = gn && gn.brain ? gn.brain.enabledCount() / 8 : 0.5;
 
     const t = ctx.currentTime;
-    const attack = hostile
+    const instForAttack = INSTRUMENTS[(p.species | 0) % INSTRUMENTS.length];
+    const attackMul = instForAttack[7];
+    const attack = (hostile
       ? 0.003 + (1 - cohesionN) * 0.005
-      : 0.008 + (1 - cohesionN) * 0.018;
+      : 0.008 + (1 - cohesionN) * 0.018) * attackMul;
     const dur = (hostile ? 0.10 : 0.16)
               + Math.min(0.3, p.soundAmp) * 0.30
               + energyN * 0.18;
@@ -357,17 +380,11 @@ export class AudioVoices {
       noise.stop(t + dur + 0.04);
       sources.push(noise);
     } else {
+      // Per-species instrument — the strongest dimension for tonal variety
+      // beyond pitch. 16 species → 6 instrument families via modulo.
+      const inst = INSTRUMENTS[(p.species | 0) % INSTRUMENTS.length];
       const osc = ctx.createOscillator();
-      // Softer wave selection — dropped square+sawtooth from the consonant
-      // path so chord notes don't have the harpsichord bite. Hostile path
-      // keeps slightly brighter waves to retain its menacing edge.
-      const TIMBRES = [
-        ['sine',     'triangle' ],   // ch0 deep
-        ['triangle', 'triangle' ],   // ch1 bass
-        ['triangle', 'sawtooth' ],   // ch2 mid
-        ['sine',     'sawtooth' ],   // ch3 high (hostile path uses noise)
-      ];
-      osc.type = TIMBRES[ch][hostile ? 1 : 0];
+      osc.type = hostile ? inst[1] : inst[0];
 
       if (hostile) {
         osc.frequency.setValueAtTime(freq, t);
@@ -376,27 +393,39 @@ export class AudioVoices {
         osc.frequency.value = freq;
       }
 
-      // Jazz-synth lowpass — rolls off harmonics above ~3× fundamental for
-      // chord notes (warmer, rounder) and ~5× for hostile (still bright).
-      // Q kept low (~0.7) for a gentle slope rather than resonant peak.
+      // Per-instrument lowpass cutoff. Lower ratio = warmer (clarinet, tuba);
+      // higher = brighter (organ, vibes, flute).
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
-      lp.frequency.value = freq * (hostile ? 5.0 : 3.0);
+      lp.frequency.value = freq * (hostile ? inst[3] : inst[2]);
       lp.Q.value = 0.7;
       osc.connect(lp).connect(env);
       osc.start(t);
       osc.stop(t + dur + 0.05);
       sources.push(osc);
 
+      // Sub-octave (tuba): adds fundamental weight an octave below.
+      if (inst[6] > 0) {
+        const sub = ctx.createOscillator();
+        sub.type = 'sine';
+        sub.frequency.value = freq * 0.5;
+        const subGain = ctx.createGain();
+        subGain.gain.value = inst[6];
+        sub.connect(subGain).connect(lp);
+        sub.start(t);
+        sub.stop(t + dur + 0.05);
+        sources.push(sub);
+      }
+
       // Smarter brains add a harmonic partial — fifth (chord) or octave
-      // (hostile). Audibly richer voice. Routed pre-filter so the partial
-      // gets the same warmth.
+      // (hostile). The instrument's partial multiplier shapes how loud it
+      // is and what wave it uses (sine vs sawtooth, etc).
       if (slotsN > 0.4) {
         const partial = ctx.createOscillator();
-        partial.type = 'sine';
+        partial.type = inst[5];
         partial.frequency.value = freq * (hostile ? 2 : 1.5);
         const partialGain = ctx.createGain();
-        partialGain.gain.value = (slotsN - 0.4) * 0.4;
+        partialGain.gain.value = (slotsN - 0.4) * 0.4 * inst[4];
         partial.connect(partialGain).connect(lp);
         partial.start(t);
         partial.stop(t + dur + 0.05);
