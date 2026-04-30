@@ -171,6 +171,22 @@ export class Renderer {
     this.wallCtx = this.wallBuf.getContext('2d');
     this.wallImage = this.wallCtx.createImageData(GW, GH);
     this._wallSig = -1;
+    // Predator rim color cache — one "offset" hue per species derived by
+    // brightening + slight hue rotation so the rim differs from the body
+    // but reads as related, not as a universal red. Computed once at
+    // boot since SPECIES_COLORS is static.
+    this._predRimColors = SPECIES_COLORS.map(hex => {
+      const n = parseInt(hex.slice(1), 16);
+      let r = (n >> 16) & 0xff;
+      let g = (n >> 8) & 0xff;
+      let b = n & 0xff;
+      // Brighten 50% toward white, then small channel rotation so the rim
+      // reads as a "highlight" of the body color rather than a swap.
+      r = Math.min(255, r + (255 - r) * 0.6);
+      g = Math.min(255, g + (255 - g) * 0.45);
+      b = Math.min(255, b + (255 - b) * 0.45);
+      return `${r | 0},${g | 0},${b | 0}`;
+    });
 
     this.options = {
       trails: true,
@@ -500,8 +516,10 @@ export class Renderer {
         }
         ctx.closePath();
         ctx.fill();
-        // Hot rim around the star — reads even more aggressively
-        ctx.strokeStyle = `rgba(255, 70, 30, ${0.6 + sharpness * 0.3})`;
+        // Bright rim in the species' own offset hue — reads as a highlight
+        // of the predator rather than a universal "red" tag.
+        const rim = this._predRimColors[sp];
+        ctx.strokeStyle = `rgba(${rim}, ${0.7 + sharpness * 0.3})`;
         ctx.lineWidth = Math.max(0.5, 1.2 / z);
         ctx.stroke();
       } else {
@@ -512,7 +530,8 @@ export class Renderer {
         // Mild predator rim for in-between particles (predation 0.08..0.18).
         if (p.predationGain > 0.08) {
           const rimA = Math.min(1, p.predationGain * 4) * 0.7;
-          ctx.strokeStyle = `rgba(255, 80, 40, ${rimA})`;
+          const rim = this._predRimColors[sp];
+          ctx.strokeStyle = `rgba(${rim}, ${rimA})`;
           ctx.lineWidth = Math.max(0.5, 1.0 / z);
           ctx.stroke();         // reuses ellipse path
         }
