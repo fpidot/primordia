@@ -459,20 +459,20 @@ export class Renderer {
         const sg = (p.signalG * 255) | 0;
         const sb = (p.signalB * 255) | 0;
         ctx.fillStyle = `rgb(${sr},${sg},${sb})`;
-        ctx.globalAlpha = Math.min(0.85, haloA * 0.7);
+        // Subtler flashes: lower base alpha (was 0.7 → 0.4), smaller radius
+        // multipliers, more zoom dampening (1/z instead of 1/sqrt(z)) since
+        // many particles flash simultaneously and the field was too busy.
+        ctx.globalAlpha = Math.min(0.5, haloA * 0.4);
         ctx.beginPath();
-        // Zoom-clamp: at high zoom, additive flash radius is dampened by
-        // 1/sqrt(z) so it doesn't dominate the view. At z=1 unchanged; at
-        // z=4 → flash component halved, etc.
-        const zClamp = z > 1 ? 1 / Math.sqrt(z) : 1;
-        const haloR = r * (2.0 + (flash * 4 + sustained * 2) * zClamp);
+        const zClamp = z > 1 ? 1 / z : 1;
+        const haloR = r * (1.4 + (flash * 2.2 + sustained * 1.2) * zClamp);
         ctx.arc(p.x, p.y, haloR, 0, Math.PI * 2);
         ctx.fill();
-        // Ping ring — only on a fresh flash event, expanding as it fades
+        // Ping ring — only on a fresh flash event, expanding as it fades.
         if (flash > 0.05) {
-          const ringR = r * (1.6 + (1 - flash) * 6 * zClamp);
-          ctx.strokeStyle = `rgba(${sr},${sg},${sb},${flash * 0.85})`;
-          ctx.lineWidth = Math.max(0.6, 1.4 / z);
+          const ringR = r * (1.3 + (1 - flash) * 3.2 * zClamp);
+          ctx.strokeStyle = `rgba(${sr},${sg},${sb},${flash * 0.5})`;
+          ctx.lineWidth = Math.max(0.5, 1.0 / z);
           ctx.beginPath();
           ctx.arc(p.x, p.y, ringR, 0, Math.PI * 2);
           ctx.stroke();
@@ -492,16 +492,18 @@ export class Renderer {
       const ang = speed > 0.05 ? Math.atan2(p.vy, p.vx) : 0;
       // Shape selection — three modes:
       //   • spiky star  (predator drive >  0.18 AND > digger drive)
-      //   • diamond     (digger drive  >  0.18 AND >= predator drive)
+      //   • diamond     (digger drive  >  0.30 AND >= predator drive)
       //   • ellipse     (default)
       // For particles that qualify as both, the stronger trait wins. Digger
-      // drive uses the brain's OUT_DIG bias as a structural proxy (since
-      // OUT_DIG fires only intermittently when the cell ahead is solid).
+      // drive uses the raw OUT_DIG bias mapped through tanh — neutral
+      // particles map to ~0, so init bias of zero is NOT diamond-eligible.
+      // Threshold 0.30 means biasO[16] needs to exceed ~0.31 for diamond,
+      // which only a strongly-evolved digger lineage will reach.
       const predDrive = p.predationGain || 0;
       const digBias = (p.genome && p.genome.brain) ? p.genome.brain.biasO[16] : -2;
-      const digDrive = Math.tanh(digBias + 0.6);   // shift so init bias 0 → 0.5
+      const digDrive = Math.tanh(digBias);
       const isSpiky = predDrive > 0.18 && predDrive >= digDrive;
-      const isDiamond = !isSpiky && digDrive > 0.18 && digDrive > predDrive;
+      const isDiamond = !isSpiky && digDrive > 0.30 && digDrive > predDrive;
 
       ctx.fillStyle = col;
       // Visual-only energy dimming: low-energy particles look ghostly so the
@@ -519,8 +521,8 @@ export class Renderer {
         // rotation `ang`) so fast-moving predators streak like their oval
         // cousins; slow ones look like 5-petalled rosettes.
         const sharpness = Math.min(1, (p.predationGain - 0.18) / 0.5);    // 0..1
-        const baseOuter = (rx + ry) * 0.55 * (1.05 + sharpness * 0.25);
-        const baseInner = baseOuter * (0.78 - sharpness * 0.15);          // 0.63..0.78
+        const baseOuter = (rx + ry) * 0.6 * (1.05 + sharpness * 0.30);
+        const baseInner = baseOuter * (0.62 - sharpness * 0.15);          // 0.47..0.62
         const points = 5;
         const cosA = Math.cos(ang), sinA = Math.sin(ang);
         // Per-axis scale: stretch along velocity by rx/ry ratio so motion

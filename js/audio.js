@@ -355,11 +355,14 @@ export class AudioVoices {
       sources.push(noise);
     } else {
       const osc = ctx.createOscillator();
+      // Softer wave selection — dropped square+sawtooth from the consonant
+      // path so chord notes don't have the harpsichord bite. Hostile path
+      // keeps slightly brighter waves to retain its menacing edge.
       const TIMBRES = [
-        ['sine',     'triangle' ],   // ch0
-        ['triangle', 'square'   ],   // ch1
-        ['square',   'sawtooth' ],   // ch2
-        ['sawtooth', 'sawtooth' ],   // ch3 (hostile path uses noise above)
+        ['sine',     'triangle' ],   // ch0 deep
+        ['triangle', 'triangle' ],   // ch1 bass
+        ['triangle', 'sawtooth' ],   // ch2 mid
+        ['sine',     'sawtooth' ],   // ch3 high (hostile path uses noise)
       ];
       osc.type = TIMBRES[ch][hostile ? 1 : 0];
 
@@ -369,20 +372,29 @@ export class AudioVoices {
       } else {
         osc.frequency.value = freq;
       }
-      osc.connect(env);
+
+      // Jazz-synth lowpass — rolls off harmonics above ~3× fundamental for
+      // chord notes (warmer, rounder) and ~5× for hostile (still bright).
+      // Q kept low (~0.7) for a gentle slope rather than resonant peak.
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = freq * (hostile ? 5.0 : 3.0);
+      lp.Q.value = 0.7;
+      osc.connect(lp).connect(env);
       osc.start(t);
       osc.stop(t + dur + 0.05);
       sources.push(osc);
 
       // Smarter brains add a harmonic partial — fifth (chord) or octave
-      // (hostile). Audibly richer voice.
+      // (hostile). Audibly richer voice. Routed pre-filter so the partial
+      // gets the same warmth.
       if (slotsN > 0.4) {
         const partial = ctx.createOscillator();
         partial.type = 'sine';
         partial.frequency.value = freq * (hostile ? 2 : 1.5);
         const partialGain = ctx.createGain();
         partialGain.gain.value = (slotsN - 0.4) * 0.4;
-        partial.connect(partialGain).connect(env);
+        partial.connect(partialGain).connect(lp);
         partial.start(t);
         partial.stop(t + dur + 0.05);
         sources.push(partial);
