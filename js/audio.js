@@ -243,7 +243,9 @@ export class AudioVoices {
   }
 
   // Short percussive scratch — bandpass-filtered noise burst, suggests
-  // friction/scraping. ~120ms, low-mid centered.
+  // friction/scraping. ~150ms, low-mid centered. Routed through a dedicated
+  // bus gain (≈3× master) so wall events stand out vs the lowpass-warm
+  // music — earlier 0.5 peak got swamped by simultaneous voice triggers.
   _playGrunt(px) {
     const ctx = this.ctx;
     const t = ctx.currentTime;
@@ -251,13 +253,13 @@ export class AudioVoices {
     noise.buffer = this._noiseBuffer;
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(180 + Math.random() * 60, t);
-    filter.frequency.exponentialRampToValueAtTime(80, t + 0.10);
-    filter.Q.value = 6;
+    filter.frequency.setValueAtTime(220 + Math.random() * 80, t);
+    filter.frequency.exponentialRampToValueAtTime(100, t + 0.12);
+    filter.Q.value = 4;
     const env = ctx.createGain();
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.5, t + 0.005);
-    env.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    env.gain.linearRampToValueAtTime(1.6, t + 0.005);
+    env.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
     noise.connect(filter).connect(env);
     let last = env;
     if (ctx.createStereoPanner) {
@@ -269,25 +271,26 @@ export class AudioVoices {
     }
     last.connect(this.master);
     noise.start(t);
-    noise.stop(t + 0.14);
+    noise.stop(t + 0.18);
     noise.onended = () => {
       try { noise.disconnect(); filter.disconnect(); env.disconnect();
         if (last !== env) last.disconnect(); } catch {}
     };
   }
 
-  // Short rounded thud — sine drop suggests setting something down. ~100ms.
+  // Short rounded thud — sine drop suggests setting something down. ~120ms.
+  // Same loudness boost as grunt so wall events cut through.
   _playPlop(px) {
     const ctx = this.ctx;
     const t = ctx.currentTime;
     const osc = ctx.createOscillator();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(380, t);
-    osc.frequency.exponentialRampToValueAtTime(70, t + 0.10);
+    osc.frequency.setValueAtTime(420, t);
+    osc.frequency.exponentialRampToValueAtTime(70, t + 0.12);
     const env = ctx.createGain();
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.45, t + 0.008);
-    env.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    env.gain.linearRampToValueAtTime(1.5, t + 0.008);
+    env.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
     osc.connect(env);
     let last = env;
     if (ctx.createStereoPanner) {

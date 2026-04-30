@@ -101,78 +101,116 @@ function symbiotic(world) {
   scatterFood(world, 0.5, 0.32);
 }
 
-// Maze — four rooms separated by a mix of solid walls, a sound/chem-permeable
-// membrane window (particles can sense the other side), and a particle-pass
-// porous gap (matter flows but chemical trails get clipped). Tests the
-// directional sensors and bondMsg propagation under spatial constraint.
+// Maze — programmatically generated each load. Several straight wall
+// segments with random orientation, position, length, and type, with
+// gaps left mid-segment and a guaranteed mix of all three wall types.
+// Constraints aim for a maze that's traversable but partitions the
+// world enough to exercise directional sensors + bondMsg.
 function maze(world) {
   world.reset();
-  const cx = (GW / 2) | 0;
-  const cy = (GH / 2) | 0;
 
-  // Helpers
+  // Helpers — same as before
   const setWall = (gx, gy, type) => {
     if (gx < 0 || gx >= GW || gy < 0 || gy >= GH) return;
     const idx = gy * GW + gx;
     if (!world.walls[idx]) world._wallCount++;
     world.walls[idx] = type;
   };
-  // Paint a 2-cell-thick line so walls read clearly at low zoom
-  const lineV = (gx, y0, y1, type) => {
-    for (let y = y0; y <= y1; y++) {
-      setWall(gx, y, type);
-      setWall(gx + 1, y, type);
-    }
-  };
-  const lineH = (gy, x0, x1, type) => {
+  const paintLineH = (gy, x0, x1, type) => {
     for (let x = x0; x <= x1; x++) {
       setWall(x, gy, type);
       setWall(x, gy + 1, type);
     }
   };
+  const paintLineV = (gx, y0, y1, type) => {
+    for (let y = y0; y <= y1; y++) {
+      setWall(gx, y, type);
+      setWall(gx + 1, y, type);
+    }
+  };
 
-  // Vertical spine: solid top quarter, membrane window in mid, solid bottom
-  // quarter — leaves a "viewing window" between top and bottom halves.
-  const winY0 = (GH * 0.40) | 0;
-  const winY1 = (GH * 0.65) | 0;
-  lineV(cx, 0, winY0 - 1, WALL_SOLID);
-  lineV(cx, winY0, winY1, WALL_MEMBRANE);
-  lineV(cx, winY1 + 1, GH - 1, WALL_SOLID);
+  // Wall budget — aim for ~5–8% of grid cells walled, distributed across
+  // 6–10 segments. Type mix tilted toward solid (most), with at least
+  // one membrane and one porous segment guaranteed.
+  const segCount = 6 + ((Math.random() * 5) | 0);   // 6..10
+  const types = [];
+  // Force variety: 1 membrane, 1 porous, rest solid biased
+  types.push(WALL_MEMBRANE, WALL_POROUS);
+  for (let i = 2; i < segCount; i++) {
+    const r = Math.random();
+    types.push(r < 0.65 ? WALL_SOLID : (r < 0.83 ? WALL_MEMBRANE : WALL_POROUS));
+  }
+  // Shuffle so the membrane/porous aren't always at the front
+  for (let i = types.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    [types[i], types[j]] = [types[j], types[i]];
+  }
 
-  // Horizontal spine: solid left, porous mid, solid right — particles can
-  // squeeze through the porous strip but their food/decay trails get clipped.
-  const porX0 = (GW * 0.30) | 0;
-  const porX1 = (GW * 0.45) | 0;
-  lineH(cy, 0, porX0 - 1, WALL_SOLID);
-  lineH(cy, porX0, porX1, WALL_POROUS);
-  lineH(cy, porX1 + 1, cx - 2, WALL_SOLID);
-  lineH(cy, cx + 2, GW - 1, WALL_SOLID);
+  for (let s = 0; s < segCount; s++) {
+    const horizontal = Math.random() < 0.5;
+    const lenMin = (horizontal ? GW : GH) * 0.25;
+    const lenMax = (horizontal ? GW : GH) * 0.55;
+    const segLen = (lenMin + Math.random() * (lenMax - lenMin)) | 0;
+    if (horizontal) {
+      const gy = (8 + Math.random() * (GH - 16)) | 0;
+      const xStart = (Math.random() * (GW - segLen)) | 0;
+      const xEnd = xStart + segLen;
+      // 0–2 random gaps within the segment for traversability
+      const gaps = [];
+      const numGaps = 1 + ((Math.random() * 2) | 0);
+      for (let g = 0; g < numGaps; g++) {
+        const gx = xStart + ((segLen * (0.2 + Math.random() * 0.6)) | 0);
+        const gw = 6 + ((Math.random() * 8) | 0);
+        gaps.push([gx - (gw >> 1), gx + (gw >> 1)]);
+      }
+      let cursor = xStart;
+      gaps.sort((a, b) => a[0] - b[0]);
+      for (const [g0, g1] of gaps) {
+        if (cursor < g0) paintLineH(gy, cursor, g0 - 1, types[s]);
+        cursor = Math.max(cursor, g1 + 1);
+      }
+      if (cursor <= xEnd) paintLineH(gy, cursor, xEnd, types[s]);
+    } else {
+      const gx = (8 + Math.random() * (GW - 16)) | 0;
+      const yStart = (Math.random() * (GH - segLen)) | 0;
+      const yEnd = yStart + segLen;
+      const gaps = [];
+      const numGaps = 1 + ((Math.random() * 2) | 0);
+      for (let g = 0; g < numGaps; g++) {
+        const gy = yStart + ((segLen * (0.2 + Math.random() * 0.6)) | 0);
+        const gw = 6 + ((Math.random() * 8) | 0);
+        gaps.push([gy - (gw >> 1), gy + (gw >> 1)]);
+      }
+      let cursor = yStart;
+      gaps.sort((a, b) => a[0] - b[0]);
+      for (const [g0, g1] of gaps) {
+        if (cursor < g0) paintLineV(gx, cursor, g0 - 1, types[s]);
+        cursor = Math.max(cursor, g1 + 1);
+      }
+      if (cursor <= yEnd) paintLineV(gx, cursor, yEnd, types[s]);
+    }
+  }
 
   world._wallsVersion++;
 
-  // Seed particles distributed evenly across all four rooms. Each species
-  // gets one founder clade. Particles dropped randomly anywhere — wall
-  // collisions resolve at first integration step.
+  // Seed particles distributed evenly across the world. Each species gets
+  // one founder clade. Skip placement if cell is wall (retry up to 8x).
   const perSpecies = 80;
   for (let s = 0; s < NUM_SPECIES; s++) {
     const founder = world.beginClade(makeGenome(s));
     for (let i = 0; i < perSpecies; i++) {
-      let x, y, idx;
-      // Try a few times to avoid placing inside walls
-      for (let tries = 0; tries < 6; tries++) {
+      let x, y;
+      for (let tries = 0; tries < 8; tries++) {
         x = Math.random() * (W - 20) + 10;
         y = Math.random() * (H - 20) + 10;
         const gx = clamp((x / CELL) | 0, 0, GW - 1);
         const gy = clamp((y / CELL) | 0, 0, GH - 1);
-        idx = gy * GW + gx;
-        if (!world.walls[idx]) break;
+        if (!world.walls[gy * GW + gx]) break;
       }
       world.addParticle(x, y, makeGenome(s), 4 + Math.random() * 2, founder);
     }
   }
 
-  // Food sprinkled in each quadrant — uneven so some rooms are hungrier
-  // than others, forcing trans-wall pressure.
   scatterFood(world, 0.5, 0.30);
 }
 
