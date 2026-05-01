@@ -31,7 +31,7 @@ import {
 // ── Layouts ─────────────────────────────────────────────────────────
 const PARTICLE_STRIDE_F32 = 16;
 const RESULT_STRIDE_F32   = 30;       // forces+stats(12) + outputs(18); h stays GPU-resident
-const EXTRAS_STRIDE_F32   = 28;       // 6 chem + 4 sound + 3 bondMsg + 4 cluster + 1 alarm + 1 wallCarry + 4 wallProx + 4 mudProx + 1 mud
+const EXTRAS_STRIDE_F32   = 36;       // chem + sound + bondMsg + cluster + wallCarry + terrain proximity
 const BRAIN_STRIDE_F32    = BRAIN_PACK_STRIDE;
 const STATE_STRIDE_F32    = N_HIDDEN_MAX + 8; // h state + GPU-only quadrant scratch
 const PARAMS_SIZE         = 32;
@@ -51,6 +51,8 @@ const CROWD_RADIUS        = 14.0;
 //   19..22: wall proximity n/s/e/w
 //   23..26: mud proximity n/s/e/w
 //   27    : terrain.mud underfoot
+//   28..31: solid proximity n/s/e/w
+//   32..35: glass proximity n/s/e/w
 const EXTRAS_BOND_MSG_R_OFFSET = 10;
 const EXTRAS_BOND_MSG_G_OFFSET = 11;
 const EXTRAS_BOND_MSG_B_OFFSET = 12;
@@ -390,6 +392,14 @@ fn brain_forward(@builtin(global_invocation_id) id: vec3u) {
   inp[43] = extras[eo + 25u];     // mud.e
   inp[44] = extras[eo + 26u];     // mud.w
   inp[45] = extras[eo + 27u];     // terrain.mud underfoot
+  inp[46] = extras[eo + 28u];     // solid.n proximity
+  inp[47] = extras[eo + 29u];     // solid.s
+  inp[48] = extras[eo + 30u];     // solid.e
+  inp[49] = extras[eo + 31u];     // solid.w
+  inp[50] = extras[eo + 32u];     // glass.n proximity
+  inp[51] = extras[eo + 33u];     // glass.s
+  inp[52] = extras[eo + 34u];     // glass.e
+  inp[53] = extras[eo + 35u];     // glass.w
 
   // Forward — compute new hidden state
   var h_new: array<f32, ${N_HIDDEN_MAX}>;
@@ -712,7 +722,7 @@ export class GPUPairForce {
   }
 
   // Upload chem-extras (CPU pre-samples field around each particle).
-  // Layout per particle: chem, sound, bond messages, cluster state, wall sensors, mud sensors.
+  // Layout per particle: chem, sound, bond messages, cluster state, wall and typed terrain sensors.
   uploadExtras(extras) {
     // `extras` is a Float32Array supplied by sim (already sized maxParticles×EXTRAS_STRIDE_F32)
     const count = Math.min(this._uploadedCount, this.maxParticles);

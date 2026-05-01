@@ -159,11 +159,14 @@ function scanWallProximity(walls, gx, gy, targetType = 0) {
 }
 
 // Combined terrain scan for the hot brain-input paths. It preserves the old
-// semantics of two independent scans: wall.* reports nearest material of any
-// type, while mud.* reports nearest mud even if another wall type is closer.
+// semantics of independent scans: wall.* reports nearest material of any type,
+// while mud/solid/glass report nearest matching material even if another type
+// is closer. Output layout: 0..3 wall, 4..7 mud, 8..11 solid, 12..15 glass.
 function scanWallAndMudProximityInto(walls, gx, gy, out) {
   let wn = 0, ws = 0, we = 0, ww = 0;
   let mn = 0, ms = 0, me = 0, mw = 0;
+  let sn = 0, ss = 0, se = 0, sw = 0;
+  let gn = 0, gs = 0, ge = 0, gw = 0;
   for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
     const ny = gy - d;
     if (ny < 0) break;
@@ -172,7 +175,9 @@ function scanWallAndMudProximityInto(walls, gx, gy, out) {
     if (wt) {
       if (!wn) wn = v;
       if (wt === WALL_POROUS && !mn) mn = v;
-      if (wn && mn) break;
+      if (wt === WALL_SOLID && !sn) sn = v;
+      if (wt === WALL_MEMBRANE && !gn) gn = v;
+      if (wn && mn && sn && gn) break;
     }
   }
   for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
@@ -183,7 +188,9 @@ function scanWallAndMudProximityInto(walls, gx, gy, out) {
     if (wt) {
       if (!ws) ws = v;
       if (wt === WALL_POROUS && !ms) ms = v;
-      if (ws && ms) break;
+      if (wt === WALL_SOLID && !ss) ss = v;
+      if (wt === WALL_MEMBRANE && !gs) gs = v;
+      if (ws && ms && ss && gs) break;
     }
   }
   for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
@@ -194,7 +201,9 @@ function scanWallAndMudProximityInto(walls, gx, gy, out) {
     if (wt) {
       if (!we) we = v;
       if (wt === WALL_POROUS && !me) me = v;
-      if (we && me) break;
+      if (wt === WALL_SOLID && !se) se = v;
+      if (wt === WALL_MEMBRANE && !ge) ge = v;
+      if (we && me && se && ge) break;
     }
   }
   for (let d = 1; d <= WALL_SCAN_RANGE; d++) {
@@ -205,11 +214,15 @@ function scanWallAndMudProximityInto(walls, gx, gy, out) {
     if (wt) {
       if (!ww) ww = v;
       if (wt === WALL_POROUS && !mw) mw = v;
-      if (ww && mw) break;
+      if (wt === WALL_SOLID && !sw) sw = v;
+      if (wt === WALL_MEMBRANE && !gw) gw = v;
+      if (ww && mw && sw && gw) break;
     }
   }
   out[0] = wn; out[1] = ws; out[2] = we; out[3] = ww;
   out[4] = mn; out[5] = ms; out[6] = me; out[7] = mw;
+  out[8] = sn; out[9] = ss; out[10] = se; out[11] = sw;
+  out[12] = gn; out[13] = gs; out[14] = ge; out[15] = gw;
   return out;
 }
 
@@ -362,7 +375,7 @@ export class World {
     this._idLookupTouched = [];
     this._buildCandX = new Int16Array(4);
     this._buildCandY = new Int16Array(4);
-    this._terrainScanScratch = new Float32Array(8);
+    this._terrainScanScratch = new Float32Array(16);
     this._profileEnabled = false;
     this._profileTotals = new Map();
     this._profileTicks = 0;
@@ -1115,9 +1128,19 @@ export class World {
           inp[42] = tScan[5];
           inp[43] = tScan[6];
           inp[44] = tScan[7];
+          inp[46] = tScan[8];
+          inp[47] = tScan[9];
+          inp[48] = tScan[10];
+          inp[49] = tScan[11];
+          inp[50] = tScan[12];
+          inp[51] = tScan[13];
+          inp[52] = tScan[14];
+          inp[53] = tScan[15];
         } else {
           inp[37] = inp[38] = inp[39] = inp[40] = 0;
           inp[41] = inp[42] = inp[43] = inp[44] = 0;
+          inp[46] = inp[47] = inp[48] = inp[49] = 0;
+          inp[50] = inp[51] = inp[52] = inp[53] = 0;
         }
         inp[45] = walls[sIdx] === WALL_POROUS ? 1 : 0;
         g.brain.forward(inp, out);
@@ -1811,9 +1834,19 @@ export class World {
         extras[o + 24] = ts[5];
         extras[o + 25] = ts[6];
         extras[o + 26] = ts[7];
+        extras[o + 28] = ts[8];
+        extras[o + 29] = ts[9];
+        extras[o + 30] = ts[10];
+        extras[o + 31] = ts[11];
+        extras[o + 32] = ts[12];
+        extras[o + 33] = ts[13];
+        extras[o + 34] = ts[14];
+        extras[o + 35] = ts[15];
       } else {
         extras[o + 19] = extras[o + 20] = extras[o + 21] = extras[o + 22] = 0;
         extras[o + 23] = extras[o + 24] = extras[o + 25] = extras[o + 26] = 0;
+        extras[o + 28] = extras[o + 29] = extras[o + 30] = extras[o + 31] = 0;
+        extras[o + 32] = extras[o + 33] = extras[o + 34] = extras[o + 35] = 0;
       }
       extras[o + 27] = walls[sIdx] === WALL_POROUS ? 1 : 0;
     }

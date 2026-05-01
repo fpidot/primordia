@@ -75,6 +75,12 @@ making the browser unusable.
    food concentration and gradient, but if dropped food nearby does not attract
    them, verify whether chemotaxis is too weak, gradient sampling is too local,
    or neural motor outputs overpower the genome-level food force.
+   Current status: typed directional material sensors are now appended to the
+   brain input set for solid walls and glass barriers, while the old wall/mud
+   slots remain index-stable for saved organisms. Next validation target:
+   detour-navigation microtests that put food/prey behind glass with a nearby
+   opening and verify whether random/evolved brains have enough sensory and
+   recurrent scaffolding to learn "go around, then turn back toward the goal."
    Bond topology question: cluster neural capacity may depend not only on size
    but on graph shape. Current bondMsg is three continuous channels that brains
    can repurpose, received as the mean of immediate bonded neighbors, so
@@ -114,6 +120,10 @@ making the browser unusable.
    adaptive cadence modes outperform full GPU brains. Latest CPU-side pass
    merged repeated wall/mud proximity scans; the 1200-cap maze probe improved
    from ~31.9 ms/tick to ~27.0 ms/tick on the same seed.
+   Current caution: short headless GPU smoke after typed terrain sensors showed
+   no page or shader errors, but readback can still spike on dense maze runs.
+   Treat readback decoupling and adaptive cadence as the next large win before
+   raising population/grid caps.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful

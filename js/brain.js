@@ -71,6 +71,14 @@ export const SENSOR_NAMES = [
   /* 43 */ 'mud.e',                     // east
   /* 44 */ 'mud.w',                     // west
   /* 45 */ 'terrain.mud',               // mud underfoot (0/1); slows and drains
+  /* 46 */ 'solid.n',                   // opaque solid wall north
+  /* 47 */ 'solid.s',                   // south
+  /* 48 */ 'solid.e',                   // east
+  /* 49 */ 'solid.w',                   // west
+  /* 50 */ 'glass.n',                   // transparent blocking wall north
+  /* 51 */ 'glass.s',                   // south
+  /* 52 */ 'glass.e',                   // east
+  /* 53 */ 'glass.w',                   // west
 ];
 export const N_INPUT = SENSOR_NAMES.length;
 
