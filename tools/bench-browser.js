@@ -92,6 +92,7 @@ const preset = String(readArg('preset', positional[0] || 'maze'));
 const seconds = Math.max(1, Number(readArg('seconds', positional[1] || 8)) || 8);
 const speed = Math.max(0.25, Number(readArg('speed', positional[2] || 4)) || 4);
 const warmup = Math.max(0, Number(readArg('warmup', 1000)) || 0);
+const seedArg = readArg('seed', null);
 const wantGpu = !!readArg('gpu', false);
 const width = Math.max(320, Number(readArg('width', 1440)) || 1440);
 const height = Math.max(320, Number(readArg('height', 1000)) || 1000);
@@ -157,6 +158,23 @@ try {
       if (!app) throw new Error('window.__primordia missing');
       const { world, ui, camera, chart, PRESETS, gpu } = app;
       if (!PRESETS['${preset}']) throw new Error('unknown preset ${preset}');
+      const seedValue = ${seedArg == null ? 'null' : JSON.stringify(String(seedArg))};
+      if (seedValue != null) {
+        let seed = Number(seedValue);
+        if (!Number.isFinite(seed)) {
+          seed = 0;
+          for (let i = 0; i < seedValue.length; i++) seed = ((seed << 5) - seed + seedValue.charCodeAt(i)) | 0;
+        }
+        Math.random = (() => {
+          let t = seed >>> 0;
+          return () => {
+            t += 0x6D2B79F5;
+            let r = Math.imul(t ^ (t >>> 15), 1 | t);
+            r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+            return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+          };
+        })();
+      }
       PRESETS['${preset}'](world);
       chart.data.length = 0;
       camera.fit();
@@ -204,6 +222,7 @@ try {
       ui.paused = true;
       return {
         preset: '${preset}',
+        seed: seedValue,
         requestedGpu: wantGpu,
         gpuReady,
         gpuEnabled: world.isGPUEnabled(),
@@ -220,6 +239,8 @@ try {
           fallbackTicks: world._gpuTicksFallback || 0,
           pendingReadbacks: world._gpuPendings ? world._gpuPendings.length : 0,
           lastResultAge: world._gpuLastResultAge || 0,
+          adaptiveCooldownTicks: world._gpuCooldownTicks || 0,
+          adaptiveCooldowns: world._gpuAdaptiveCooldowns || 0,
         },
         elapsedMs: Math.round(elapsed),
         frames,

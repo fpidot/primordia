@@ -119,22 +119,29 @@ making the browser unusable.
    `npm run bench:browser`; early CPU/GPU browser checks show WebGPU can
    improve frame responsiveness. First GPU handoff improvement keeps hidden
    brain state resident on-GPU, cutting the short maze probe readback from
-   ~20 ms to ~5 ms and improving both FPS and ticks/second. Next GPU approach:
-   keep decoupling the CPU/GPU handoff and profile whether pair-force-only or
-   adaptive cadence modes outperform full GPU brains. Latest CPU-side pass
-   merged repeated wall/mud proximity scans; the 1200-cap maze probe improved
-   from ~31.9 ms/tick to ~27.0 ms/tick on the same seed.
-   Current caution: short headless GPU smoke after typed terrain sensors showed
-   no page or shader errors, but readback can still spike on dense maze runs.
-   Treat readback decoupling and adaptive cadence as the next large win before
-   raising population/grid caps.
+   ~20 ms to ~5 ms and improving both FPS and ticks/second. Latest CPU-side
+   pass merged repeated wall/mud proximity scans; the 1200-cap maze probe
+   improved from ~31.9 ms/tick to ~27.0 ms/tick on the same seed.
    Current status: GPU readback now uses a small ring of readback buffers so a
    late mapAsync no longer blocks launching newer dispatches, and browser
-   bench/UI telemetry reports used vs fallback GPU ticks plus pending readbacks.
-   On the current Intel sample this improves scheduling resilience but still
-   does not beat CPU-only in dense mazes, so the next performance target should
-   reduce readback payload/frequency or split pair-force-only assist from full
-   GPU brain mode.
+   bench/UI telemetry reports used vs fallback GPU ticks, pending readbacks,
+   and adaptive cooldown state. The CPU-side loop now avoids repeating full
+   sensory-radius neighbor/line-of-sight work on ticks where GPU pair results
+   are consumed; it only keeps CPU contact-range biology and bond barriers.
+   Adaptive GPU cadence now samples the GPU path briefly, then cools down for
+   300 ticks when the recent used/fallback ratio or readback time is poor.
+   Browser bench now accepts `--seed`, so CPU/GPU comparisons can start from
+   the same preset state. Recent headless Chrome/Intel samples:
+   - dense maze, GPU before adaptive: ~19.9 ticks/sec with ~55 ms readback and
+     many fallback ticks
+   - seeded dense maze, 5s: adaptive GPU ~25.3 ticks/sec, CPU-only ~26.6
+   - seeded dense maze, 8s: adaptive GPU ~26.5 ticks/sec, CPU-only ~24.0
+   - open soup, adaptive GPU: short 4s probes still pay startup tax, but an 8s
+     run recovered to ~35 ticks/sec after cooldown
+   Next GPU target: reduce readback payload/frequency further, or split a
+   pair-force-only assist mode from full GPU brain mode so fast adapters can
+   keep useful GPU work without requiring every brain output to cross the
+   readback boundary every tick.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful

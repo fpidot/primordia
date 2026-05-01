@@ -1488,11 +1488,12 @@ export class UI {
     const used = w._gpuTicksUsed || 0;
     const fallback = w._gpuTicksFallback || 0;
     const pending = w._gpuPendings ? w._gpuPendings.length : 0;
+    const cool = w._gpuCooldownTicks > 0 ? ` · cool ${w._gpuCooldownTicks}` : '';
     this._gpuStatusEl.textContent =
       `active · ${k.dispatchCount} dispatches · ` +
       `up ${upMs}ms · disp ${k.lastDispatchMs.toFixed(2)}ms · ` +
       `read ${k.lastReadbackMs.toFixed(2)}ms · ` +
-      `used ${used}/${used + fallback} · pend ${pending}${err}`;
+      `used ${used}/${used + fallback} · pend ${pending}${cool}${err}`;
   }
 
   // ────────────────────────────── Persistence

@@ -41,6 +41,7 @@ export const HH = Math.ceil(H / HASH_CELL);
 // produce the chasing/orbiting/clustering signatures of Particle-Life-style
 // emergent organisms.
 export const R_CLOSE = 6.0;          // collision radius
+const R_CLOSE2 = R_CLOSE * R_CLOSE;
 export const K_REP = 1.8;            // short-range repulsion strength
 export const K_ATTR = 0.30;          // tent peak strength multiplier
 const K_FIELD = 4.5;          // gradient → acceleration scale
@@ -388,6 +389,11 @@ export class World {
     this._gpuLastResultAge = 0;
     this._gpuTicksUsed = 0;
     this._gpuTicksFallback = 0;
+    this._gpuAdaptive = true;
+    this._gpuCooldownTicks = 0;
+    this._gpuAdaptiveCooldowns = 0;
+    this._gpuWindowUsed = 0;
+    this._gpuWindowFallback = 0;
     this._brainsDirty = true;          // re-upload brain weights when any brain changed
     this._gpuStateDirty = true;        // re-upload transient brain state when GPU state mapping changes
     this._extrasStaging = null;        // Float32Array(maxParticles × EXTRAS_STRIDE) — lazy alloc
@@ -411,11 +417,16 @@ export class World {
     if (!this._gpuEnabled) {
       this._gpuResults = null;
       this._gpuPendings.length = 0;
+      this._gpuCooldownTicks = 0;
     } else {
       // First GPU-enabled tick must (re)upload all brain weights so the brain
       // kernel doesn't run with the GPU buffer's zeroed initial state.
       this._brainsDirty = true;
       this._gpuStateDirty = true;
+      this._gpuCooldownTicks = 0;
+      this._gpuAdaptiveCooldowns = 0;
+      this._gpuWindowUsed = 0;
+      this._gpuWindowFallback = 0;
     }
   }
   isGPUEnabled() { return !!this._gpuEnabled; }
@@ -778,6 +789,8 @@ export class World {
     if (profiling) markProfile('setup');
     let useGpuPairs = false;
     this._gpuResults = null;
+    if (this._gpuCooldownTicks > 0) this._gpuCooldownTicks--;
+    const gpuComputeActive = this._gpuEnabled && this._gpuCooldownTicks <= 0;
     if (this._gpuPendings.length > 0) {
       let best = null;
       let writePending = 0;
@@ -804,6 +817,7 @@ export class World {
         this._gpuResults = best.value;
         this._gpuLastResultAge = this.tick - best.tick;
         this._gpuTicksUsed++;
+        if (gpuComputeActive) this._gpuWindowUsed++;
         useGpuPairs = true;
       }
       if (!this._gpuEnabled) {
@@ -811,8 +825,9 @@ export class World {
         this._gpuPendings.length = 0;
       }
     }
-    if (this._gpuEnabled && N > 0 && !useGpuPairs) {
+    if (gpuComputeActive && N > 0 && !useGpuPairs) {
       this._gpuTicksFallback++;
+      this._gpuWindowFallback++;
       this._gpuStateDirty = true;
     }
 
@@ -842,6 +857,12 @@ export class World {
       const gSense = g.sense;
       const R = g.sense_radius;
       const R2 = R * R;
+      // When GPU results are available, broad pair forces, neighbor counts,
+      // signal sums, and quadrant stats have already been computed. The CPU
+      // still needs only contact-range biology (predation/bond formation) plus
+      // the separate bond-barrier check below, so avoid repeating expensive
+      // sqrt/solid-line tests across the full sensory radius.
+      const cpuNeighborR2 = useGpuPairs ? R_CLOSE2 : R2;
       let ax = 0, ay = 0;
       // Bond barrier accumulator — kept separate from ax/ay so the GPU
       // pair-force overwrite below doesn't clobber it. Added to ax/ay after
@@ -887,7 +908,7 @@ export class World {
                 const dx = q.x - p.x;
                 const dy = q.y - p.y;
                 const d2 = dx * dx + dy * dy;
-                if (d2 < R2 && d2 > 1e-6 &&
+                if (d2 < cpuNeighborR2 && d2 > 1e-6 &&
                     !(hasSolidSightBlockers && solidBlocksLineOfSight(walls, p.x, p.y, q.x, q.y))) {
                   const d = Math.sqrt(d2);
                   if (!useGpuPairs) {
@@ -1754,7 +1775,9 @@ export class World {
     // ── 6. Pipeline NEXT tick's GPU compute (Phase 4g). Doesn't block.
     // Uses post-integration state so GPU sees latest positions; results
     // come back at the start of next tick.
-    if (this._gpuEnabled && this._gpu && this.particles.length > 0 &&
+    this._updateGpuAdaptiveCadence();
+
+    if (this._gpuEnabled && this._gpuCooldownTicks <= 0 && this._gpu && this.particles.length > 0 &&
         (!this._gpu.hasReadbackCapacity || this._gpu.hasReadbackCapacity())) {
       try {
         this._buildGpuExtras();
@@ -1805,6 +1828,34 @@ export class World {
     if (profiling) {
       markProfile('gpuDispatch');
       this._profileTicks++;
+    }
+  }
+
+  _updateGpuAdaptiveCadence() {
+    if (!this._gpuAdaptive || !this._gpuEnabled || !this._gpu) return;
+    if (this._gpuCooldownTicks > 0) return;
+
+    const used = this._gpuWindowUsed | 0;
+    const fallback = this._gpuWindowFallback | 0;
+    const total = used + fallback;
+    if (total < 12) return;
+
+    const usedRatio = used / total;
+    const readbackMs = this._gpu.lastReadbackMs || 0;
+    const tooStale = usedRatio < 0.55;
+    const tooSlow = readbackMs > 45 && usedRatio < 0.75;
+
+    if (tooStale || tooSlow) {
+      // Leave the user-facing GPU toggle on, but stop launching new dispatches
+      // for a while. CPU remains the reference path; after cooldown, GPU probes
+      // again automatically in case population/terrain pressure has changed.
+      this._gpuCooldownTicks = 300;
+      this._gpuAdaptiveCooldowns++;
+      this._gpuWindowUsed = 0;
+      this._gpuWindowFallback = 0;
+    } else {
+      this._gpuWindowUsed = Math.floor(used * 0.5);
+      this._gpuWindowFallback = Math.floor(fallback * 0.5);
     }
   }
 

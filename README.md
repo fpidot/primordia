@@ -37,10 +37,13 @@ Start the local server first, then run:
 ```sh
 npm run bench:browser -- maze 6 4
 node tools/bench-browser.js maze 6 4 9230 --gpu
+node tools/bench-browser.js --preset maze --seconds 8 --speed 4 --seed 0xC0FFEE --gpu
 ```
 
 The browser probe launches Chrome/Edge through the DevTools protocol and
-reports FPS, sim ticks/sec, GPU availability, and WebGPU readback timings.
+reports FPS, sim ticks/sec, GPU availability, WebGPU readback timings, and
+adaptive GPU cooldown telemetry. Use `--seed` for CPU/GPU comparisons that
+start from the same preset state.
 
 ## Preset population
 

@@ -40,10 +40,14 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  `33e144b Add Codex handoff guide`
+  current `main` HEAD: `Add adaptive GPU cadence`
 
 Recent useful commits:
 
+- current `main` HEAD - Add adaptive GPU cadence
+- `576432c` - Clarify bonds in quick start
+- `5432b68` - Add in-app guide popups
+- `81b69b2` - Add field notes and quick start docs
 - `33e144b` - Add Codex handoff guide
 - `702cf38` - Pipeline GPU readbacks through slots
 - `b5368d5` - Respect solid line of sight
@@ -216,21 +220,38 @@ GPU:
   - fallback ticks
   - pending readbacks
   - last result age
+  - adaptive cooldown ticks/cooldown count
 
 Performance reality:
 
 - The readback-slot pass improves scheduling resilience and diagnostics.
-- It does not yet make dense mazes faster than CPU-only on the current Intel
-  laptop/desktop sample.
-- The likely next big win is to reduce what has to come back from GPU, reduce
-  how often it comes back, or split pair-force assist from full GPU brain mode.
+- A follow-up pass tightened the CPU side of GPU mode: when a fresh GPU result
+  is consumed, the CPU neighbor loop no longer repeats full sensory-radius
+  pair/stat/line-of-sight work. It keeps only contact-range biology
+  (predation/bond formation) and CPU-only bond-barrier checks.
+- Adaptive cadence now samples GPU briefly and enters a 300-tick cooldown if
+  the recent used/fallback ratio is poor or readback is too slow. The user
+  toggle remains on, but dispatch pauses; CPU remains the reference path.
+- Recent local headless Chrome/Intel samples after this pass:
+  - dense maze GPU before adaptive: about 19.9 ticks/sec, readback around 55 ms
+  - seeded dense maze, 5s: adaptive GPU about 25.3 ticks/sec, CPU-only about
+    26.6
+  - seeded dense maze, 8s: adaptive GPU about 26.5 ticks/sec, CPU-only about
+    24.0
+  - open soup adaptive GPU: 4s probes still show startup tax, while an 8s run
+    recovered to about 35 ticks/sec after cooldown
+- The likely next big win is still to reduce what has to come back from GPU,
+  reduce how often it comes back, or split pair-force assist from full GPU
+  brain mode.
 
 Next performance target:
 
-- Implement and benchmark a pair-force-only GPU assist mode, or
-- shrink/sparsify readback payload, or
-- add an adaptive cadence mode that uses GPU only when its used/fallback ratio
-  is favorable.
+- Implement and benchmark a pair-force-only GPU assist mode.
+- Shrink/sparsify readback payload so fewer floats cross the GPU/CPU boundary.
+- Tune adaptive cadence with longer headed-browser runs on both the desktop and
+  laptop, especially short-run startup tax versus long-run recovery.
+- Prefer `tools\bench-browser.js --seed 0xC0FFEE` for CPU/GPU comparisons;
+  unseeded browser presets are too variable to support precise conclusions.
 
 Be careful: full GPU brain mode needs output readback for many CPU-side systems
 that currently apply outputs, reproduction, deaths, wall actions, and metadata.
@@ -380,12 +401,14 @@ Browser/GPU smoke:
 
 ```powershell
 node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 6 --speed 4 --gpu --port 9336
+node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 8 --speed 4 --seed 0xC0FFEE --gpu --port 9336
 ```
 
 CPU browser comparison:
 
 ```powershell
 node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 6 --speed 4 --port 9337
+node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 8 --speed 4 --seed 0xC0FFEE --port 9337
 ```
 
 If no local server is running, start a static server from the repo root and use
