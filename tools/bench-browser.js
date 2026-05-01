@@ -215,6 +215,12 @@ try {
           readbackMs: +(world._gpu.lastReadbackMs || 0).toFixed(2),
           lastError: world._gpu.lastError || null,
         } : null,
+        gpuPipeline: {
+          usedTicks: world._gpuTicksUsed || 0,
+          fallbackTicks: world._gpuTicksFallback || 0,
+          pendingReadbacks: world._gpuPendings ? world._gpuPendings.length : 0,
+          lastResultAge: world._gpuLastResultAge || 0,
+        },
         elapsedMs: Math.round(elapsed),
         frames,
         fps: +(frames / elapsed * 1000).toFixed(1),

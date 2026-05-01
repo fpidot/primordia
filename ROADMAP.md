@@ -128,6 +128,13 @@ making the browser unusable.
    no page or shader errors, but readback can still spike on dense maze runs.
    Treat readback decoupling and adaptive cadence as the next large win before
    raising population/grid caps.
+   Current status: GPU readback now uses a small ring of readback buffers so a
+   late mapAsync no longer blocks launching newer dispatches, and browser
+   bench/UI telemetry reports used vs fallback GPU ticks plus pending readbacks.
+   On the current Intel sample this improves scheduling resilience but still
+   does not beat CPU-only in dense mazes, so the next performance target should
+   reduce readback payload/frequency or split pair-force-only assist from full
+   GPU brain mode.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful

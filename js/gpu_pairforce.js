@@ -37,6 +37,7 @@ const STATE_STRIDE_F32    = N_HIDDEN_MAX + 8; // h state + GPU-only quadrant scr
 const PARAMS_SIZE         = 48;
 const WORKGROUP_SIZE      = 64;
 const CROWD_RADIUS        = 14.0;
+const READBACK_SLOTS      = 3;
 // Extras-buffer layout (must match sim.js prefill):
 //   0..5  : food, decay, food.dx, food.dy, decay.dx, decay.dy
 //   6..9  : sound[0..3]
@@ -541,11 +542,12 @@ export class GPUPairForce {
     this.solidWallStaging = new Float32Array((opts.gridW || 1) * (opts.gridH || 1));
     this.paramsStaging = new ArrayBuffer(PARAMS_SIZE);
     this.paramsView = new DataView(this.paramsStaging);
-    this.resultsCPU = new Float32Array(this.maxParticles * RESULT_STRIDE_F32);
 
     this._uploadedCount = 0;
     this._brainsUploadedCount = 0;
     this._wallsUploadedVersion = null;
+    this._readbackCursor = 0;
+    this._dispatchSerial = 0;
     this.dispatchCount = 0;
     this.lastDispatchMs = 0;
     this.lastReadbackMs = 0;
@@ -595,10 +597,19 @@ export class GPUPairForce {
       size: (N * EXTRAS_STRIDE_F32 + GW * GH) * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.readBackBuf = d.createBuffer({
-      size: N * RESULT_STRIDE_F32 * 4,
-      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-    });
+    this.readbackSlots = [];
+    for (let i = 0; i < READBACK_SLOTS; i++) {
+      this.readbackSlots.push({
+        busy: false,
+        count: 0,
+        serial: 0,
+        buffer: d.createBuffer({
+          size: N * RESULT_STRIDE_F32 * 4,
+          usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        }),
+        results: new Float32Array(N * RESULT_STRIDE_F32),
+      });
+    }
 
     // Stash WGSL source for programmatic inspection (useful when chasing a
     // pipeline-creation failure — paste from `world._gpu.wgslSource`).
@@ -768,6 +779,10 @@ export class GPUPairForce {
     this._wallsUploadedVersion = version;
   }
 
+  hasReadbackCapacity() {
+    return this.readbackSlots.some(slot => !slot.busy);
+  }
+
   _writeParams(count) {
     const o = this.opts;
     const v = this.paramsView;
@@ -792,6 +807,20 @@ export class GPUPairForce {
     const HW = this.opts.hashW, HH = this.opts.hashH;
     const HASH_CELLS = HW * HH;
     const partGroups = Math.max(1, Math.ceil(count / WORKGROUP_SIZE));
+    let slot = null;
+    for (let n = 0; n < this.readbackSlots.length; n++) {
+      const idx = (this._readbackCursor + n) % this.readbackSlots.length;
+      const candidate = this.readbackSlots[idx];
+      if (!candidate.busy) {
+        slot = candidate;
+        this._readbackCursor = (idx + 1) % this.readbackSlots.length;
+        break;
+      }
+    }
+    if (!slot) return null;
+    slot.busy = true;
+    slot.count = count;
+    slot.serial = ++this._dispatchSerial;
 
     const enc = d.createCommandEncoder({ label: 'primordia.kernel' });
     const pass = enc.beginComputePass();
@@ -810,28 +839,33 @@ export class GPUPairForce {
     pass.dispatchWorkgroups(partGroups);
 
     pass.end();
-    enc.copyBufferToBuffer(this.resultsBuf, 0, this.readBackBuf, 0, count * RESULT_STRIDE_F32 * 4);
+    enc.copyBufferToBuffer(this.resultsBuf, 0, slot.buffer, 0, count * RESULT_STRIDE_F32 * 4);
 
     const t0 = performance.now();
     d.queue.submit([enc.finish()]);
     this.lastDispatchMs = performance.now() - t0;
     this.dispatchCount++;
+    return { slot, count, serial: slot.serial };
   }
 
-  async readback() {
-    const count = this._uploadedCount || this.maxParticles;
+  async readback(token) {
+    const slot = token && token.slot;
+    if (!slot) throw new Error('missing readback slot');
+    const count = token.count || slot.count || this.maxParticles;
     const bytes = count * RESULT_STRIDE_F32 * 4;
     const t0 = performance.now();
     try {
-      await this.readBackBuf.mapAsync(GPUMapMode.READ, 0, bytes);
-      const range = this.readBackBuf.getMappedRange(0, bytes);
-      this.resultsCPU.set(new Float32Array(range, 0, count * RESULT_STRIDE_F32));
-      this.readBackBuf.unmap();
+      await slot.buffer.mapAsync(GPUMapMode.READ, 0, bytes);
+      const range = slot.buffer.getMappedRange(0, bytes);
+      slot.results.set(new Float32Array(range, 0, count * RESULT_STRIDE_F32));
+      slot.buffer.unmap();
       this.lastReadbackMs = performance.now() - t0;
-      return this.resultsCPU;
+      return slot.results;
     } catch (err) {
       this.lastError = err.message || String(err);
       throw err;
+    } finally {
+      slot.busy = false;
     }
   }
 }

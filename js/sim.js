@@ -383,7 +383,11 @@ export class World {
     // GPU pair-force kernel — set later via attachGPU().
     this._gpu = null;
     this._gpuResults = null;
-    this._gpuPending = null;           // Phase 4f — pipelined readback promise
+    this._gpuPendings = [];
+    this._gpuOrderVersion = 0;
+    this._gpuLastResultAge = 0;
+    this._gpuTicksUsed = 0;
+    this._gpuTicksFallback = 0;
     this._brainsDirty = true;          // re-upload brain weights when any brain changed
     this._gpuStateDirty = true;        // re-upload transient brain state when GPU state mapping changes
     this._extrasStaging = null;        // Float32Array(maxParticles × EXTRAS_STRIDE) — lazy alloc
@@ -406,7 +410,7 @@ export class World {
     this._gpuEnabled = !!enabled && !!this._gpu;
     if (!this._gpuEnabled) {
       this._gpuResults = null;
-      this._gpuPending = null;
+      this._gpuPendings.length = 0;
     } else {
       // First GPU-enabled tick must (re)upload all brain weights so the brain
       // kernel doesn't run with the GPU buffer's zeroed initial state.
@@ -571,9 +575,10 @@ export class World {
     this._deathSoundEvents.length = 0;
     this._brainsDirty = true;
     this._gpuStateDirty = true;
-    // Phase 4f — drop any in-flight GPU readback so the next tick doesn't
+    // Phase 4g — drop any in-flight GPU readback so the next tick doesn't
     // apply results computed against the previous (now-replaced) world.
-    this._gpuPending = null;
+    this._gpuPendings.length = 0;
+    this._gpuOrderVersion++;
     this.clades = new CladeTracker();
     // Clusters are recomputed on a 12-tick cadence; if we don't clear here,
     // stale cluster flags + chase locks survive the preset switch until the
@@ -761,12 +766,9 @@ export class World {
     }
 
     // ── GPU pair-force + brain forward (pipelined) ───────────────────
-    // Phase 4f: GPU compute is pipelined one tick ahead of CPU work.
-    // At the start of each tick we await the previous tick's readback;
-    // those results drive THIS tick's CPU integration. After CPU work
-    // completes (positions/state updated for this tick) we kick off the
-    // next dispatch + readback without awaiting — letting GPU compute
-    // overlap with the next frame's CPU work + the JS event loop.
+    // Phase 4f/4g: GPU compute is pipelined one tick ahead of CPU work.
+    // Multiple readback slots let a fresh dispatch launch even when an older
+    // mapAsync is still finishing. Only age-1, same-order results are consumed.
     //
     // Net effect: GPU forces & brain outputs are 1 tick stale, which is
     // tolerable because (a) CTRNNs already have internal lag from the
@@ -775,32 +777,43 @@ export class World {
     // only mode is unchanged.
     if (profiling) markProfile('setup');
     let useGpuPairs = false;
-    if (this._gpuPending) {
-      const pending = this._gpuPending;
-      if (pending.done) {
-        this._gpuPending = null;
+    this._gpuResults = null;
+    if (this._gpuPendings.length > 0) {
+      let best = null;
+      let writePending = 0;
+      for (let pi = 0; pi < this._gpuPendings.length; pi++) {
+        const pending = this._gpuPendings[pi];
+        if (!pending.done) {
+          this._gpuPendings[writePending++] = pending;
+          continue;
+        }
         if (pending.error) {
           console.warn('[gpu] pipelined readback failed; falling back to CPU', pending.error);
           this._gpuEnabled = false;
-          this._gpuResults = null;
-        } else {
-          const age = this.tick - pending.tick;
-          if (age <= 1) {
-            this._gpuResults = pending.value;
-            if (this._gpuEnabled && N > 0) useGpuPairs = true;
-          } else {
-            this._gpuResults = null;
-          }
+          continue;
         }
-      } else {
-        this._gpuResults = null;
+        const age = this.tick - pending.tick;
+        if (age <= 1 &&
+            pending.orderVersion === this._gpuOrderVersion &&
+            (!best || pending.tick > best.tick)) {
+          best = pending;
+        }
+      }
+      this._gpuPendings.length = writePending;
+      if (best && this._gpuEnabled && N > 0) {
+        this._gpuResults = best.value;
+        this._gpuLastResultAge = this.tick - best.tick;
+        this._gpuTicksUsed++;
+        useGpuPairs = true;
       }
       if (!this._gpuEnabled) {
         this._gpuEnabled = false;
-        this._gpuPending = null;
+        this._gpuPendings.length = 0;
       }
-    } else {
-      this._gpuResults = null;
+    }
+    if (this._gpuEnabled && N > 0 && !useGpuPairs) {
+      this._gpuTicksFallback++;
+      this._gpuStateDirty = true;
     }
 
     // ── 1. Build spatial hash ────────────────────────────────────────
@@ -1727,6 +1740,7 @@ export class World {
     if (write !== oldParticleCount || birthCount > 0) {
       this._brainsDirty = true;
       this._gpuStateDirty = true;
+      this._gpuOrderVersion++;
     }
     this.births.length = 0;
 
@@ -1737,10 +1751,11 @@ export class World {
     this.smoothClusterEnergy();
     if (profiling) markProfile('lineage');
 
-    // ── 6. Pipeline NEXT tick's GPU compute (Phase 4f). Doesn't block.
+    // ── 6. Pipeline NEXT tick's GPU compute (Phase 4g). Doesn't block.
     // Uses post-integration state so GPU sees latest positions; results
     // come back at the start of next tick.
-    if (this._gpuEnabled && this._gpu && this.particles.length > 0 && !this._gpuPending) {
+    if (this._gpuEnabled && this._gpu && this.particles.length > 0 &&
+        (!this._gpu.hasReadbackCapacity || this._gpu.hasReadbackCapacity())) {
       try {
         this._buildGpuExtras();
         this._gpu.upload(this.particles);
@@ -1755,32 +1770,36 @@ export class World {
           this._gpu.uploadBrainState(this.particles);
           this._gpuStateDirty = false;
         }
-        this._gpu.dispatch();
-        const pending = {
-          done: false,
-          value: null,
-          error: null,
-          promise: null,
-          tick: this.tick,
-        };
-        pending.promise = this._gpu.readback().then(
-          (value) => {
-            pending.done = true;
-            pending.value = value;
-            return value;
-          },
-          (error) => {
-            pending.done = true;
-            pending.error = error;
-            throw error;
-          },
-        );
-        pending.promise.catch(() => {});
-        this._gpuPending = pending;
+        const token = this._gpu.dispatch();
+        if (token) {
+          const pending = {
+            done: false,
+            value: null,
+            error: null,
+            promise: null,
+            tick: this.tick,
+            orderVersion: this._gpuOrderVersion,
+            serial: token.serial,
+          };
+          pending.promise = this._gpu.readback(token).then(
+            (value) => {
+              pending.done = true;
+              pending.value = value;
+              return value;
+            },
+            (error) => {
+              pending.done = true;
+              pending.error = error;
+              throw error;
+            },
+          );
+          pending.promise.catch(() => {});
+          this._gpuPendings.push(pending);
+        }
       } catch (err) {
         console.warn('[gpu] pipelined dispatch failed; disabling GPU', err);
         this._gpuEnabled = false;
-        this._gpuPending = null;
+        this._gpuPendings.length = 0;
       }
     }
     if (profiling) {
