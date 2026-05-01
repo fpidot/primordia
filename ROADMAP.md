@@ -81,6 +81,10 @@ making the browser unusable.
    detour-navigation microtests that put food/prey behind glass with a nearby
    opening and verify whether random/evolved brains have enough sensory and
    recurrent scaffolding to learn "go around, then turn back toward the goal."
+   Transmission rule is now explicit for direct particle/signal perception:
+   solid blocks line-of-sight interactions, while glass and mud transmit them.
+   GPU parity is maintained by packing a solid-wall visibility grid into the
+   existing extras buffer, avoiding an extra WebGPU storage binding.
    Bond topology question: cluster neural capacity may depend not only on size
    but on graph shape. Current bondMsg is three continuous channels that brains
    can repurpose, received as the mean of immediate bonded neighbors, so

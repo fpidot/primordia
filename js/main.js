@@ -1,7 +1,7 @@
 // main.js — boots Primordia and drives the animation loop.
 
 import {
-  World, HW, HH, HASH_CELL, R_CLOSE, K_REP, K_ATTR,
+  World, GW, GH, CELL, HW, HH, HASH_CELL, R_CLOSE, K_REP, K_ATTR,
 } from './sim.js';
 import { NUM_SPECIES } from './genome.js';
 import { Renderer, PopulationChart, Camera } from './render.js';
@@ -116,6 +116,7 @@ gpu.init().then(ok => {
       const kernel = new GPUPairForce(gpu.device, {
         maxParticles: world.maxParticles,
         hashW: HW, hashH: HH, hashCell: HASH_CELL,
+        gridW: GW, gridH: GH, gridCell: CELL,
         numSpecies: NUM_SPECIES,
         rClose: R_CLOSE, kRep: K_REP, kAttr: K_ATTR,
       });

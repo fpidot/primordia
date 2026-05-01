@@ -34,7 +34,7 @@ const RESULT_STRIDE_F32   = 30;       // forces+stats(12) + outputs(18); h stays
 const EXTRAS_STRIDE_F32   = 36;       // chem + sound + bondMsg + cluster + wallCarry + terrain proximity
 const BRAIN_STRIDE_F32    = BRAIN_PACK_STRIDE;
 const STATE_STRIDE_F32    = N_HIDDEN_MAX + 8; // h state + GPU-only quadrant scratch
-const PARAMS_SIZE         = 32;
+const PARAMS_SIZE         = 48;
 const WORKGROUP_SIZE      = 64;
 const CROWD_RADIUS        = 14.0;
 // Extras-buffer layout (must match sim.js prefill):
@@ -139,6 +139,10 @@ struct Params {
   r_close: f32,
   k_rep: f32,
   k_attr: f32,
+  grid_cell: f32,
+  grid_w: i32,
+  grid_h: i32,
+  wall_grid_offset: u32,
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -150,6 +154,26 @@ struct Params {
 @group(0) @binding(6) var<storage, read> brains: array<f32>;
 @group(0) @binding(7) var<storage, read_write> brainState: array<f32>;
 @group(0) @binding(8) var<storage, read> extras: array<f32>;
+
+fn solid_blocks_line(a: vec2f, b: vec2f) -> bool {
+  let gx0 = clamp(i32(a.x / params.grid_cell), 0, params.grid_w - 1);
+  let gy0 = clamp(i32(a.y / params.grid_cell), 0, params.grid_h - 1);
+  let gx1 = clamp(i32(b.x / params.grid_cell), 0, params.grid_w - 1);
+  let gy1 = clamp(i32(b.y / params.grid_cell), 0, params.grid_h - 1);
+  let dx = gx1 - gx0;
+  let dy = gy1 - gy0;
+  let steps = max(abs(dx), abs(dy));
+  if (steps <= 1) { return false; }
+  for (var s: i32 = 1; s < steps; s = s + 1) {
+    let t = f32(s) / f32(steps);
+    let gx = clamp(i32(floor(f32(gx0) + f32(dx) * t + 0.5)), 0, params.grid_w - 1);
+    let gy = clamp(i32(floor(f32(gy0) + f32(dy) * t + 0.5)), 0, params.grid_h - 1);
+    if (extras[params.wall_grid_offset + u32(gy * params.grid_w + gx)] > 0.5) {
+      return true;
+    }
+  }
+  return false;
+}
 
 @compute @workgroup_size(${WORKGROUP_SIZE})
 fn clear_hash(@builtin(global_invocation_id) id: vec3u) {
@@ -234,7 +258,7 @@ fn pair_force(@builtin(global_invocation_id) id: vec3u) {
           if (q.alive != 0u) {
             let dpos = q.pos - p.pos;
             let d2 = dot(dpos, dpos);
-            if (d2 < R2 && d2 > 1.0e-6) {
+            if (d2 < R2 && d2 > 1.0e-6 && !solid_blocks_line(p.pos, q.pos)) {
               let d = sqrt(d2);
               let invd = 1.0 / d;
               if (d < crowdR) { crowd = crowd + 1.0; }
@@ -493,6 +517,7 @@ export class GPUPairForce {
    * @param {{
    *   maxParticles: number,
    *   hashW: number, hashH: number, hashCell: number,
+   *   gridW: number, gridH: number, gridCell: number,
    *   numSpecies: number,
    *   rClose: number, kRep: number, kAttr: number,
    * }} opts
@@ -511,13 +536,16 @@ export class GPUPairForce {
     this.attractionStaging = new Float32Array(this.maxParticles * this.numSpecies);
     this.brainStaging = new Float32Array(this.maxParticles * BRAIN_STRIDE_F32);
     this.brainStateStaging = new Float32Array(this.maxParticles * STATE_STRIDE_F32);
+    this.wallGridOffset = this.maxParticles * EXTRAS_STRIDE_F32;
     this.extrasStaging = new Float32Array(this.maxParticles * EXTRAS_STRIDE_F32);
+    this.solidWallStaging = new Float32Array((opts.gridW || 1) * (opts.gridH || 1));
     this.paramsStaging = new ArrayBuffer(PARAMS_SIZE);
     this.paramsView = new DataView(this.paramsStaging);
     this.resultsCPU = new Float32Array(this.maxParticles * RESULT_STRIDE_F32);
 
     this._uploadedCount = 0;
     this._brainsUploadedCount = 0;
+    this._wallsUploadedVersion = null;
     this.dispatchCount = 0;
     this.lastDispatchMs = 0;
     this.lastReadbackMs = 0;
@@ -529,6 +557,7 @@ export class GPUPairForce {
     const d = this.device;
     const N = this.maxParticles;
     const HW = this.opts.hashW, HH = this.opts.hashH;
+    const GW = this.opts.gridW || 1, GH = this.opts.gridH || 1;
 
     this.particlesBuf = d.createBuffer({
       size: N * PARTICLE_STRIDE_F32 * 4,
@@ -563,7 +592,7 @@ export class GPUPairForce {
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.extrasBuf = d.createBuffer({
-      size: N * EXTRAS_STRIDE_F32 * 4,
+      size: (N * EXTRAS_STRIDE_F32 + GW * GH) * 4,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.readBackBuf = d.createBuffer({
@@ -729,6 +758,16 @@ export class GPUPairForce {
     this.device.queue.writeBuffer(this.extrasBuf, 0, extras.buffer, 0, count * EXTRAS_STRIDE_F32 * 4);
   }
 
+  uploadWalls(walls, version = 0) {
+    if (this._wallsUploadedVersion === version) return;
+    const arr = this.solidWallStaging;
+    const n = Math.min(walls.length, arr.length);
+    for (let i = 0; i < n; i++) arr[i] = walls[i] === 1 ? 1 : 0;
+    for (let i = n; i < arr.length; i++) arr[i] = 0;
+    this.device.queue.writeBuffer(this.extrasBuf, this.wallGridOffset * 4, arr.buffer, 0, arr.length * 4);
+    this._wallsUploadedVersion = version;
+  }
+
   _writeParams(count) {
     const o = this.opts;
     const v = this.paramsView;
@@ -740,6 +779,10 @@ export class GPUPairForce {
     v.setFloat32(20, o.rClose,     true);
     v.setFloat32(24, o.kRep,       true);
     v.setFloat32(28, o.kAttr,      true);
+    v.setFloat32(32, o.gridCell || 1, true);
+    v.setInt32  (36, o.gridW || 1, true);
+    v.setInt32  (40, o.gridH || 1, true);
+    v.setUint32 (44, this.wallGridOffset, true);
     this.device.queue.writeBuffer(this.paramsBuf, 0, this.paramsStaging);
   }
 

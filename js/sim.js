@@ -226,6 +226,24 @@ function scanWallAndMudProximityInto(walls, gx, gy, out) {
   return out;
 }
 
+export function solidBlocksLineOfSight(walls, x0, y0, x1, y1) {
+  const gx0 = clamp((x0 / CELL) | 0, 0, GW - 1);
+  const gy0 = clamp((y0 / CELL) | 0, 0, GH - 1);
+  const gx1 = clamp((x1 / CELL) | 0, 0, GW - 1);
+  const gy1 = clamp((y1 / CELL) | 0, 0, GH - 1);
+  const dx = gx1 - gx0;
+  const dy = gy1 - gy0;
+  const steps = Math.max(Math.abs(dx), Math.abs(dy));
+  if (steps <= 1) return false;
+  for (let s = 1; s < steps; s++) {
+    const t = s / steps;
+    const gx = clamp(Math.round(gx0 + dx * t), 0, GW - 1);
+    const gy = clamp(Math.round(gy0 + dy * t), 0, GH - 1);
+    if (walls[gy * GW + gx] === WALL_SOLID) return true;
+  }
+  return false;
+}
+
 // Wall types — `walls[i]` value semantics:
 //   0 = open
 //   1 = solid    (blocks particles, blocks chemicals/sound) — original behaviour
@@ -664,6 +682,7 @@ export class World {
     const f0 = this.field[0], f1 = this.field[1];
     const walls = this.walls, mut = this.mutagen;
     const hasWalls = this._wallCount > 0;
+    const hasSolidSightBlockers = hasWalls && this._solidWalls().length > 0;
     const profiling = this._profileEnabled;
     let profileT = profiling ? performance.now() : 0;
     const markProfile = profiling
@@ -855,7 +874,8 @@ export class World {
                 const dx = q.x - p.x;
                 const dy = q.y - p.y;
                 const d2 = dx * dx + dy * dy;
-                if (d2 < R2 && d2 > 1e-6) {
+                if (d2 < R2 && d2 > 1e-6 &&
+                    !(hasSolidSightBlockers && solidBlocksLineOfSight(walls, p.x, p.y, q.x, q.y))) {
                   const d = Math.sqrt(d2);
                   if (!useGpuPairs) {
                     // Stats accumulation — skipped when GPU already produced them
@@ -1725,6 +1745,7 @@ export class World {
         this._buildGpuExtras();
         this._gpu.upload(this.particles);
         this._gpu.uploadExtras(this._extrasStaging);
+        this._gpu.uploadWalls?.(this.walls, this._wallsVersion);
         if (this._brainsDirty) {
           this._gpu.uploadBrains(this.particles);
           this._gpu.uploadBrainState(this.particles);
