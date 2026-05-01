@@ -15,6 +15,11 @@ python -m http.server 8765
 npm test
 ```
 
+## Field notes and user guide
+
+- [A naturalist's note on the particles](docs/PARTICLES_NATURALIST_NOTE.md)
+- [Quick start for first-time visitors](docs/QUICK_START.md)
+
 ## CPU timing probe
 
 ```sh
