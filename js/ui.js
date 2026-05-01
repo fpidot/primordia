@@ -8,6 +8,10 @@ import {
 import { PRESETS, PRESET_COUNTS } from './presets.js';
 
 const STORAGE_KEY = 'primordia.world.v1';
+const HELP_DOCS = {
+  quick: { title: 'Primordia quick start', path: 'docs/QUICK_START.md' },
+  particles: { title: "A naturalist's note on the particles", path: 'docs/PARTICLES_NATURALIST_NOTE.md' },
+};
 
 export class UI {
   constructor({ world, renderer, camera, chart, bgCanvas, stage, onPresetLoaded }) {
@@ -43,6 +47,11 @@ export class UI {
     this.eventsEl = document.getElementById('ui-events');
     this.fossilsEl = document.getElementById('ui-fossils');
     this.complexityEl = document.getElementById('ui-complexity');
+    this.helpModalEl = document.getElementById('help-modal');
+    this.helpTitleEl = document.getElementById('help-modal-title');
+    this.helpBodyEl = document.getElementById('help-modal-body');
+    this.helpCloseEl = document.getElementById('help-modal-close');
+    this.helpDocCache = new Map();
     this._matrixCtx = this.matrixCanvas.getContext('2d');
     this.bindMatrixHover();
 
@@ -53,6 +62,7 @@ export class UI {
 
     this.bindPanelTabs();
     this.bindControls();
+    this.bindHelpDocs();
     this.bindLivePanelLocks();
     this.bindBrushPalette();
     this.bindCanvas();
@@ -97,6 +107,50 @@ export class UI {
     };
     lock(this.clustersEl, '_clustersPointerInside', '_lastClustersSig');
     lock(this.curatedEl, '_curatedPointerInside', '_lastCuratedSig');
+  }
+
+  bindHelpDocs() {
+    if (!this.helpModalEl || !this.helpBodyEl || !this.helpTitleEl) return;
+    document.querySelectorAll('[data-help-doc]').forEach(btn => {
+      btn.addEventListener('click', () => this.openHelpDoc(btn.dataset.helpDoc));
+    });
+    if (this.helpCloseEl) {
+      this.helpCloseEl.addEventListener('click', () => this.closeHelpDoc());
+    }
+    this.helpModalEl.addEventListener('click', (e) => {
+      if (e.target === this.helpModalEl) this.closeHelpDoc();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !this.helpModalEl.classList.contains('hidden')) this.closeHelpDoc();
+    });
+  }
+
+  async openHelpDoc(key) {
+    const doc = HELP_DOCS[key];
+    if (!doc || !this.helpModalEl || !this.helpBodyEl || !this.helpTitleEl) return;
+    this.helpTitleEl.textContent = doc.title;
+    this.helpBodyEl.innerHTML = '<p class="help-loading">Loading guide...</p>';
+    this.helpModalEl.classList.remove('hidden');
+    if (this.helpCloseEl) this.helpCloseEl.focus({ preventScroll: true });
+
+    try {
+      let markdown = this.helpDocCache.get(key);
+      if (!markdown) {
+        const res = await fetch(doc.path, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        markdown = await res.text();
+        this.helpDocCache.set(key, markdown);
+      }
+      this.helpBodyEl.innerHTML = renderHelpMarkdown(markdown);
+    } catch (err) {
+      console.error('help doc failed', err);
+      this.helpBodyEl.innerHTML = '<p class="help-error">This guide could not be loaded. Try refreshing the app.</p>';
+    }
+  }
+
+  closeHelpDoc() {
+    if (!this.helpModalEl) return;
+    this.helpModalEl.classList.add('hidden');
   }
 
   applyPreset(name) {
@@ -1869,6 +1923,147 @@ function escapeHtml(s) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function escapeAttr(s) {
+  return escapeHtml(s).replace(/"/g, '&quot;');
+}
+
+function renderHelpMarkdown(markdown) {
+  const lines = String(markdown).replace(/\r\n/g, '\n').split('\n');
+  const intro = [];
+  const sections = [];
+  let current = null;
+  let skippedTitle = false;
+
+  for (const line of lines) {
+    if (!skippedTitle && /^#\s+/.test(line)) {
+      skippedTitle = true;
+      continue;
+    }
+    const h2 = line.match(/^##\s+(.+)/);
+    if (h2) {
+      current = { title: h2[1].trim(), lines: [] };
+      sections.push(current);
+      continue;
+    }
+    (current ? current.lines : intro).push(line);
+  }
+
+  const introHtml = renderMarkdownBlocks(intro);
+  const sectionHtml = sections.map((section, i) => `
+    <details class="help-section" ${i === 0 ? 'open' : ''}>
+      <summary>${renderInlineMarkdown(section.title)}</summary>
+      <div class="help-section-body">${renderMarkdownBlocks(section.lines)}</div>
+    </details>`).join('');
+  return `<div class="help-doc">${introHtml}${sectionHtml}</div>`;
+}
+
+function renderMarkdownBlocks(rawLines) {
+  const lines = mergeMarkdownListContinuations(rawLines);
+  let html = '';
+  let paragraph = [];
+  let inList = false;
+  let inCode = false;
+  let codeLines = [];
+
+  const closeParagraph = () => {
+    if (!paragraph.length) return;
+    html += `<p>${renderInlineMarkdown(paragraph.join(' '))}</p>`;
+    paragraph = [];
+  };
+  const closeList = () => {
+    if (!inList) return;
+    html += '</ul>';
+    inList = false;
+  };
+
+  for (const line of lines) {
+    if (/^```/.test(line)) {
+      if (inCode) {
+        html += `<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`;
+        codeLines = [];
+        inCode = false;
+      } else {
+        closeParagraph();
+        closeList();
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+
+    const trimmed = line.trim();
+    if (!trimmed) {
+      closeParagraph();
+      closeList();
+      continue;
+    }
+
+    const subhead = line.match(/^###\s+(.+)/);
+    if (subhead) {
+      closeParagraph();
+      closeList();
+      html += `<h3>${renderInlineMarkdown(subhead[1].trim())}</h3>`;
+      continue;
+    }
+
+    const item = line.match(/^(\s*)-\s+(.+)/);
+    if (item) {
+      closeParagraph();
+      if (!inList) {
+        html += '<ul>';
+        inList = true;
+      }
+      const depth = Math.min(4, Math.floor(item[1].length / 2) + 1);
+      html += `<li class="help-li-depth-${depth}">${renderInlineMarkdown(item[2])}</li>`;
+      continue;
+    }
+
+    closeList();
+    paragraph.push(trimmed);
+  }
+
+  closeParagraph();
+  closeList();
+  if (inCode) html += `<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`;
+  return html;
+}
+
+function mergeMarkdownListContinuations(lines) {
+  const merged = [];
+  let inCode = false;
+  for (const line of lines) {
+    if (/^```/.test(line)) inCode = !inCode;
+    const isContinuation = !inCode &&
+      line.trim() &&
+      !/^\s*- /.test(line) &&
+      !/^#{1,6}\s+/.test(line) &&
+      merged.length &&
+      /^\s*- /.test(merged[merged.length - 1]);
+    if (isContinuation) {
+      merged[merged.length - 1] += ` ${line.trim()}`;
+    } else {
+      merged.push(line);
+    }
+  }
+  return merged;
+}
+
+function renderInlineMarkdown(s) {
+  let out = escapeHtml(s);
+  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label, href) => {
+    const rawHref = href.trim();
+    const safeHref = /^(https?:|\.?\/|docs\/|#)/.test(rawHref) ? rawHref : '#';
+    const attrs = /^https?:/.test(rawHref) ? ' target="_blank" rel="noopener"' : '';
+    return `<a href="${escapeAttr(safeHref)}"${attrs}>${label}</a>`;
+  });
+  out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  return out;
 }
 
 function safeFilename(s) {
