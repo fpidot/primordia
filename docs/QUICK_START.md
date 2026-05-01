@@ -36,6 +36,9 @@ The center canvas is the world.
 - Glass blocks particles but lets chemistry, sound, and sight/signal pass.
 - Mud slows and drains particles but lets chemistry, sound, and sight/signal
   pass.
+- Bonds are elastic links between particles. They can hold particles together,
+  share energy, carry bond messages, and eventually let a group behave more
+  like a cluster than a crowd.
 - Bonded clusters may show membranes or labels.
 - Visual signals can appear as halos/waves around particles.
 
