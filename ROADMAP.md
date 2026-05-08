@@ -109,7 +109,13 @@ making the browser unusable.
    generation marker that appears in labels as `Jr`, `III`, `IV`, etc., so
    lineages can be tracked in the sim without adding a heavy genealogy UI yet.
    Cluster/specimen exports preserve the visible generation marker while
-   imported copies receive a fresh local lineage root.
+   imported copies receive a fresh local lineage root. Long seeded CPU soaks
+   after the first implementation did **not** produce natural daughter
+   clusters: eligible clusters do emerge, but normal particle reproduction
+   fills the population cap before there are enough open slots for an 8+ member
+   bud. Next tuning target: give organism-level reproduction reserved headroom,
+   a pending-bud queue, or a replacement rule so successful clusters can bud
+   without being crowded out by cell-level births.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and

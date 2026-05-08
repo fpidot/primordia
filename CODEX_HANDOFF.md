@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Label cluster bud generations`
+  current `main` HEAD after this pass: `Record cluster budding soak results`
 
 Recent useful commits:
 
-- current `main` HEAD - Label cluster bud generations
+- current `main` HEAD - Record cluster budding soak results
+- `6a85b9a` - Label cluster bud generations
 - `d3a2097` - Add cluster-level budding reproduction
 - `b688116` - Add experimental pair-only GPU assist
 - `7ea2a8f` - Improve long-run browser broad phase
@@ -393,6 +394,24 @@ Organism-level reproduction:
 - Next validation: compare long soaks with/without `world.clusterBudding` to
   see whether cluster topology, coordinated construction, obstacle response,
   and survival improve without runaway population churn.
+- Latest validation result: natural cluster offspring did **not** appear in
+  long seeded CPU soaks. The blocker looks structural, not sensory:
+  - 4 runs at 6000 ticks, cap 1200, maze/soup seeds `0xC0FFEE` and `0xB00D1E`:
+    `clusterBuds=0`; several final clusters passed age/energy/bond gates, but
+    population was at/near cap.
+  - soup seed `0xC0FFEE`, 5000 ticks, cap 2500, start 800:
+    `clusterBuds=0`; population reached cap by tick 2000.
+  - soup seed `0x51A11`, 6000 ticks, cap 2500, start 300:
+    `clusterBuds=0`; eligible clusters appeared from tick 2000 onward, but
+    population stayed around 2495-2500, leaving fewer than the 8 open slots
+    required for a bud.
+- Next design move: stop letting cell-level reproduction consume all available
+  particle slots. Candidate fixes:
+  - reserve a small headroom band for organism-level budding
+  - keep pending buds and fire them as soon as enough deaths open slots
+  - allow a successful bud to spend/replace a small number of ordinary births
+  - make bud size adaptive when only 4-7 slots are free, while still forming a
+    named cluster
 
 Construction:
 
