@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD: `Add coarse visibility cache`
+  current `main` HEAD after this pass: `Improve long-run browser broad phase`
 
 Recent useful commits:
 
-- current `main` HEAD - Add coarse visibility cache
+- current `main` HEAD - Improve long-run browser broad phase
+- `32234f7` - Add coarse visibility cache
 - `5dc0e85` - Add render LOD and profiling
 - `c6ad5e3` - Add adaptive GPU cadence
 - `576432c` - Clarify bonds in quick start
@@ -204,13 +205,11 @@ CPU:
   - visible-region render culling
   - merged repeated wall/mud/material proximity scans
 - CPU bench now supports `--profileEvery`, which records rolling phase windows,
-  population/cluster/wall metrics, and line-of-sight counters. Recent seeded
-  500-tick maze probes were in the low-to-mid 20 ms/tick range locally before
-  the coarse visibility cache. The line-of-sight experiment confirmed high call
-  volume: a prefix-sum skip and a one-pass pair accumulator were both tested and
-  not shipped because their overhead erased the savings. The shipped approach is
-  a per-particle-hash-cell solid-wall cache, which cheaply skips the grid walk
-  when the coarse cells crossed by the ray contain no solid wall.
+  population/cluster/wall metrics, and line-of-sight counters. The current CPU
+  path uses 48px radius-aware neighbor hash scans plus a prefix-sum solid-wall
+  visibility grid before exact line walks. A same-tick particle-pair
+  line-of-sight cache was tested and removed because Map overhead outweighed
+  saved queries in the seeded maze probe.
 
 GPU:
 
@@ -231,9 +230,10 @@ GPU:
   - pending readbacks
   - last result age
   - adaptive cooldown ticks/cooldown count
-- Browser bench accepts `--profile` and `--zoom`. Profiling reports sim,
-  renderer, and frame phase costs; low-zoom probes can confirm wall tile LOD and
-  particle density LOD are active.
+- Browser bench accepts `--profile`, `--profileEvery`, and `--zoom`. Profiling
+  reports sim, renderer, and frame phase costs; rolling windows show when
+  population growth, rendering, UI, or audio is responsible for degradation.
+  Low-zoom probes can confirm wall tile LOD and particle density LOD are active.
 
 Performance reality:
 
@@ -260,20 +260,27 @@ Performance reality:
 - Latest matching GPU profile on this Intel sample: about 25.4 FPS/ticks/sec,
   readback about 59 ms, adaptive cooldown engaged. GPU remains useful to probe
   but not yet a guaranteed dense-maze win on this hardware.
-- Latest coarse visibility CPU probe, seeded dense maze, 500 ticks, cap 1200:
-  about 19.7-20.2 ms/tick locally. The rolling profile showed ~1.19M
-  line-of-sight tests in the final 100-tick window, with ~956k skipped by the
-  coarse hash, ~108k near skips, and only ~126k grid walks.
-- Browser low-zoom profile after the cache, seeded dense maze, 5s, CPU-only:
-  about 26.9 FPS/ticks/sec, render about 4.3 ms/frame, sim step about
-  30.1 ms/frame, no page errors. Matching GPU probe was about 26.7 FPS with
-  readback around 33 ms and adaptive cooldown still engaging.
-- The likely next big win is pair-force-only GPU assist/readback reduction or a
-  more structural CPU split that avoids the scratch-write overhead observed in
-  the one-pass accumulator experiment.
+- Latest CPU probe, seeded dense maze, cap 1200, 1800 ticks, CPU-only:
+  about 21.1 ms/tick / 47 ticks/sec locally after the radius-aware broad phase
+  and prefix visibility grid. Window costs generally fell toward ~18.7-24.8
+  ms/tick as population stayed capped near 1200.
+- Browser degradation diagnosis, seeded dense maze, low zoom, CPU-only:
+  rolling browser windows reproduced the user's report and showed the slowdown
+  is sim-step/population dominated. Before the radius/prefix pass, tick ~1233
+  was about 20 FPS with step around 44 ms/frame. After the pass, a comparable
+  tick ~1214 window was about 28.5 FPS with step around 30 ms/frame.
+- Longer 75s browser soak after the pass still degraded as population exceeded
+  3k: tick ~1513 was about 20 FPS at ~2718 particles, while tick ~1813 was
+  about 15 FPS at ~3223 particles. Render remained only ~4.4 ms/frame, so this
+  is not a draw/LOD issue.
+- The likely next big win is now structural: decouple sim from render with a
+  worker/snapshot architecture, implement a lower-readback pair-force-only GPU
+  assist, or expose explicit population/work budgets for dense long soaks.
 
 Next performance target:
 
+- Decide whether to prioritize a worker/snapshot architecture so UI/render FPS
+  can stay responsive while sim ticks run as fast as the budget allows.
 - Implement and benchmark a pair-force-only GPU assist mode.
 - Shrink/sparsify readback payload so fewer floats cross the GPU/CPU boundary.
 - Revisit CPU pair-loop structure only with a lower-write design; the naive

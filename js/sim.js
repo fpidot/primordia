@@ -32,8 +32,10 @@ export const CELL = 5;
 export const W = GW * CELL;
 export const H = GH * CELL;
 
-// Spatial hash cell size must be ≥ max sense_radius (genome cap = 90).
-export const HASH_CELL = 96;
+// Spatial hash cell size. Neighbor scans expand across as many cells as each
+// particle's current sense radius needs, so this can stay smaller than the max
+// sense cap and avoid late-run over-broad buckets.
+export const HASH_CELL = 48;
 export const HW = Math.ceil(W / HASH_CELL);
 export const HH = Math.ceil(H / HASH_CELL);
 
@@ -369,6 +371,7 @@ export class World {
     this._solidWallIndices = [];
     this._solidHashVersion = -1;
     this._solidHash = new Uint16Array(HW * HH);
+    this._solidHashPrefix = new Uint32Array((HW + 1) * (HH + 1));
 
     // Bonded clusters — recomputed periodically via union-find on the bond
     // graph. Clusters of size ≥ MIN_NAMED_CLUSTER get a name + flag label.
@@ -523,10 +526,15 @@ export class World {
     this._solidWallVersion = this._wallsVersion;
     return out;
   }
-  _solidHashReady() {
-    if (this._solidHashVersion === this._wallsVersion) return;
+  _solidHashReady(version = this._wallsVersion) {
+    if (this._solidHashVersion === version) return;
+    if (this._profileCounters) {
+      this._profileCounters.solidHashBuilds = (this._profileCounters.solidHashBuilds || 0) + 1;
+    }
     const h = this._solidHash;
+    const prefix = this._solidHashPrefix;
     h.fill(0);
+    prefix.fill(0);
     const walls = this.walls;
     for (let gy = 0; gy < GH; gy++) {
       const hy = ((gy * CELL) / HASH_CELL) | 0;
@@ -537,10 +545,23 @@ export class World {
         h[hy * HW + hx]++;
       }
     }
-    this._solidHashVersion = this._wallsVersion;
+    const pw = HW + 1;
+    for (let hy = 0; hy < HH; hy++) {
+      let rowSum = 0;
+      const srcRow = hy * HW;
+      const dstRow = (hy + 1) * pw;
+      const prevRow = hy * pw;
+      for (let hx = 0; hx < HW; hx++) {
+        rowSum += h[srcRow + hx];
+        prefix[dstRow + hx + 1] = prefix[prevRow + hx + 1] + rowSum;
+      }
+    }
+    this._solidHashVersion = version;
   }
-  _solidHashRectHasAny(gx0, gy0, gx1, gy1) {
-    this._solidHashReady();
+  _solidHashRectHasAny(gx0, gy0, gx1, gy1, version = this._wallsVersion) {
+    this._solidHashReady(version);
+    const counters = this._profileCounters;
+    if (counters) counters.solidHashQueries = (counters.solidHashQueries || 0) + 1;
     const minGX = gx0 < gx1 ? gx0 : gx1;
     const maxGX = gx0 > gx1 ? gx0 : gx1;
     const minGY = gy0 < gy1 ? gy0 : gy1;
@@ -549,15 +570,15 @@ export class World {
     const hx1 = Math.max(0, Math.min(HW - 1, ((maxGX * CELL) / HASH_CELL) | 0));
     const hy0 = Math.max(0, Math.min(HH - 1, ((minGY * CELL) / HASH_CELL) | 0));
     const hy1 = Math.max(0, Math.min(HH - 1, ((maxGY * CELL) / HASH_CELL) | 0));
-    for (let hy = hy0; hy <= hy1; hy++) {
-      const row = hy * HW;
-      for (let hx = hx0; hx <= hx1; hx++) {
-        if (this._solidHash[row + hx] > 0) return true;
-      }
-    }
-    return false;
+    const pw = HW + 1;
+    const x0 = hx0;
+    const y0 = hy0;
+    const x1 = hx1 + 1;
+    const y1 = hy1 + 1;
+    const p = this._solidHashPrefix;
+    return (p[y1 * pw + x1] - p[y0 * pw + x1] - p[y1 * pw + x0] + p[y0 * pw + x0]) > 0;
   }
-  solidBlocksLineOfSightFast(x0, y0, x1, y1) {
+  solidBlocksLineOfSightFast(x0, y0, x1, y1, solidSightVersion = this._wallsVersion) {
     const counters = this._profileCounters;
     if (counters) counters.losTests = (counters.losTests || 0) + 1;
     const gx0 = clamp((x0 / CELL) | 0, 0, GW - 1);
@@ -570,7 +591,7 @@ export class World {
       if (counters) counters.losNearSkips = (counters.losNearSkips || 0) + 1;
       return false;
     }
-    if (!this._solidHashRectHasAny(gx0, gy0, gx1, gy1)) {
+    if (!this._solidHashRectHasAny(gx0, gy0, gx1, gy1, solidSightVersion)) {
       if (counters) counters.losHashSkips = (counters.losHashSkips || 0) + 1;
       return false;
     }
@@ -830,6 +851,10 @@ export class World {
         }
       : null;
 
+    const solidSightVersion = this._wallsVersion;
+    if (hasSolidSightBlockers) this._solidHashReady(solidSightVersion);
+    if (profiling) markProfile('sightHash');
+
     // id → particle map for bond / mate lookups
     const idMap = this._idLookup;
     const touchedIds = this._idLookupTouched;
@@ -984,18 +1009,20 @@ export class World {
       // still needs only contact-range biology (predation/bond formation) plus
       // the separate bond-barrier check below, so avoid repeating expensive
       // sqrt/solid-line tests across the full sensory radius.
-      const cpuNeighborR2 = useGpuPairs ? R_CLOSE2 : R2;
+      const cpuNeighborR = useGpuPairs ? R_CLOSE : R;
+      const cpuNeighborR2 = cpuNeighborR * cpuNeighborR;
       let ax = 0, ay = 0;
       // Bond barrier accumulator — kept separate from ax/ay so the GPU
       // pair-force overwrite below doesn't clobber it. Added to ax/ay after
       // the GPU result is injected, so barrier still works when GPU is on.
       let bax = 0, bay = 0;
 
-      // Pair forces from neighbours in 3×3 hash cells
+      // Pair forces from neighbours in radius-sized hash-cell windows.
       const cx = (p.x / HASH_CELL) | 0;
       const cy = (p.y / HASH_CELL) | 0;
-      const cx0 = Math.max(0, cx - 1), cx1 = Math.min(HW - 1, cx + 1);
-      const cy0 = Math.max(0, cy - 1), cy1 = Math.min(HH - 1, cy + 1);
+      const cellRange = Math.max(1, Math.ceil(Math.max(cpuNeighborR, BOND_BARRIER_R) / HASH_CELL));
+      const cx0 = Math.max(0, cx - cellRange), cx1 = Math.min(HW - 1, cx + cellRange);
+      const cy0 = Math.max(0, cy - cellRange), cy1 = Math.min(HH - 1, cy + cellRange);
       let crowd = 0;
       // Neighbor stats for brain sensors. When GPU pair pass ran, seed these
       // from the GPU result so the CPU inner loop can skip accumulation.
@@ -1031,7 +1058,7 @@ export class World {
                 const dy = q.y - p.y;
                 const d2 = dx * dx + dy * dy;
                 if (d2 < cpuNeighborR2 && d2 > 1e-6 &&
-                    !(hasSolidSightBlockers && this.solidBlocksLineOfSightFast(p.x, p.y, q.x, q.y))) {
+                    !(hasSolidSightBlockers && this.solidBlocksLineOfSightFast(p.x, p.y, q.x, q.y, solidSightVersion))) {
                   const d = Math.sqrt(d2);
                   if (!useGpuPairs) {
                     // Stats accumulation — skipped when GPU already produced them

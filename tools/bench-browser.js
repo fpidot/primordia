@@ -94,7 +94,8 @@ const speed = Math.max(0.25, Number(readArg('speed', positional[2] || 4)) || 4);
 const warmup = Math.max(0, Number(readArg('warmup', 1000)) || 0);
 const seedArg = readArg('seed', null);
 const wantGpu = !!readArg('gpu', false);
-const wantProfile = !!readArg('profile', false);
+const profileEvery = Math.max(0, Number(readArg('profileEvery', readArg('profileEveryTicks', 0))) | 0);
+const wantProfile = !!readArg('profile', false) || profileEvery > 0;
 const zoomArg = readArg('zoom', null);
 const width = Math.max(320, Number(readArg('width', 1440)) || 1440);
 const height = Math.max(320, Number(readArg('height', 1000)) || 1000);
@@ -192,6 +193,7 @@ try {
       ui.speed = ${speed};
       ui.paused = false;
       const wantProfile = ${wantProfile ? 'true' : 'false'};
+      const profileEvery = ${profileEvery};
       if (wantProfile) {
         if (typeof world.setProfiling === 'function') world.setProfiling(true);
         if (renderer && typeof renderer.setProfiling === 'function') renderer.setProfiling(true);
@@ -225,6 +227,11 @@ try {
       const startTick = world.tick;
       const start = performance.now();
       let frames = 0;
+      let lastProfileTick = startTick;
+      let lastProfileTime = start;
+      let lastProfileFrame = 0;
+      let nextProfileTick = profileEvery > 0 ? startTick + profileEvery : Infinity;
+      const profileTrend = [];
       let minFrameMs = Infinity;
       let maxFrameMs = 0;
       let last = start;
@@ -236,6 +243,37 @@ try {
         if (dt > maxFrameMs) maxFrameMs = dt;
         last = now;
         frames++;
+        while (profileEvery > 0 && world.tick >= nextProfileTick) {
+          const profileNow = performance.now();
+          const windowTicks = Math.max(1, world.tick - lastProfileTick);
+          const windowMs = Math.max(1, profileNow - lastProfileTime);
+          const windowFrames = frames - lastProfileFrame;
+          profileTrend.push({
+            tick: world.tick,
+            elapsedMs: Math.round(profileNow - start),
+            windowTicks,
+            windowMsPerTick: +(windowMs / windowTicks).toFixed(3),
+            windowFrames,
+            windowFps: +(windowFrames / windowMs * 1000).toFixed(1),
+            sim: world.profileSnapshot ? world.profileSnapshot({ reset: true }) : null,
+            render: renderer && renderer.profileSummary ? renderer.profileSummary({ reset: true }) : null,
+            frame: frameProfile && frameProfile.summary ? frameProfile.summary({ reset: true }) : null,
+            gpuPipeline: {
+              usedTicks: world._gpuTicksUsed || 0,
+              fallbackTicks: world._gpuTicksFallback || 0,
+              pendingReadbacks: world._gpuPendings ? world._gpuPendings.length : 0,
+              lastResultAge: world._gpuLastResultAge || 0,
+              adaptiveCooldownTicks: world._gpuCooldownTicks || 0,
+              adaptiveCooldowns: world._gpuAdaptiveCooldowns || 0,
+            },
+            population: world.particles.length,
+            walls: world._wallCount,
+          });
+          lastProfileTick = world.tick;
+          lastProfileTime = profileNow;
+          lastProfileFrame = frames;
+          nextProfileTick += profileEvery;
+        }
       }
       const elapsed = performance.now() - start;
       ui.paused = true;
@@ -277,6 +315,7 @@ try {
         population: world.particles.length,
         walls: world._wallCount,
         profile,
+        profileTrend: profileTrend.length ? profileTrend : undefined,
       };
     })()
   `;

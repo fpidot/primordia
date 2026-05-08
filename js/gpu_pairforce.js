@@ -37,6 +37,7 @@ const STATE_STRIDE_F32    = N_HIDDEN_MAX + 8; // h state + GPU-only quadrant scr
 const PARAMS_SIZE         = 48;
 const WORKGROUP_SIZE      = 64;
 const CROWD_RADIUS        = 14.0;
+const BOND_BARRIER_RADIUS = 7.5;
 const READBACK_SLOTS      = 3;
 // Extras-buffer layout (must match sim.js prefill):
 //   0..5  : food, decay, food.dx, food.dy, decay.dx, decay.dy
@@ -241,10 +242,13 @@ fn pair_force(@builtin(global_invocation_id) id: vec3u) {
   var qsig0: f32 = 0.0; var qsig1: f32 = 0.0; var qsig2: f32 = 0.0; var qsig3: f32 = 0.0;
   var qsigN0: f32 = 0.0; var qsigN1: f32 = 0.0; var qsigN2: f32 = 0.0; var qsigN3: f32 = 0.0;
 
-  for (var dy: i32 = -1; dy <= 1; dy = dy + 1) {
+  let cellRange = clamp(i32(ceil(max(R, ${BOND_BARRIER_RADIUS.toFixed(1)}) / params.hash_cell)), 1, 4);
+  for (var dy: i32 = -4; dy <= 4; dy = dy + 1) {
+    if (abs(dy) > cellRange) { continue; }
     let ny = cy + dy;
     if (ny < 0 || ny >= params.hash_h) { continue; }
-    for (var dx: i32 = -1; dx <= 1; dx = dx + 1) {
+    for (var dx: i32 = -4; dx <= 4; dx = dx + 1) {
+      if (abs(dx) > cellRange) { continue; }
       let nx = cx + dx;
       if (nx < 0 || nx >= params.hash_w) { continue; }
       let cell = ny * params.hash_w + nx;

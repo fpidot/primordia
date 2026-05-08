@@ -143,9 +143,11 @@ making the browser unusable.
    includes rolling phase costs and line-of-sight counters. Low-zoom rendering
    now uses tile LOD for walls and screen-space density LOD for particles, so
    zoomed-out views retain terrain/population structure without drawing every
-   bond/body ornament. A seeded 5s low-zoom maze browser probe showed render at
-   ~4.2 ms/frame while sim step remained ~28.5 ms/frame; GPU on this Intel
-   sample remained readback-limited (~59 ms readback, adaptive cooldown).
+   bond/body ornament. Browser `--profileEvery` windows confirmed the long-run
+   FPS drop is dominated by population growth inside the sim step, not renderer
+   or UI churn: in a seeded 75s low-zoom maze run, population climbed past 3,200
+   and the final 300-tick window spent ~58 ms/frame in `step` while render stayed
+   ~4.4 ms/frame.
    Follow-up performance pass tested a one-pass CPU pair accumulator, but the
    extra scratch writes and contact-order changes were slower in V8 than the
    original hot loop, so that route was not shipped. The shipped win is a coarse
@@ -154,9 +156,19 @@ making the browser unusable.
    seeded 500-tick dense-maze CPU probe this cut actual grid line walks from
    ~1.08M/window to ~126k/window by tick 500 and improved the sample from the
    low-to-mid 20 ms/tick range to ~19.7-20.2 ms/tick. Browser low-zoom probes
-   still show sim step as the dominant frame cost, so the next meaningful move
-   is either pair-force-only GPU assist/readback reduction or a more structural
-   CPU loop split that avoids scratch-write overhead.
+   still show sim step as the dominant frame cost. A later pass shrank the
+   broad-phase hash cells from 96px to 48px and made CPU/GPU neighbor scans
+   radius-aware, then replaced solid-wall coarse rejection with a prefix-sum
+   visibility grid. On the same seeded low-zoom browser shape, the tick-1200
+   window improved from roughly 20 FPS before the pass to roughly 28.5 FPS after
+   it, and a 75s run still held ~20 FPS at tick ~1513 with ~2,700 particles.
+   The remaining degradation at ~3,200+ particles is fundamental single-threaded
+   sim cost: tens of thousands of neighbor/visibility checks per tick. A
+   same-tick pair line-of-sight cache was tested and rejected because Map
+   overhead outweighed saved queries. Next meaningful moves are a worker/snapshot
+   architecture that decouples render responsiveness from sim ticks, a lower
+   readback pair-force-only GPU path, or explicit user-facing population/work
+   budgets for very dense long soaks.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful
