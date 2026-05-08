@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Reserve headroom for cluster budding`
+  current `main` HEAD after this pass: `Add motor slip proprioception`
 
 Recent useful commits:
 
-- current `main` HEAD - Reserve headroom for cluster budding
+- current `main` HEAD - Add motor slip proprioception
+- `ae44643` - Reserve headroom for cluster budding
 - `cf04f2c` - Record cluster budding soak results
 - `6a85b9a` - Label cluster bud generations
 - `d3a2097` - Add cluster-level budding reproduction
@@ -148,8 +149,13 @@ Important recent sensor state:
 - Typed material sensors were appended:
   - `solid.n/s/e/w`
   - `glass.n/s/e/w`
+- Proprioception sensors were appended after terrain:
+  - `self.vx/self.vy`
+  - `motor.prev.x/motor.prev.y`
+  - `motor.progress`
+  - `motor.slip`
 - Old wall/mud slots remain stable.
-- CPU and GPU terrain sensor paths are wired for parity.
+- CPU and GPU terrain/proprioception sensor paths are wired for parity.
 
 ## Recently shipped behavior
 
@@ -342,9 +348,20 @@ Obstacle navigation:
   - cluster centroid sensors
   - wall/mud/solid/glass directional sensors
   - correct solid/glass/mud transmission semantics
+  - proprioceptive feedback: self velocity, previous motor command, previous
+    forward progress, and previous motor slip
 - Open risk:
-  - current brains may lack enough planning memory, typed long-range target
-    vectors, or selection pressure for robust detours.
+  - current brains may still lack enough planning memory, typed long-range
+    target vectors, or selection pressure for robust detours.
+- Recent finding:
+  - before this pass, particles could see typed glass/solid sensors but had no
+    direct body-feedback channel for "I pushed and did not move forward."
+    World edges were also intentionally absent from wall scans, so edge-stuck
+    behavior had especially weak sensory scaffolding.
+  - fix: append generic motor-slip/progress sensors rather than hard-coding
+    "glass is blocked" or "edge ahead." A particle that pushes into glass,
+    solid, a world edge, crowding, or any future physics impediment receives
+    the same kind of bodily mismatch signal.
 - Next validation:
   - microtests/soaks with food or prey behind glass and a nearby opening
   - distinguish "can sense target" from "can learn detour"
@@ -501,8 +518,12 @@ Latest verification in the cluster-budding pass:
   clusters:
   `soup`, seed `0x51A11`, 6000 ticks, cap 1200, start 300,
   `clusterBuds=15`, `clusterBudParticles=133`.
-- `npm test` passed all 14 test files after the headroom fix; the latest full
-  suite took about 148 seconds.
+- Proprioception pass verification:
+  - `node tests\proprioception.test.js` passed.
+  - `node tests\terrain-sensors.test.js` passed.
+  - `node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 6 --speed 4 --seed 0xC0FFEE --gpu --port 9336` passed with GPU ready/enabled and no page or GPU validation errors after the WGSL `MAX_V_SIM` fix.
+- `npm test` passed all 15 test files after the proprioception pass and took
+  about 139 seconds.
 - Quick CPU smoke passed:
   `node tools\bench-cpu.js --preset maze --ticks 300 --cap 800 --seed 0xC0FFEE --profile --profileEvery 150`.
 

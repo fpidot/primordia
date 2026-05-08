@@ -696,6 +696,8 @@ export class World {
       shelterRelief: 0,
       wallDigs: 0,
       wallDeposits: 0,
+      lastMotorX: 0, lastMotorY: 0,
+      lastMotorProgress: 0, lastMotorSlip: 0,
       cluster: null,
       bonds: [],
       dead: false,
@@ -1439,12 +1441,19 @@ export class World {
           inp[50] = inp[51] = inp[52] = inp[53] = 0;
         }
         inp[45] = walls[sIdx] === WALL_POROUS ? 1 : 0;
+        inp[54] = Math.tanh(p.vx / MAX_V);
+        inp[55] = Math.tanh(p.vy / MAX_V);
+        inp[56] = p.lastMotorX || 0;
+        inp[57] = p.lastMotorY || 0;
+        inp[58] = p.lastMotorProgress || 0;
+        inp[59] = p.lastMotorSlip || 0;
         g.brain.forward(inp, out);
       }
 
       // Apply outputs
       const tx = Math.tanh(out[OUT_TX]);
       const ty = Math.tanh(out[OUT_TY]);
+      const motorEffort = Math.min(1, Math.hypot(tx, ty));
       ax += tx * 0.5;       // additive thrust scale
       ay += ty * 0.5;
       p.predationGain = Math.tanh(out[OUT_PREDATION]);
@@ -1734,8 +1743,10 @@ export class World {
         const s = maxV / Math.sqrt(vmag2);
         vx *= s; vy *= s;
       }
-      let nx = p.x + vx;
-      let ny = p.y + vy;
+      const oldX = p.x;
+      const oldY = p.y;
+      let nx = oldX + vx;
+      let ny = oldY + vy;
 
       // Wall handling — axis-separated, using actual current cell
       const pgy = clamp((p.y / CELL) | 0, 0, GH - 1);
@@ -1770,6 +1781,18 @@ export class World {
 
       p.x = nx; p.y = ny;
       p.vx = vx; p.vy = vy;
+      if (motorEffort > 1e-4) {
+        const dxActual = nx - oldX;
+        const dyActual = ny - oldY;
+        const progress = clamp((dxActual * tx + dyActual * ty) / (motorEffort * Math.max(0.001, maxV)), -1, 1);
+        p.lastMotorProgress = progress;
+        p.lastMotorSlip = clamp(motorEffort - Math.max(0, progress), 0, 1);
+      } else {
+        p.lastMotorProgress = 0;
+        p.lastMotorSlip = 0;
+      }
+      p.lastMotorX = tx;
+      p.lastMotorY = ty;
       p.age++;
 
       // Energy
@@ -1911,11 +1934,13 @@ export class World {
             soundCh: 0, soundAmp: 0,
             wantBond: 0, wantMate: 0,
             bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
-      incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
-      wallCarry: 0,
-      shelterRelief: 0,
-      wallDigs: 0,
-      wallDeposits: 0,
+            incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
+            wallCarry: 0,
+            shelterRelief: 0,
+            wallDigs: 0,
+            wallDeposits: 0,
+            lastMotorX: 0, lastMotorY: 0,
+            lastMotorProgress: 0, lastMotorSlip: 0,
             cluster: null,
             bonds: [],
             dead: false,
@@ -1954,11 +1979,13 @@ export class World {
             soundCh: 0, soundAmp: 0,
             wantBond: 0, wantMate: 0,
             bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
-      incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
-      wallCarry: 0,
-      shelterRelief: 0,
-      wallDigs: 0,
-      wallDeposits: 0,
+            incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
+            wallCarry: 0,
+            shelterRelief: 0,
+            wallDigs: 0,
+            wallDeposits: 0,
+            lastMotorX: 0, lastMotorY: 0,
+            lastMotorProgress: 0, lastMotorSlip: 0,
             cluster: null,
             bonds: [],
             dead: false,
@@ -2192,6 +2219,10 @@ export class World {
         extras[o + 32] = extras[o + 33] = extras[o + 34] = extras[o + 35] = 0;
       }
       extras[o + 27] = walls[sIdx] === WALL_POROUS ? 1 : 0;
+      extras[o + 36] = p.lastMotorX || 0;
+      extras[o + 37] = p.lastMotorY || 0;
+      extras[o + 38] = p.lastMotorProgress || 0;
+      extras[o + 39] = p.lastMotorSlip || 0;
     }
   }
 

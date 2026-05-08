@@ -79,6 +79,12 @@ export const SENSOR_NAMES = [
   /* 51 */ 'glass.s',                   // south
   /* 52 */ 'glass.e',                   // east
   /* 53 */ 'glass.w',                   // west
+  /* 54 */ 'self.vx',                   // proprioception: current body velocity x
+  /* 55 */ 'self.vy',                   // current body velocity y
+  /* 56 */ 'motor.prev.x',              // previous tick's intended thrust x
+  /* 57 */ 'motor.prev.y',              // previous tick's intended thrust y
+  /* 58 */ 'motor.progress',            // previous thrust's actual forward progress
+  /* 59 */ 'motor.slip',                // high when intended thrust failed to move body forward
 ];
 export const N_INPUT = SENSOR_NAMES.length;
 

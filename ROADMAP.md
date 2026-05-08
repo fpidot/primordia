@@ -77,10 +77,16 @@ making the browser unusable.
    or neural motor outputs overpower the genome-level food force.
    Current status: typed directional material sensors are now appended to the
    brain input set for solid walls and glass barriers, while the old wall/mud
-   slots remain index-stable for saved organisms. Next validation target:
+   slots remain index-stable for saved organisms. Proprioception sensors are
+   also appended: self velocity, previous motor command, previous forward
+   progress, and previous motor slip. These do not tell particles "glass" or
+   "edge" as a special case; they report that intended thrust failed to become
+   motion, giving evolution generic feedback for glass, solid, world-edge,
+   crowding, mud, and other impediments. Next validation target:
    detour-navigation microtests that put food/prey behind glass with a nearby
-   opening and verify whether random/evolved brains have enough sensory and
-   recurrent scaffolding to learn "go around, then turn back toward the goal."
+   opening and verify whether random/evolved brains have enough sensory,
+   bodily-feedback, and recurrent scaffolding to learn "go around, then turn
+   back toward the goal."
    Transmission rule is now explicit for direct particle/signal perception:
    solid blocks line-of-sight interactions, while glass and mud transmit them.
    GPU parity is maintained by packing a solid-wall visibility grid into the

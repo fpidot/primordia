@@ -36,7 +36,7 @@ import {
 const PARTICLE_STRIDE_F32 = 16;
 const RESULT_STRIDE_F32   = 30;       // forces+stats(12) + outputs(18); h stays GPU-resident
 const PAIR_RESULT_STRIDE_F32 = 20;    // forces+stats(12) + quadrant stats(8)
-const EXTRAS_STRIDE_F32   = 36;       // chem + sound + bondMsg + cluster + wallCarry + terrain proximity
+const EXTRAS_STRIDE_F32   = 40;       // chem + sound + bondMsg + cluster + wallCarry + terrain + proprioception
 const BRAIN_STRIDE_F32    = BRAIN_PACK_STRIDE;
 const STATE_STRIDE_F32    = N_HIDDEN_MAX + 8; // h state + GPU-only quadrant scratch
 const PARAMS_SIZE         = 48;
@@ -60,6 +60,7 @@ const READBACK_SLOTS      = 3;
 //   27    : terrain.mud underfoot
 //   28..31: solid proximity n/s/e/w
 //   32..35: glass proximity n/s/e/w
+//   36..39: previous motor x/y, forward progress, slip
 const EXTRAS_BOND_MSG_R_OFFSET = 10;
 const EXTRAS_BOND_MSG_G_OFFSET = 11;
 const EXTRAS_BOND_MSG_B_OFFSET = 12;
@@ -105,6 +106,7 @@ const N_OUTPUT: u32 = ${N_OUTPUT}u;
 const BRAIN_STRIDE: u32 = ${BRAIN_STRIDE_F32}u;
 const STATE_STRIDE: u32 = ${STATE_STRIDE_F32}u;
 const EXTRAS_STRIDE: u32 = ${EXTRAS_STRIDE_F32}u;
+const MAX_V_SIM: f32 = 3.6;
 
 // Brain layout offsets (in floats, within a single brain block of length BRAIN_STRIDE)
 const BO_ENABLED: u32 = ${BRAIN_OFF_ENABLED}u;
@@ -449,6 +451,12 @@ fn brain_forward(@builtin(global_invocation_id) id: vec3u) {
   inp[51] = extras[eo + 33u];     // glass.s
   inp[52] = extras[eo + 34u];     // glass.e
   inp[53] = extras[eo + 35u];     // glass.w
+  inp[54] = tanh(p.vel.x / MAX_V_SIM);
+  inp[55] = tanh(p.vel.y / MAX_V_SIM);
+  inp[56] = extras[eo + 36u];     // previous motor x
+  inp[57] = extras[eo + 37u];     // previous motor y
+  inp[58] = extras[eo + 38u];     // previous motor progress
+  inp[59] = extras[eo + 39u];     // previous motor slip
 
   // Forward — compute new hidden state
   var h_new: array<f32, ${N_HIDDEN_MAX}>;

@@ -26,7 +26,9 @@ await runTest('terrain-sensors: material sensor names append without moving old 
   assert('terrain.mud kept its save-compatible index', SENSOR_NAMES[45] === 'terrain.mud');
   assert('solid.n appended at index 46', SENSOR_NAMES[46] === 'solid.n');
   assert('glass.w appended at index 53', SENSOR_NAMES[53] === 'glass.w');
-  assert('input count includes typed material sensors', N_INPUT === 54);
+  assert('self.vx follows terrain sensors', SENSOR_NAMES[54] === 'self.vx');
+  assert('motor.slip is appended last', SENSOR_NAMES[59] === 'motor.slip');
+  assert('input count includes typed material and proprioception sensors', N_INPUT === 60);
 });
 
 await runTest('terrain-sensors: gpu extras include typed directional material proximity', async () => {
