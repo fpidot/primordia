@@ -146,10 +146,17 @@ making the browser unusable.
    bond/body ornament. A seeded 5s low-zoom maze browser probe showed render at
    ~4.2 ms/frame while sim step remained ~28.5 ms/frame; GPU on this Intel
    sample remained readback-limited (~59 ms readback, adaptive cooldown).
-   Conclusion: there are still small render polish wins, but the next meaningful
-   performance move is fundamental agent-loop restructuring: process particle
-   pairs once into per-agent accumulators, then run brain/integration, and/or
-   split GPU pair-force assist from full GPU brain readback.
+   Follow-up performance pass tested a one-pass CPU pair accumulator, but the
+   extra scratch writes and contact-order changes were slower in V8 than the
+   original hot loop, so that route was not shipped. The shipped win is a coarse
+   solid-wall visibility cache: most line-of-sight checks first ask whether the
+   particle-hash cells crossed by the ray contain any solid wall at all. On the
+   seeded 500-tick dense-maze CPU probe this cut actual grid line walks from
+   ~1.08M/window to ~126k/window by tick 500 and improved the sample from the
+   low-to-mid 20 ms/tick range to ~19.7-20.2 ms/tick. Browser low-zoom probes
+   still show sim step as the dominant frame cost, so the next meaningful move
+   is either pair-force-only GPU assist/readback reduction or a more structural
+   CPU loop split that avoids scratch-write overhead.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful

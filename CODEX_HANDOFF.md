@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD: `Add render LOD and profiling`
+  current `main` HEAD: `Add coarse visibility cache`
 
 Recent useful commits:
 
-- current `main` HEAD - Add render LOD and profiling
+- current `main` HEAD - Add coarse visibility cache
+- `5dc0e85` - Add render LOD and profiling
 - `c6ad5e3` - Add adaptive GPU cadence
 - `576432c` - Clarify bonds in quick start
 - `5432b68` - Add in-app guide popups
@@ -204,10 +205,12 @@ CPU:
   - merged repeated wall/mud/material proximity scans
 - CPU bench now supports `--profileEvery`, which records rolling phase windows,
   population/cluster/wall metrics, and line-of-sight counters. Recent seeded
-  500-tick maze probes were in the low-to-mid 20 ms/tick range locally; the
-  line-of-sight experiment confirmed high call volume but a prefix-sum skip was
-  not worth shipping because frequent wall changes/check overhead erased the
-  savings.
+  500-tick maze probes were in the low-to-mid 20 ms/tick range locally before
+  the coarse visibility cache. The line-of-sight experiment confirmed high call
+  volume: a prefix-sum skip and a one-pass pair accumulator were both tested and
+  not shipped because their overhead erased the savings. The shipped approach is
+  a per-particle-hash-cell solid-wall cache, which cheaply skips the grid walk
+  when the coarse cells crossed by the ray contain no solid wall.
 
 GPU:
 
@@ -257,18 +260,24 @@ Performance reality:
 - Latest matching GPU profile on this Intel sample: about 25.4 FPS/ticks/sec,
   readback about 59 ms, adaptive cooldown engaged. GPU remains useful to probe
   but not yet a guaranteed dense-maze win on this hardware.
-- The likely next big win is fundamental: process pair interactions once into
-  per-agent accumulators, then run brain/integration, and/or split pair-force
-  assist from full GPU brain readback so not every output crosses the
-  GPU/CPU boundary every tick.
+- Latest coarse visibility CPU probe, seeded dense maze, 500 ticks, cap 1200:
+  about 19.7-20.2 ms/tick locally. The rolling profile showed ~1.19M
+  line-of-sight tests in the final 100-tick window, with ~956k skipped by the
+  coarse hash, ~108k near skips, and only ~126k grid walks.
+- Browser low-zoom profile after the cache, seeded dense maze, 5s, CPU-only:
+  about 26.9 FPS/ticks/sec, render about 4.3 ms/frame, sim step about
+  30.1 ms/frame, no page errors. Matching GPU probe was about 26.7 FPS with
+  readback around 33 ms and adaptive cooldown still engaging.
+- The likely next big win is pair-force-only GPU assist/readback reduction or a
+  more structural CPU split that avoids the scratch-write overhead observed in
+  the one-pass accumulator experiment.
 
 Next performance target:
 
-- Restructure the CPU agent loop so each neighboring pair is evaluated once and
-  contributes to per-agent accumulators for force, neighbor stats, signal
-  stats, predation/contact biology, and bond formation.
 - Implement and benchmark a pair-force-only GPU assist mode.
 - Shrink/sparsify readback payload so fewer floats cross the GPU/CPU boundary.
+- Revisit CPU pair-loop structure only with a lower-write design; the naive
+  per-agent accumulator version underperformed despite fewer line walks.
 - Tune adaptive cadence with longer headed-browser runs on both the desktop and
   laptop, especially short-run startup tax versus long-run recovery.
 - Prefer `tools\bench-browser.js --seed 0xC0FFEE` for CPU/GPU comparisons;
@@ -471,7 +480,7 @@ git log --oneline -5
 3. Choose one narrow pass:
 
 - performance: pair-force-only GPU assist/readback reduction
-- performance: one-pass CPU pair accumulator restructure
+- performance: lower-write CPU pair-loop redesign if GPU readback remains limiting
 - agency: detour-navigation microtests
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization

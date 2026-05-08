@@ -30,7 +30,8 @@ node tools/bench-cpu.js --preset maze --ticks 500 --cap 1200 --seed 0xC0FFEE --p
 The CPU probe reports timing plus construction diagnostics (`wallDigs`,
 `wallDeposits`, and live `wallCarriers`) so builder regressions are easy to
 spot during performance work. `--profileEvery` emits rolling phase windows and
-line-of-sight counters for degradation checks.
+line-of-sight counters (`losHashSkips`, `losWalks`, etc.) for degradation
+checks.
 
 ## Browser timing probe
 

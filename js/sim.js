@@ -367,6 +367,8 @@ export class World {
     this._wallsVersion = 0;
     this._solidWallVersion = -1;
     this._solidWallIndices = [];
+    this._solidHashVersion = -1;
+    this._solidHash = new Uint16Array(HW * HH);
 
     // Bonded clusters — recomputed periodically via union-find on the bond
     // graph. Clusters of size ≥ MIN_NAMED_CLUSTER get a name + flag label.
@@ -521,6 +523,40 @@ export class World {
     this._solidWallVersion = this._wallsVersion;
     return out;
   }
+  _solidHashReady() {
+    if (this._solidHashVersion === this._wallsVersion) return;
+    const h = this._solidHash;
+    h.fill(0);
+    const walls = this.walls;
+    for (let gy = 0; gy < GH; gy++) {
+      const hy = ((gy * CELL) / HASH_CELL) | 0;
+      const row = gy * GW;
+      for (let gx = 0; gx < GW; gx++) {
+        if (walls[row + gx] !== WALL_SOLID) continue;
+        const hx = ((gx * CELL) / HASH_CELL) | 0;
+        h[hy * HW + hx]++;
+      }
+    }
+    this._solidHashVersion = this._wallsVersion;
+  }
+  _solidHashRectHasAny(gx0, gy0, gx1, gy1) {
+    this._solidHashReady();
+    const minGX = gx0 < gx1 ? gx0 : gx1;
+    const maxGX = gx0 > gx1 ? gx0 : gx1;
+    const minGY = gy0 < gy1 ? gy0 : gy1;
+    const maxGY = gy0 > gy1 ? gy0 : gy1;
+    const hx0 = Math.max(0, Math.min(HW - 1, ((minGX * CELL) / HASH_CELL) | 0));
+    const hx1 = Math.max(0, Math.min(HW - 1, ((maxGX * CELL) / HASH_CELL) | 0));
+    const hy0 = Math.max(0, Math.min(HH - 1, ((minGY * CELL) / HASH_CELL) | 0));
+    const hy1 = Math.max(0, Math.min(HH - 1, ((maxGY * CELL) / HASH_CELL) | 0));
+    for (let hy = hy0; hy <= hy1; hy++) {
+      const row = hy * HW;
+      for (let hx = hx0; hx <= hx1; hx++) {
+        if (this._solidHash[row + hx] > 0) return true;
+      }
+    }
+    return false;
+  }
   solidBlocksLineOfSightFast(x0, y0, x1, y1) {
     const counters = this._profileCounters;
     if (counters) counters.losTests = (counters.losTests || 0) + 1;
@@ -532,6 +568,10 @@ export class World {
     const dy0 = gy1 - gy0;
     if (Math.max(Math.abs(dx0), Math.abs(dy0)) <= 1) {
       if (counters) counters.losNearSkips = (counters.losNearSkips || 0) + 1;
+      return false;
+    }
+    if (!this._solidHashRectHasAny(gx0, gy0, gx1, gy1)) {
+      if (counters) counters.losHashSkips = (counters.losHashSkips || 0) + 1;
       return false;
     }
     if (counters) counters.losWalks = (counters.losWalks || 0) + 1;
@@ -927,6 +967,7 @@ export class World {
 
     // ── 2. Pair forces + field gradient + integration ────────────────
     if (profiling) markProfile('hash');
+    const checkBondBarrier = this.bondBarrier && this._clusters && this._clusters.length > 0;
     for (let i = 0; i < N; i++) {
       const p = ps[i];
       if (p.dead) continue;
@@ -990,9 +1031,7 @@ export class World {
                 const dy = q.y - p.y;
                 const d2 = dx * dx + dy * dy;
                 if (d2 < cpuNeighborR2 && d2 > 1e-6 &&
-                    !(hasSolidSightBlockers && (profiling
-                      ? this.solidBlocksLineOfSightFast(p.x, p.y, q.x, q.y)
-                      : solidBlocksLineOfSight(walls, p.x, p.y, q.x, q.y)))) {
+                    !(hasSolidSightBlockers && this.solidBlocksLineOfSightFast(p.x, p.y, q.x, q.y))) {
                   const d = Math.sqrt(d2);
                   if (!useGpuPairs) {
                     // Stats accumulation — skipped when GPU already produced them
@@ -1107,7 +1146,7 @@ export class World {
                 // get pushed perpendicular to bond segments of named clusters.
                 // q is already constrained to p's 3×3 hash cells, so distance
                 // is naturally bounded; the segment math takes care of reach.
-                if (this.bondBarrier &&
+                if (checkBondBarrier &&
                     q.bonds.length > 0 &&
                     q.cluster) {
                   const pBondedQ = p.bonds.length > 0 && p.bonds.includes(q.id);
