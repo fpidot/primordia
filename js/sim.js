@@ -18,10 +18,12 @@ import {
 import { crossoverGenome } from './genome.js';
 import { CladeTracker, CLUSTER_HUMAN_NAMES } from './lineage.js';
 import {
-  RESULT_STRIDE, EXTRAS_STRIDE,
+  RESULT_STRIDE, PAIR_RESULT_STRIDE, EXTRAS_STRIDE,
   RES_FX, RES_FY, RES_NBVX, RES_NBVY,
   RES_SIGR, RES_SIGG, RES_SIGB, RES_SIGN,
   RES_OWNN, RES_ALIENN, RES_CROWD,
+  RES_QCNT0, RES_QCNT1, RES_QCNT2, RES_QCNT3,
+  RES_QSIG0, RES_QSIG1, RES_QSIG2, RES_QSIG3,
   RES_OUT0,
 } from './gpu_pairforce.js';
 
@@ -393,6 +395,9 @@ export class World {
     // GPU pair-force kernel — set later via attachGPU().
     this._gpu = null;
     this._gpuResults = null;
+    this._gpuResultStride = RESULT_STRIDE;
+    this._gpuResultPairOnly = false;
+    this._gpuPairOnly = false;
     this._gpuPendings = [];
     this._gpuOrderVersion = 0;
     this._gpuLastResultAge = 0;
@@ -422,10 +427,13 @@ export class World {
   // Attach a GPUPairForce kernel. World does not own its lifecycle; caller
   // toggles via setGPUEnabled().
   attachGPU(kernel) { this._gpu = kernel; }
+  setGPUPairOnly(enabled) { this._gpuPairOnly = !!enabled; }
   setGPUEnabled(enabled) {
     this._gpuEnabled = !!enabled && !!this._gpu;
     if (!this._gpuEnabled) {
       this._gpuResults = null;
+      this._gpuResultStride = RESULT_STRIDE;
+      this._gpuResultPairOnly = false;
       this._gpuPendings.length = 0;
       this._gpuCooldownTicks = 0;
     } else {
@@ -510,6 +518,8 @@ export class World {
       gpuPending: this._gpuPendings ? this._gpuPendings.length : 0,
       gpuCooldown: this._gpuCooldownTicks || 0,
       gpuCooldowns: this._gpuAdaptiveCooldowns || 0,
+      gpuPairOnly: !!this._gpuPairOnly,
+      gpuResultStride: this._gpuResultStride || RESULT_STRIDE,
     };
   }
   _profileAdd(name, ms) {
@@ -934,6 +944,7 @@ export class World {
     // only mode is unchanged.
     if (profiling) markProfile('setup');
     let useGpuPairs = false;
+    let useGpuBrain = false;
     this._gpuResults = null;
     if (this._gpuCooldownTicks > 0) this._gpuCooldownTicks--;
     const gpuComputeActive = this._gpuEnabled && this._gpuCooldownTicks <= 0;
@@ -961,20 +972,25 @@ export class World {
       this._gpuPendings.length = writePending;
       if (best && this._gpuEnabled && N > 0) {
         this._gpuResults = best.value;
+        this._gpuResultStride = best.stride || RESULT_STRIDE;
+        this._gpuResultPairOnly = !!best.pairOnly;
         this._gpuLastResultAge = this.tick - best.tick;
         this._gpuTicksUsed++;
+        useGpuBrain = !this._gpuResultPairOnly;
         if (gpuComputeActive) this._gpuWindowUsed++;
         useGpuPairs = true;
       }
       if (!this._gpuEnabled) {
         this._gpuEnabled = false;
         this._gpuPendings.length = 0;
+        this._gpuResultStride = RESULT_STRIDE;
+        this._gpuResultPairOnly = false;
       }
     }
     if (gpuComputeActive && N > 0 && !useGpuPairs) {
       this._gpuTicksFallback++;
       this._gpuWindowFallback++;
-      this._gpuStateDirty = true;
+      if (!this._gpuPairOnly) this._gpuStateDirty = true;
     }
 
     // ── 1. Build spatial hash ────────────────────────────────────────
@@ -1034,7 +1050,7 @@ export class World {
       let qsig0 = 0, qsig1 = 0, qsig2 = 0, qsig3 = 0;
       let qsigN0 = 0, qsigN1 = 0, qsigN2 = 0, qsigN3 = 0;
       if (useGpuPairs) {
-        const ro = i * RESULT_STRIDE;
+        const ro = i * this._gpuResultStride;
         const r = this._gpuResults;
         ownN  = r[ro + RES_OWNN];
         alienN = r[ro + RES_ALIENN];
@@ -1045,6 +1061,20 @@ export class World {
         sigB  = r[ro + RES_SIGB];
         sigN  = r[ro + RES_SIGN];
         crowd = r[ro + RES_CROWD];
+        if (!useGpuBrain) {
+          qcnt0 = r[ro + RES_QCNT0];
+          qcnt1 = r[ro + RES_QCNT1];
+          qcnt2 = r[ro + RES_QCNT2];
+          qcnt3 = r[ro + RES_QCNT3];
+          qsig0 = r[ro + RES_QSIG0];
+          qsig1 = r[ro + RES_QSIG1];
+          qsig2 = r[ro + RES_QSIG2];
+          qsig3 = r[ro + RES_QSIG3];
+          qsigN0 = qcnt0 > 0 ? 1 : 0;
+          qsigN1 = qcnt1 > 0 ? 1 : 0;
+          qsigN2 = qcnt2 > 0 ? 1 : 0;
+          qsigN3 = qcnt3 > 0 ? 1 : 0;
+        }
       }
 
       for (let yy = cy0; yy <= cy1; yy++) {
@@ -1218,7 +1248,7 @@ export class World {
       //    inner loop would have summed). Field gradient + brain + bond are
       //    still added on top.
       if (useGpuPairs) {
-        const oi = i * RESULT_STRIDE;
+        const oi = i * this._gpuResultStride;
         ax = this._gpuResults[oi + RES_FX];
         ay = this._gpuResults[oi + RES_FY];
       }
@@ -1240,11 +1270,11 @@ export class World {
 
       // ── Brain: build sensor input, run forward pass, apply outputs ──
       const out = this._brainOutput;
-      if (useGpuPairs) {
+      if (useGpuBrain) {
         // GPU already ran the forward pass — copy outputs from the compact
         // result buffer. Hidden CTRNN state stays resident on GPU between
         // dispatches and is reset only when the particle list changes.
-        const oo = i * RESULT_STRIDE + RES_OUT0;
+        const oo = i * this._gpuResultStride + RES_OUT0;
         for (let oj = 0; oj < N_OUTPUT; oj++) out[oj] = this._gpuResults[oo + oj];
         // Validation hook: when window.__primordia.world.setGPUValidate(true),
         // every 256 ticks dump output[5] (predation) GPU vs CPU side-by-side
@@ -1929,20 +1959,23 @@ export class World {
     if (this._gpuEnabled && this._gpuCooldownTicks <= 0 && this._gpu && this.particles.length > 0 &&
         (!this._gpu.hasReadbackCapacity || this._gpu.hasReadbackCapacity())) {
       try {
-        this._buildGpuExtras();
+        const pairOnly = !!this._gpuPairOnly;
         this._gpu.upload(this.particles);
-        this._gpu.uploadExtras(this._extrasStaging);
         this._gpu.uploadWalls?.(this.walls, this._wallsVersion);
-        if (this._brainsDirty) {
-          this._gpu.uploadBrains(this.particles);
-          this._gpu.uploadBrainState(this.particles);
-          this._brainsDirty = false;
-          this._gpuStateDirty = false;
-        } else if (this._gpuStateDirty) {
-          this._gpu.uploadBrainState(this.particles);
-          this._gpuStateDirty = false;
+        if (!pairOnly) {
+          this._buildGpuExtras();
+          this._gpu.uploadExtras(this._extrasStaging);
+          if (this._brainsDirty) {
+            this._gpu.uploadBrains(this.particles);
+            this._gpu.uploadBrainState(this.particles);
+            this._brainsDirty = false;
+            this._gpuStateDirty = false;
+          } else if (this._gpuStateDirty) {
+            this._gpu.uploadBrainState(this.particles);
+            this._gpuStateDirty = false;
+          }
         }
-        const token = this._gpu.dispatch();
+        const token = this._gpu.dispatch({ pairOnly });
         if (token) {
           const pending = {
             done: false,
@@ -1952,6 +1985,8 @@ export class World {
             tick: this.tick,
             orderVersion: this._gpuOrderVersion,
             serial: token.serial,
+            stride: token.stride || (pairOnly ? PAIR_RESULT_STRIDE : RESULT_STRIDE),
+            pairOnly,
           };
           pending.promise = this._gpu.readback(token).then(
             (value) => {

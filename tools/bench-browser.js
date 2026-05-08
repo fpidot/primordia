@@ -94,6 +94,8 @@ const speed = Math.max(0.25, Number(readArg('speed', positional[2] || 4)) || 4);
 const warmup = Math.max(0, Number(readArg('warmup', 1000)) || 0);
 const seedArg = readArg('seed', null);
 const wantGpu = !!readArg('gpu', false);
+const gpuFull = !!readArg('gpuFull', false);
+const gpuPairOnly = readArg('gpuPairOnly', null);
 const profileEvery = Math.max(0, Number(readArg('profileEvery', readArg('profileEveryTicks', 0))) | 0);
 const wantProfile = !!readArg('profile', false) || profileEvery > 0;
 const zoomArg = readArg('zoom', null);
@@ -204,6 +206,13 @@ try {
       }
 
       const wantGpu = ${wantGpu ? 'true' : 'false'};
+      const gpuFull = ${gpuFull ? 'true' : 'false'};
+      const gpuPairOnlyArg = ${gpuPairOnly == null ? 'null' : JSON.stringify(String(gpuPairOnly))};
+      if (gpuFull && typeof world.setGPUPairOnly === 'function') {
+        world.setGPUPairOnly(false);
+      } else if (gpuPairOnlyArg != null && typeof world.setGPUPairOnly === 'function') {
+        world.setGPUPairOnly(gpuPairOnlyArg !== 'false' && gpuPairOnlyArg !== '0');
+      }
       let gpuReady = false;
       if (wantGpu) {
         const deadline = performance.now() + 5000;
@@ -265,6 +274,8 @@ try {
               lastResultAge: world._gpuLastResultAge || 0,
               adaptiveCooldownTicks: world._gpuCooldownTicks || 0,
               adaptiveCooldowns: world._gpuAdaptiveCooldowns || 0,
+              pairOnly: !!world._gpuPairOnly,
+              resultStride: world._gpuResultStride || 0,
             },
             population: world.particles.length,
             walls: world._wallCount,
@@ -295,6 +306,8 @@ try {
           uploadMs: +(world._gpu.lastUploadMs || 0).toFixed(2),
           dispatchMs: +(world._gpu.lastDispatchMs || 0).toFixed(2),
           readbackMs: +(world._gpu.lastReadbackMs || 0).toFixed(2),
+          readbackBytes: world._gpu.lastReadbackBytes || 0,
+          readbackStride: world._gpu.lastReadbackStride || 0,
           lastError: world._gpu.lastError || null,
         } : null,
         gpuPipeline: {
@@ -304,6 +317,8 @@ try {
           lastResultAge: world._gpuLastResultAge || 0,
           adaptiveCooldownTicks: world._gpuCooldownTicks || 0,
           adaptiveCooldowns: world._gpuAdaptiveCooldowns || 0,
+          pairOnly: !!world._gpuPairOnly,
+          resultStride: world._gpuResultStride || 0,
         },
         elapsedMs: Math.round(elapsed),
         frames,

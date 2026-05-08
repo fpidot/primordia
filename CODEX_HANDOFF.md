@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Improve long-run browser broad phase`
+  current `main` HEAD after this pass: `Add experimental pair-only GPU assist`
 
 Recent useful commits:
 
-- current `main` HEAD - Improve long-run browser broad phase
+- current `main` HEAD - Add experimental pair-only GPU assist
+- `7ea2a8f` - Improve long-run browser broad phase
 - `32234f7` - Add coarse visibility cache
 - `5dc0e85` - Add render LOD and profiling
 - `c6ad5e3` - Add adaptive GPU cadence
@@ -273,16 +274,27 @@ Performance reality:
   3k: tick ~1513 was about 20 FPS at ~2718 particles, while tick ~1813 was
   about 15 FPS at ~3223 particles. Render remained only ~4.4 ms/frame, so this
   is not a draw/LOD issue.
+- Experimental pair-force-only GPU mode now exists for measurement:
+  `tools\bench-browser.js --gpu --gpuPairOnly`. It skips GPU brain forward,
+  reads back 20 floats/particle instead of 30, preserves quadrant sensory stats
+  for CPU brains, and reports readback bytes/stride in the browser bench. A
+  short seeded maze smoke showed pair-only readback around 7 ms versus full GPU
+  around 42 ms in the same noisy short-run shape. A longer 45s serial probe was
+  not a reliable win versus CPU-only on the Intel sample; late windows still hit
+  map waits/cooldowns and population-trajectory divergence. The app therefore
+  keeps full GPU as the default mode, with pair-only available through the
+  bench/API for further testing.
 - The likely next big win is now structural: decouple sim from render with a
-  worker/snapshot architecture, implement a lower-readback pair-force-only GPU
-  assist, or expose explicit population/work budgets for dense long soaks.
+  worker/snapshot architecture or expose explicit population/work budgets for
+  dense long soaks.
 
 Next performance target:
 
-- Decide whether to prioritize a worker/snapshot architecture so UI/render FPS
-  can stay responsive while sim ticks run as fast as the budget allows.
-- Implement and benchmark a pair-force-only GPU assist mode.
-- Shrink/sparsify readback payload so fewer floats cross the GPU/CPU boundary.
+- Prioritize a worker/snapshot architecture so UI/render FPS can stay
+  responsive while sim ticks run as fast as the budget allows.
+- Continue pair-only GPU benchmarking only if a targeted change addresses
+  map-wait/cooldown behavior; the first smaller-readback pass is not enough by
+  itself.
 - Revisit CPU pair-loop structure only with a lower-write design; the naive
   per-agent accumulator version underperformed despite fewer line walks.
 - Tune adaptive cadence with longer headed-browser runs on both the desktop and

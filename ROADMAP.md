@@ -165,10 +165,17 @@ making the browser unusable.
    The remaining degradation at ~3,200+ particles is fundamental single-threaded
    sim cost: tens of thousands of neighbor/visibility checks per tick. A
    same-tick pair line-of-sight cache was tested and rejected because Map
-   overhead outweighed saved queries. Next meaningful moves are a worker/snapshot
-   architecture that decouples render responsiveness from sim ticks, a lower
-   readback pair-force-only GPU path, or explicit user-facing population/work
-   budgets for very dense long soaks.
+   overhead outweighed saved queries. The lower-readback pair-force-only GPU
+   path is now implemented as an experimental benchmark mode: it skips GPU brain
+   forward, reads back 20 floats/particle instead of 30, keeps CPU brains
+   authoritative, and preserves quadrant sensory stats. Short GPU smoke showed
+   readback dropping to ~7 ms with `--gpuPairOnly`, but longer dense-maze runs
+   were not a reliable win on the Intel sample because map waits/cooldowns and
+   ecological divergence still dominate late windows. It is therefore available
+   for measurement but not the default user-facing GPU mode. Next meaningful
+   moves are a worker/snapshot architecture that decouples render responsiveness
+   from sim ticks, or explicit user-facing population/work budgets for very
+   dense long soaks.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful

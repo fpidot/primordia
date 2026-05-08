@@ -41,15 +41,17 @@ Start the local server first, then run:
 npm run bench:browser -- maze 6 4
 node tools/bench-browser.js maze 6 4 9230 --gpu
 node tools/bench-browser.js --preset maze --seconds 8 --speed 4 --seed 0xC0FFEE --gpu
+node tools/bench-browser.js --preset maze --seconds 10 --speed 4 --seed 0xC0FFEE --gpu --gpuPairOnly
 node tools/bench-browser.js --preset maze --seconds 75 --speed 4 --seed 0xC0FFEE --profile --profileEvery 300 --zoom 0.35
 ```
 
 The browser probe launches Chrome/Edge through the DevTools protocol and
 reports FPS, sim ticks/sec, GPU availability, WebGPU readback timings, and
 adaptive GPU cooldown telemetry. Use `--seed` for CPU/GPU comparisons that
-start from the same preset state; use `--profileEvery` for long-run degradation
-windows; use `--profile` and `--zoom` to inspect sim/render/frame costs and
-low-zoom LOD behavior.
+start from the same preset state; use `--gpuPairOnly` to test the experimental
+smaller-readback GPU pair-force mode; use `--profileEvery` for long-run
+degradation windows; use `--profile` and `--zoom` to inspect sim/render/frame
+costs and low-zoom LOD behavior.
 
 ## Preset population
 

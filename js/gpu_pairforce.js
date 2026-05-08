@@ -11,10 +11,14 @@
 //      state, and CPU-provided chem-extras), runs the CTRNN forward pass
 //      using GPU-resident brain weights and persistent state, writes brain
 //      outputs and updated state to the result buffer.
+//      Pair-only dispatches skip this stage, read back a smaller row, and let
+//      the CPU brain consume GPU-computed pair stats.
 //
-// The CPU consumes a compact 40-float-per-particle ParticleResult struct that
-// bundles forces, minimal stats, and brain outputs. Hidden brain state stays
-// resident on the GPU between dispatches and is only reset on structural changes. CPU then runs:
+// The CPU consumes a compact per-particle ParticleResult row. Full mode reads
+// forces, stats, and brain outputs; pair-only mode reads forces, stats, and
+// quadrant summaries while CPU brains remain authoritative. Hidden brain state
+// stays resident on the GPU between full-mode dispatches and is only reset on
+// structural changes. CPU then runs:
 // integration, brushes, predation drains, bond physics, reproduction, deaths,
 // field updates, and brain mutation on births.
 //
@@ -31,6 +35,7 @@ import {
 // ── Layouts ─────────────────────────────────────────────────────────
 const PARTICLE_STRIDE_F32 = 16;
 const RESULT_STRIDE_F32   = 30;       // forces+stats(12) + outputs(18); h stays GPU-resident
+const PAIR_RESULT_STRIDE_F32 = 20;    // forces+stats(12) + quadrant stats(8)
 const EXTRAS_STRIDE_F32   = 36;       // chem + sound + bondMsg + cluster + wallCarry + terrain proximity
 const BRAIN_STRIDE_F32    = BRAIN_PACK_STRIDE;
 const STATE_STRIDE_F32    = N_HIDDEN_MAX + 8; // h state + GPU-only quadrant scratch
@@ -66,6 +71,7 @@ const EXTRAS_CLUSTER_ALARM_OFFSET = 17;
 
 // Result struct field offsets — matches WGSL ParticleResult layout
 export const RESULT_STRIDE   = RESULT_STRIDE_F32;
+export const PAIR_RESULT_STRIDE = PAIR_RESULT_STRIDE_F32;
 export const RES_FX          = 0;
 export const RES_FY          = 1;
 export const RES_NBVX        = 2;
@@ -78,6 +84,14 @@ export const RES_OWNN        = 8;
 export const RES_ALIENN      = 9;
 export const RES_CROWD       = 10;
 // 11: pad
+export const RES_QCNT0       = 12;
+export const RES_QCNT1       = 13;
+export const RES_QCNT2       = 14;
+export const RES_QCNT3       = 15;
+export const RES_QSIG0       = 16;
+export const RES_QSIG1       = 17;
+export const RES_QSIG2       = 18;
+export const RES_QSIG3       = 19;
 // Thread B-2 layout: outputs grew 16→18 to add OUT_DIG / OUT_DEPOSIT.
 // Directional quadrant stats and hidden brain state stay GPU-only, so readback
 // fits in 30 floats.
@@ -328,6 +342,12 @@ fn pair_force(@builtin(global_invocation_id) id: vec3u) {
   results[i].sigN = sigN;
   results[i].ownN = ownN; results[i].alienN = alienN;
   results[i].crowd = crowd;
+  results[i].o0 = qcnt0; results[i].o1 = qcnt1;
+  results[i].o2 = qcnt2; results[i].o3 = qcnt3;
+  results[i].o4 = select(0.0, qsig0 / qsigN0, qsigN0 > 0.0);
+  results[i].o5 = select(0.0, qsig1 / qsigN1, qsigN1 > 0.0);
+  results[i].o6 = select(0.0, qsig2 / qsigN2, qsigN2 > 0.0);
+  results[i].o7 = select(0.0, qsig3 / qsigN3, qsigN3 > 0.0);
   // Phase 5b — per-quadrant outputs. Signals are stored as means (per-quadrant
   // sum / count) so the brain shader can use them directly without divide.
   let so = i * STATE_STRIDE;
@@ -555,6 +575,8 @@ export class GPUPairForce {
     this.dispatchCount = 0;
     this.lastDispatchMs = 0;
     this.lastReadbackMs = 0;
+    this.lastReadbackBytes = 0;
+    this.lastReadbackStride = RESULT_STRIDE_F32;
     this.lastUploadMs = 0;
     this.lastError = null;
   }
@@ -805,7 +827,7 @@ export class GPUPairForce {
     this.device.queue.writeBuffer(this.paramsBuf, 0, this.paramsStaging);
   }
 
-  dispatch() {
+  dispatch({ pairOnly = false } = {}) {
     const d = this.device;
     const count = this._uploadedCount || this.maxParticles;
     const HW = this.opts.hashW, HH = this.opts.hashH;
@@ -825,6 +847,8 @@ export class GPUPairForce {
     slot.busy = true;
     slot.count = count;
     slot.serial = ++this._dispatchSerial;
+    slot.stride = pairOnly ? PAIR_RESULT_STRIDE_F32 : RESULT_STRIDE_F32;
+    slot.pairOnly = !!pairOnly;
 
     const enc = d.createCommandEncoder({ label: 'primordia.kernel' });
     const pass = enc.beginComputePass();
@@ -839,31 +863,38 @@ export class GPUPairForce {
     pass.setPipeline(this.pairPipeline);
     pass.dispatchWorkgroups(partGroups);
 
-    pass.setPipeline(this.brainPipeline);
-    pass.dispatchWorkgroups(partGroups);
+    if (!pairOnly) {
+      pass.setPipeline(this.brainPipeline);
+      pass.dispatchWorkgroups(partGroups);
+    }
 
     pass.end();
-    enc.copyBufferToBuffer(this.resultsBuf, 0, slot.buffer, 0, count * RESULT_STRIDE_F32 * 4);
+    enc.copyBufferToBuffer(this.resultsBuf, 0, slot.buffer, 0, count * slot.stride * 4);
 
     const t0 = performance.now();
     d.queue.submit([enc.finish()]);
     this.lastDispatchMs = performance.now() - t0;
     this.dispatchCount++;
-    return { slot, count, serial: slot.serial };
+    this.lastReadbackStride = slot.stride;
+    this.lastReadbackBytes = count * slot.stride * 4;
+    return { slot, count, serial: slot.serial, stride: slot.stride, pairOnly: slot.pairOnly };
   }
 
   async readback(token) {
     const slot = token && token.slot;
     if (!slot) throw new Error('missing readback slot');
     const count = token.count || slot.count || this.maxParticles;
-    const bytes = count * RESULT_STRIDE_F32 * 4;
+    const stride = token.stride || slot.stride || RESULT_STRIDE_F32;
+    const bytes = count * stride * 4;
     const t0 = performance.now();
     try {
       await slot.buffer.mapAsync(GPUMapMode.READ, 0, bytes);
       const range = slot.buffer.getMappedRange(0, bytes);
-      slot.results.set(new Float32Array(range, 0, count * RESULT_STRIDE_F32));
+      slot.results.set(new Float32Array(range, 0, count * stride));
       slot.buffer.unmap();
       this.lastReadbackMs = performance.now() - t0;
+      this.lastReadbackStride = stride;
+      this.lastReadbackBytes = bytes;
       return slot.results;
     } catch (err) {
       this.lastError = err.message || String(err);
