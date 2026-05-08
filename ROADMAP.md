@@ -96,6 +96,16 @@ making the browser unusable.
    indirect rewards work; possible future nudges include small topology-scaled
    energy smoothing, robustness, or communication bandwidth rather than a blunt
    free-energy bonus on new bonds.
+   Cluster-level reproduction is now a first-pass mechanic: stable,
+   energy-rich, sufficiently bonded named clusters can occasionally bud a
+   daughter cluster that inherits a representative sample of member genomes,
+   pays energy from the parent organism, and starts with internal bonds. This
+   is meant to move some selection pressure from the cell/particle level to
+   the organism/body-plan level without scripting a specific strategy. Next
+   validation target: long soaks should measure whether budded daughter
+   clusters preserve useful topology, diversify, survive independently, and
+   improve the rate of coordinated behavior compared with particle-only
+   reproduction.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and

@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add experimental pair-only GPU assist`
+  current `main` HEAD after this pass: `Add cluster-level budding reproduction`
 
 Recent useful commits:
 
-- current `main` HEAD - Add experimental pair-only GPU assist
+- current `main` HEAD - Add cluster-level budding reproduction
+- `b688116` - Add experimental pair-only GPU assist
 - `7ea2a8f` - Improve long-run browser broad phase
 - `32234f7` - Add coarse visibility cache
 - `5dc0e85` - Add render LOD and profiling
@@ -110,6 +111,7 @@ Core systems:
 - visual RGB signal channels
 - bond messages and named clusters
 - cluster alarm broadcast
+- cluster-level budding reproduction for stable, energy-rich bonded organisms
 - wall digging/depositing with carried wall material
 - wall metadata: builder particle, builder cluster, clade, deposited tick
 - import/export for particles, species/clades, clusters, and sterile worlds
@@ -162,6 +164,9 @@ Inspection and UI:
 - chased clusters pulse membrane rather than flashing every member
 - wall segments are inspectable and preserve builder/cluster metadata
 - current best/top panels can copy/export/view/chase, though polish remains open
+- stable, energy-rich bonded clusters can occasionally bud a daughter cluster:
+  the daughter inherits mutated member genomes, starts internally bonded, and
+  costs the parent cluster real energy
 
 Export/import:
 
@@ -357,6 +362,29 @@ Communication:
   - possible future nudges include topology-scaled energy smoothing, robustness,
     or communication bandwidth
 
+Organism-level reproduction:
+
+- User raised the concern that better evolved behavior may be limited because
+  reproduction was almost entirely at the particle/cell level.
+- First-pass response: cluster budding is implemented in `js/sim.js`.
+- Eligibility is intentionally conservative:
+  - named cluster size at least 8
+  - sufficient mean age
+  - sufficient mean energy relative to member reproduction thresholds
+  - sufficient internal bond density
+  - rare interval/probability gate plus per-cluster cooldown
+- A bud samples member genomes around the parent cluster, mutates them lightly,
+  places daughter members nearby in open/mud terrain, creates internal bonds,
+  and drains real energy from the contributing parent members.
+- This is not intended to script intelligence; it gives selection a heritable
+  multicellular/body-plan unit to preserve, vary, and kill.
+- Regression coverage: `tests/cluster-budding.test.js` verifies that a stable
+  ring-like cluster can produce a detectable daughter cluster with inherited
+  clades, internal bonds, and parent energy cost.
+- Next validation: compare long soaks with/without `world.clusterBudding` to
+  see whether cluster topology, coordinated construction, obstacle response,
+  and survival improve without runaway population churn.
+
 Construction:
 
 - Wall digging/depositing now happens in tests and soaks.
@@ -425,6 +453,13 @@ Longer-term:
   depositing adjacent walls
 
 ## Testing and verification commands
+
+Latest verification in the cluster-budding pass:
+
+- `node tests\cluster-budding.test.js` passed.
+- `npm test` passed all 14 test files; the full suite took about 144 seconds.
+- Quick CPU smoke passed:
+  `node tools\bench-cpu.js --preset maze --ticks 300 --cap 800 --seed 0xC0FFEE --profile --profileEvery 150`.
 
 Core:
 

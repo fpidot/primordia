@@ -86,6 +86,20 @@ const SOUND_DECAY = 0.08;      // ...and now fades much slower than before
 const REPRO_TAX = 0.15;        // energy lost on splitting
 const REPRO_PROB = 0.05;       // chance per tick once threshold met (smoothing)
 const REPRO_PROB_SEX = 0.12;   // sexual reproduction is favoured a bit
+const CLUSTER_BUD_INTERVAL = 48;
+const CLUSTER_BUD_COOLDOWN = 720;
+const CLUSTER_BUD_PROB = 0.035;
+const CLUSTER_BUD_MIN_SIZE = 8;
+const CLUSTER_BUD_MIN_CHILDREN = 8;
+const CLUSTER_BUD_MAX_CHILDREN = 14;
+const CLUSTER_BUD_MIN_MEAN_AGE = 180;
+const CLUSTER_BUD_MIN_MEAN_ENERGY = 8.0;
+const CLUSTER_BUD_MIN_MEAN_BONDS = 1.9;
+const CLUSTER_BUD_PARENT_FLOOR = 3.0;
+const CLUSTER_BUD_GIFT_FRAC = 0.22;
+const CLUSTER_BUD_MIN_GIFT = 1.4;
+const CLUSTER_BUD_TAX = 0.08;
+const CLUSTER_BUD_MUTATION_BOOST = 0.55;
 const DEATH_DEPOSIT = 1.4;     // decay packet released on death
 const EAT_MAX = 0.18;          // max food a particle can eat per tick
 
@@ -344,6 +358,8 @@ export class World {
     this.totalDied = 0;
     this.totalWallDigs = 0;
     this.totalWallDeposits = 0;
+    this.totalClusterBuds = 0;
+    this.totalClusterBudParticles = 0;
 
     this.clades = new CladeTracker();
 
@@ -380,6 +396,8 @@ export class World {
     this._clusters = [];
     this._clustersTick = -10000;
     this._clusterIdCounter = 0;
+    this._clusterBudLastTick = new Map();
+    this.clusterBudding = opts.clusterBudding ?? true;
     this._clusterNames = new Map();   // member-set fingerprint → stable name
     // Map from particle.id → cluster object, rebuilt each detection. Lets the
     // camera chase a cluster by holding a reference to one specific member
@@ -511,6 +529,8 @@ export class World {
       deaths: this.totalDied || 0,
       wallDigs: this.totalWallDigs || 0,
       wallDeposits: this.totalWallDeposits || 0,
+      clusterBuds: this.totalClusterBuds || 0,
+      clusterBudParticles: this.totalClusterBudParticles || 0,
       activeSound,
       gpuEnabled: !!this._gpuEnabled,
       gpuUsed: this._gpuTicksUsed || 0,
@@ -651,6 +671,8 @@ export class World {
     }
     this.totalBorn++;
     this._brainsDirty = true;
+    this._gpuStateDirty = true;
+    this._gpuOrderVersion++;
     return p;
   }
 
@@ -750,6 +772,7 @@ export class World {
     this._clustersTick = -10000;
     this._particleToCluster.clear();
     this._clusterNames.clear();
+    this._clusterBudLastTick.clear();
   }
 
   clearField() {
@@ -1949,6 +1972,7 @@ export class World {
     this.clades.sweep(this);
     this.updateClusters();
     this.smoothClusterEnergy();
+    this._tryClusterBudding();
     if (profiling) markProfile('lineage');
 
     // ── 6. Pipeline NEXT tick's GPU compute (Phase 4g). Doesn't block.
@@ -2160,6 +2184,185 @@ export class World {
   // Union-find on the bond graph → list of bonded clusters. Throttled — runs
   // only every CLUSTER_INTERVAL ticks. Clusters with ≥ MIN_NAMED_CLUSTER
   // members get a generated name and centroid for the renderer's flag labels.
+  _clusterBudKey(cluster) {
+    return cluster ? (cluster.anchorId || cluster.root || cluster.name || 0) : 0;
+  }
+
+  _isOpenForBud(x, y) {
+    const gx = clamp((x / CELL) | 0, 0, GW - 1);
+    const gy = clamp((y / CELL) | 0, 0, GH - 1);
+    const w = this.walls[gy * GW + gx];
+    return w !== WALL_SOLID && w !== WALL_MEMBRANE;
+  }
+
+  _findBudPosition(x, y, spread = 18) {
+    let bx = clamp(x, 1, W - 1);
+    let by = clamp(y, 1, H - 1);
+    if (this._isOpenForBud(bx, by)) return [bx, by];
+    for (let i = 0; i < 16; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = spread * (0.35 + Math.random());
+      bx = clamp(x + Math.cos(a) * r, 1, W - 1);
+      by = clamp(y + Math.sin(a) * r, 1, H - 1);
+      if (this._isOpenForBud(bx, by)) return [bx, by];
+    }
+    return [bx, by];
+  }
+
+  _linkBudChildren(a, b) {
+    if (!a || !b || a === b) return;
+    if (a.bonds.length >= MAX_BONDS || b.bonds.length >= MAX_BONDS) return;
+    if (!a.bonds.includes(b.id)) a.bonds.push(b.id);
+    if (!b.bonds.includes(a.id)) b.bonds.push(a.id);
+  }
+
+  _tryClusterBudding({ force = false } = {}) {
+    if (!force && !this.clusterBudding) return 0;
+    if (!force && this.tick % CLUSTER_BUD_INTERVAL !== 0) return 0;
+    if (!this._clusters || this._clusters.length === 0) return 0;
+    if (this.particles.length + CLUSTER_BUD_MIN_CHILDREN > this.maxParticles) return 0;
+
+    let bornTotal = 0;
+    let budTotal = 0;
+    for (const cluster of this._clusters) {
+      if (this.particles.length + CLUSTER_BUD_MIN_CHILDREN > this.maxParticles) break;
+      const born = this._budCluster(cluster, force);
+      if (born > 0) {
+        bornTotal += born;
+        budTotal++;
+        if (!force) break; // one daughter organism per interval keeps growth bounded
+      }
+    }
+
+    if (bornTotal > 0) {
+      this.totalClusterBuds += budTotal;
+      this.totalClusterBudParticles += bornTotal;
+      this._brainsDirty = true;
+      this._gpuStateDirty = true;
+      this._gpuOrderVersion++;
+      this._clustersTick = -10000;
+      this.updateClusters();
+    }
+    return bornTotal;
+  }
+
+  _budCluster(cluster, force = false) {
+    const members = (cluster.members || []).filter(p => p && !p.dead);
+    if (members.length < CLUSTER_BUD_MIN_SIZE) return 0;
+
+    const memberIds = new Set(members.map(p => p.id));
+    let energySum = 0;
+    let ageSum = 0;
+    let reproSum = 0;
+    let bondSum = 0;
+    for (const p of members) {
+      energySum += p.energy || 0;
+      ageSum += p.age || 0;
+      reproSum += p.genome?.repro_thresh || 0;
+      if (p.bonds) {
+        for (const id of p.bonds) if (memberIds.has(id)) bondSum++;
+      }
+    }
+    const n = members.length;
+    const meanEnergy = energySum / n;
+    const meanAge = ageSum / n;
+    const meanRepro = reproSum / n;
+    const meanBonds = bondSum / n;
+    const key = this._clusterBudKey(cluster);
+    const lastBud = this._clusterBudLastTick.get(key) ?? -999999;
+
+    if (!force) {
+      if (this.tick - lastBud < CLUSTER_BUD_COOLDOWN) return 0;
+      if (meanAge < CLUSTER_BUD_MIN_MEAN_AGE) return 0;
+      if (meanBonds < CLUSTER_BUD_MIN_MEAN_BONDS) return 0;
+      if (meanEnergy < Math.max(CLUSTER_BUD_MIN_MEAN_ENERGY, meanRepro * 1.15)) return 0;
+      if (Math.random() >= CLUSTER_BUD_PROB) return 0;
+    }
+
+    const donors = members
+      .filter(p => (p.energy || 0) > CLUSTER_BUD_PARENT_FLOOR + CLUSTER_BUD_MIN_GIFT)
+      .sort((a, b) => Math.atan2(a.y - cluster.cy, a.x - cluster.cx) -
+                      Math.atan2(b.y - cluster.cy, b.x - cluster.cx));
+    const slots = this.maxParticles - this.particles.length;
+    const targetCount = Math.min(
+      slots,
+      donors.length,
+      CLUSTER_BUD_MAX_CHILDREN,
+      Math.max(CLUSTER_BUD_MIN_CHILDREN, Math.round(n * 0.45)),
+    );
+    if (targetCount < CLUSTER_BUD_MIN_CHILDREN) return 0;
+
+    const selected = [];
+    const used = new Set();
+    const stride = donors.length / targetCount;
+    const offset = Math.floor(Math.random() * Math.max(1, stride));
+    for (let i = 0; i < targetCount; i++) {
+      const donor = donors[Math.min(donors.length - 1, Math.floor(i * stride + offset))];
+      if (!donor || used.has(donor.id)) continue;
+      selected.push(donor);
+      used.add(donor.id);
+    }
+    if (selected.length < CLUSTER_BUD_MIN_CHILDREN) return 0;
+
+    let dirX = 0, dirY = 0;
+    for (const p of selected) {
+      dirX += p.x - cluster.cx;
+      dirY += p.y - cluster.cy;
+    }
+    let len = Math.hypot(dirX, dirY);
+    if (len < 0.001) {
+      const a = Math.random() * Math.PI * 2;
+      dirX = Math.cos(a);
+      dirY = Math.sin(a);
+    } else {
+      dirX /= len;
+      dirY /= len;
+    }
+
+    const budCx = clamp(cluster.cx + dirX * (cluster.radius + 22 + Math.random() * 10), 1, W - 1);
+    const budCy = clamp(cluster.cy + dirY * (cluster.radius + 22 + Math.random() * 10), 1, H - 1);
+    const children = [];
+    for (const parent of selected) {
+      const gift = Math.min(
+        parent.energy - CLUSTER_BUD_PARENT_FLOOR,
+        Math.max(CLUSTER_BUD_MIN_GIFT, parent.energy * CLUSTER_BUD_GIFT_FRAC),
+      );
+      if (gift < CLUSTER_BUD_MIN_GIFT) continue;
+      const relX = (parent.x - cluster.cx) * 0.7;
+      const relY = (parent.y - cluster.cy) * 0.7;
+      const [x, y] = this._findBudPosition(
+        budCx + relX + (Math.random() - 0.5) * 4,
+        budCy + relY + (Math.random() - 0.5) * 4,
+        Math.max(12, cluster.radius * 0.5),
+      );
+      const clade = this.clades.clades.get(parent.cladeId) || null;
+      const childGenome = mutate(parent.genome, Math.random, CLUSTER_BUD_MUTATION_BOOST);
+      const child = this.addParticle(x, y, childGenome, gift * (1 - CLUSTER_BUD_TAX), clade);
+      if (!child) continue;
+      parent.energy -= gift;
+      child.lineage = parent.lineage;
+      child.vx = parent.vx * 0.25 + dirX * 0.35 + (Math.random() - 0.5) * 0.18;
+      child.vy = parent.vy * 0.25 + dirY * 0.35 + (Math.random() - 0.5) * 0.18;
+      children.push(child);
+    }
+
+    if (children.length < CLUSTER_BUD_MIN_CHILDREN) {
+      for (const child of children) child.dead = true;
+      return 0;
+    }
+
+    for (let i = 0; i < children.length; i++) {
+      this._linkBudChildren(children[i], children[(i + 1) % children.length]);
+    }
+    if (children.length >= 6) {
+      for (let i = 0; i < children.length; i++) {
+        this._linkBudChildren(children[i], children[(i + 2) % children.length]);
+      }
+    }
+    this._clusterBudLastTick.set(key, this.tick);
+    return children.length;
+  }
+
   updateClusters() {
     const CLUSTER_INTERVAL = 12;
     const MIN_NAMED_CLUSTER = 8;
