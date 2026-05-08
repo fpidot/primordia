@@ -305,6 +305,28 @@ function clusterDisplayName(baseName) {
   return parts[0] || 'cluster';
 }
 
+function romanNumeral(n) {
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const vals = [
+    [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+    [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+    [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+  ];
+  let out = '';
+  let x = Math.min(3999, Math.floor(n));
+  for (const [v, s] of vals) {
+    while (x >= v) { out += s; x -= v; }
+  }
+  return out;
+}
+
+function organismGenerationSuffix(generation) {
+  const g = Math.max(1, generation | 0);
+  if (g <= 1) return '';
+  if (g === 2) return ' Jr';
+  return ` ${romanNumeral(g)}`;
+}
+
 function uniqueClusterDisplayName(baseDisplay, usedNames, anchorId) {
   const parts = String(baseDisplay || 'cluster').split('-').filter(Boolean);
   if (parts.length < 2) return baseDisplay;
@@ -646,6 +668,8 @@ export class World {
       age: 0,
       lineage: ++_lineage,
       cladeId: 0,
+      organismRootId: 0,
+      organismGeneration: 1,
       signalR: 0, signalG: 0, signalB: 0,
       prevSignalR: 0, prevSignalG: 0, prevSignalB: 0,
       signalFlash: 0, signalAboveLast: 0, signalAboveSince: 0,
@@ -662,6 +686,7 @@ export class World {
       bonds: [],
       dead: false,
     };
+    p.organismRootId = p.id;
     this.particles.push(p);
     if (clade) {
       p.cladeId = clade.id;
@@ -1864,6 +1889,8 @@ export class World {
             age: 0,
             lineage: p.lineage,
             cladeId: parentClade,
+            organismRootId: p.organismRootId || p.id,
+            organismGeneration: p.organismGeneration || 1,
             signalR: 0, signalG: 0, signalB: 0,
             predationGain: 0,
             soundCh: 0, soundAmp: 0,
@@ -1905,6 +1932,8 @@ export class World {
             age: 0,
             lineage: p.lineage,
             cladeId: p.cladeId,
+            organismRootId: p.organismRootId || p.id,
+            organismGeneration: p.organismGeneration || 1,
             signalR: 0, signalG: 0, signalB: 0,
             predationGain: 0,
             soundCh: 0, soundAmp: 0,
@@ -2270,6 +2299,8 @@ export class World {
     const meanBonds = bondSum / n;
     const key = this._clusterBudKey(cluster);
     const lastBud = this._clusterBudLastTick.get(key) ?? -999999;
+    const childGeneration = Math.max(1, cluster.organismGeneration || 1) + 1;
+    const childRootId = cluster.organismRootId || key || cluster.anchorId;
 
     if (!force) {
       if (this.tick - lastBud < CLUSTER_BUD_COOLDOWN) return 0;
@@ -2341,6 +2372,8 @@ export class World {
       if (!child) continue;
       parent.energy -= gift;
       child.lineage = parent.lineage;
+      child.organismRootId = childRootId;
+      child.organismGeneration = childGeneration;
       child.vx = parent.vx * 0.25 + dirX * 0.35 + (Math.random() - 0.5) * 0.18;
       child.vy = parent.vy * 0.25 + dirY * 0.35 + (Math.random() - 0.5) * 0.18;
       children.push(child);
@@ -2425,11 +2458,16 @@ export class World {
       if (members.length < MIN_NAMED_CLUSTER) continue;
       let cx = 0, cy = 0;
       const cladeCount = new Map();
+      const organismCount = new Map();
       let smallestId = Infinity;
       for (const p of members) {
         cx += p.x;
         cy += p.y;
         cladeCount.set(p.cladeId, (cladeCount.get(p.cladeId) || 0) + 1);
+        const organismRoot = p.organismRootId || p.id;
+        const organismGeneration = Math.max(1, p.organismGeneration || 1);
+        const organismKey = `${organismRoot}:${organismGeneration}`;
+        organismCount.set(organismKey, (organismCount.get(organismKey) || 0) + 1);
         if (p.id < smallestId) smallestId = p.id;
       }
       cx /= members.length;
@@ -2447,14 +2485,29 @@ export class World {
       for (const [cid, cnt] of cladeCount) {
         if (cnt > topCount) { topCount = cnt; topClade = cid; }
       }
+      let topOrganismRoot = smallestId;
+      let topOrganismGeneration = 1;
+      let topOrganismCount = 0;
+      for (const [okey, cnt] of organismCount) {
+        if (cnt <= topOrganismCount) continue;
+        const [rootId, generation] = okey.split(':');
+        topOrganismRoot = Number(rootId) || smallestId;
+        topOrganismGeneration = Math.max(1, Number(generation) || 1);
+        topOrganismCount = cnt;
+      }
       const clade = this.clades.clades.get(topClade);
       const baseName = clade ? clade.name : `cluster`;
       const isMixed = topCount < members.length;
-      const displayBase = uniqueClusterDisplayName(clusterDisplayName(baseName), usedHumanNames, smallestId);
+      let displayBase = uniqueClusterDisplayName(clusterDisplayName(baseName), usedHumanNames, smallestId);
+      const generationSuffix = organismGenerationSuffix(topOrganismGeneration);
+      displayBase += generationSuffix;
       const name = `${displayBase} ×${members.length}`;
       const cluster = {
         root,
         anchorId: smallestId,
+        organismRootId: topOrganismRoot,
+        organismGeneration: topOrganismGeneration,
+        organismGenerationSuffix: generationSuffix.trim(),
         count: members.length,
         members,                  // actual particle refs — used by chase highlight
         cx, cy,

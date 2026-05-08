@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add cluster-level budding reproduction`
+  current `main` HEAD after this pass: `Label cluster bud generations`
 
 Recent useful commits:
 
-- current `main` HEAD - Add cluster-level budding reproduction
+- current `main` HEAD - Label cluster bud generations
+- `d3a2097` - Add cluster-level budding reproduction
 - `b688116` - Add experimental pair-only GPU assist
 - `7ea2a8f` - Improve long-run browser broad phase
 - `32234f7` - Add coarse visibility cache
@@ -167,6 +168,8 @@ Inspection and UI:
 - stable, energy-rich bonded clusters can occasionally bud a daughter cluster:
   the daughter inherits mutated member genomes, starts internally bonded, and
   costs the parent cluster real energy
+- daughter/granddaughter organism labels append generation suffixes:
+  founder clusters have no suffix, daughters show `Jr`, then `III`, `IV`, etc.
 
 Export/import:
 
@@ -376,11 +379,17 @@ Organism-level reproduction:
 - A bud samples member genomes around the parent cluster, mutates them lightly,
   places daughter members nearby in open/mud terrain, creates internal bonds,
   and drains real energy from the contributing parent members.
+- Budded particles carry `organismRootId` and `organismGeneration`; current
+  cluster labels infer the dominant generation from bonded members and append
+  `Jr`, `III`, `IV`, etc. for easy lineage tracking.
+- Specimen and cluster export/import carry `organismGeneration`; imported
+  copies get a fresh local root id but keep the visible generation suffix.
 - This is not intended to script intelligence; it gives selection a heritable
   multicellular/body-plan unit to preserve, vary, and kill.
 - Regression coverage: `tests/cluster-budding.test.js` verifies that a stable
   ring-like cluster can produce a detectable daughter cluster with inherited
-  clades, internal bonds, and parent energy cost.
+  clades, internal bonds, parent energy cost, daughter generation markers, and
+  a visible `Jr` label.
 - Next validation: compare long soaks with/without `world.clusterBudding` to
   see whether cluster topology, coordinated construction, obstacle response,
   and survival improve without runaway population churn.
@@ -457,7 +466,8 @@ Longer-term:
 Latest verification in the cluster-budding pass:
 
 - `node tests\cluster-budding.test.js` passed.
-- `npm test` passed all 14 test files; the full suite took about 144 seconds.
+- `node --check js\ui.js` passed after generation metadata was added to export/import.
+- `npm test` passed all 14 test files; the latest full suite took about 149 seconds.
 - Quick CPU smoke passed:
   `node tools\bench-cpu.js --preset maze --ticks 300 --cap 800 --seed 0xC0FFEE --profile --profileEvery 150`.
 

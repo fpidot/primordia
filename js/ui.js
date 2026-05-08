@@ -1689,6 +1689,7 @@ export class UI {
         energy: p.energy,
         cladeId: p.cladeId,
         lineage: p.lineage,
+        organismGeneration: p.organismGeneration || 1,
         wallCarry: p.wallCarry || 0,
         wallDigs: p.wallDigs || 0,
         wallDeposits: p.wallDeposits || 0,
@@ -1737,6 +1738,8 @@ export class UI {
       name: cluster.name,
       baseName: cluster.baseName || cluster.name,
       anchorId: cluster.anchorId,
+      organismGeneration: cluster.organismGeneration || 1,
+      organismGenerationSuffix: cluster.organismGenerationSuffix || '',
       count: members.length,
       species: cluster.species,
       radius: cluster.radius,
@@ -1762,6 +1765,7 @@ export class UI {
         energy: p.energy,
         cladeId: p.cladeId,
         lineage: p.lineage,
+        organismGeneration: p.organismGeneration || cluster.organismGeneration || 1,
         dx: p.x - cluster.cx,
         dy: p.y - cluster.cy,
         wallCarry: p.wallCarry || 0,
@@ -1785,6 +1789,8 @@ export class UI {
       energy,
       clade);
     if (!copy) return null;
+    copy.organismRootId = copy.id;
+    copy.organismGeneration = Math.max(1, p.organismGeneration || 1);
     copy.wallCarry = clamp(p.wallCarry || 0, 0, 5) | 0;
     this.world._clustersTick = -10000;
     this.world.updateClusters();
@@ -1817,6 +1823,8 @@ export class UI {
       return null;
     }
     p.wallCarry = clamp(src.wallCarry || 0, 0, 5) | 0;
+    p.organismRootId = p.id;
+    p.organismGeneration = Math.max(1, src.organismGeneration || 1);
     this.world._clustersTick = -10000;
     this._lastCuratedTick = -9999;
     this.refreshStats();
@@ -1869,6 +1877,7 @@ export class UI {
     const baseX = clamp(x, 24, W - 24);
     const baseY = clamp(y, 24, H - 24);
     const oldToNew = new Map();
+    let importedRootId = 0;
     for (const m of members) {
       if (!m || !m.genome) continue;
       const genome = genomeFromJSON(m.genome);
@@ -1877,6 +1886,9 @@ export class UI {
       const energy = Math.max(3, Math.min(18, Number.isFinite(m.energy) ? m.energy : 6));
       const p = this.world.addParticle(px, py, genome, energy, clade);
       if (!p) break;
+      if (!importedRootId) importedRootId = p.id;
+      p.organismRootId = importedRootId;
+      p.organismGeneration = Math.max(1, m.organismGeneration || cluster.organismGeneration || 1);
       p.wallCarry = clamp(m.wallCarry || 0, 0, 5) | 0;
       oldToNew.set(m.id, p);
     }

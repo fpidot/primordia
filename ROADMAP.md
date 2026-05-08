@@ -105,7 +105,11 @@ making the browser unusable.
    validation target: long soaks should measure whether budded daughter
    clusters preserve useful topology, diversify, survive independently, and
    improve the rate of coordinated behavior compared with particle-only
-   reproduction.
+   reproduction. Daughter/granddaughter organisms now carry a lightweight
+   generation marker that appears in labels as `Jr`, `III`, `IV`, etc., so
+   lineages can be tracked in the sim without adding a heavy genealogy UI yet.
+   Cluster/specimen exports preserve the visible generation marker while
+   imported copies receive a fresh local lineage root.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and

@@ -56,4 +56,6 @@ await runTest('cluster-budding: stable clusters can reproduce as organisms', asy
   assert('daughter starts internally bonded', childBondRefs >= children.length * 2);
   assert('parent and daughter clusters are both detectable', world._clusters.length >= 2);
   assert('children inherit parent clades', children.every(p => p.cladeId > 0));
+  assert('children are marked as daughters', children.every(p => p.organismGeneration === 2));
+  assert('daughter cluster is labeled Jr', world._clusters.some(c => c.organismGeneration === 2 && c.name.includes(' Jr ')));
 });
