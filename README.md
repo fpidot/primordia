@@ -24,11 +24,13 @@ npm test
 
 ```sh
 npm run bench:cpu -- maze 1200 1500 0xC0FFEE
+node tools/bench-cpu.js --preset maze --ticks 500 --cap 1200 --seed 0xC0FFEE --profile --profileEvery 100
 ```
 
 The CPU probe reports timing plus construction diagnostics (`wallDigs`,
 `wallDeposits`, and live `wallCarriers`) so builder regressions are easy to
-spot during performance work.
+spot during performance work. `--profileEvery` emits rolling phase windows and
+line-of-sight counters for degradation checks.
 
 ## Browser timing probe
 
@@ -38,12 +40,14 @@ Start the local server first, then run:
 npm run bench:browser -- maze 6 4
 node tools/bench-browser.js maze 6 4 9230 --gpu
 node tools/bench-browser.js --preset maze --seconds 8 --speed 4 --seed 0xC0FFEE --gpu
+node tools/bench-browser.js --preset maze --seconds 5 --speed 4 --seed 0xC0FFEE --profile --zoom 0.35
 ```
 
 The browser probe launches Chrome/Edge through the DevTools protocol and
 reports FPS, sim ticks/sec, GPU availability, WebGPU readback timings, and
 adaptive GPU cooldown telemetry. Use `--seed` for CPU/GPU comparisons that
-start from the same preset state.
+start from the same preset state; use `--profile` and `--zoom` to inspect
+sim/render/frame costs and low-zoom LOD behavior.
 
 ## Preset population
 

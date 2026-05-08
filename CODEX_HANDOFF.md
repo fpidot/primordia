@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD: `Add adaptive GPU cadence`
+  current `main` HEAD: `Add render LOD and profiling`
 
 Recent useful commits:
 
-- current `main` HEAD - Add adaptive GPU cadence
+- current `main` HEAD - Add render LOD and profiling
+- `c6ad5e3` - Add adaptive GPU cadence
 - `576432c` - Clarify bonds in quick start
 - `5432b68` - Add in-app guide popups
 - `81b69b2` - Add field notes and quick start docs
@@ -201,6 +202,12 @@ CPU:
   - throttled chart redraws
   - visible-region render culling
   - merged repeated wall/mud/material proximity scans
+- CPU bench now supports `--profileEvery`, which records rolling phase windows,
+  population/cluster/wall metrics, and line-of-sight counters. Recent seeded
+  500-tick maze probes were in the low-to-mid 20 ms/tick range locally; the
+  line-of-sight experiment confirmed high call volume but a prefix-sum skip was
+  not worth shipping because frequent wall changes/check overhead erased the
+  savings.
 
 GPU:
 
@@ -221,6 +228,9 @@ GPU:
   - pending readbacks
   - last result age
   - adaptive cooldown ticks/cooldown count
+- Browser bench accepts `--profile` and `--zoom`. Profiling reports sim,
+  renderer, and frame phase costs; low-zoom probes can confirm wall tile LOD and
+  particle density LOD are active.
 
 Performance reality:
 
@@ -240,12 +250,23 @@ Performance reality:
     24.0
   - open soup adaptive GPU: 4s probes still show startup tax, while an 8s run
     recovered to about 35 ticks/sec after cooldown
-- The likely next big win is still to reduce what has to come back from GPU,
-  reduce how often it comes back, or split pair-force assist from full GPU
-  brain mode.
+- Latest low-zoom browser profile, seeded dense maze, 5s, CPU-only, `--zoom
+  0.35`: about 28.1 FPS/ticks/sec, render about 4.2 ms/frame, sim step about
+  28.5 ms/frame, wall mode `tile-lod`, particle mode `density-lod`, no page
+  errors.
+- Latest matching GPU profile on this Intel sample: about 25.4 FPS/ticks/sec,
+  readback about 59 ms, adaptive cooldown engaged. GPU remains useful to probe
+  but not yet a guaranteed dense-maze win on this hardware.
+- The likely next big win is fundamental: process pair interactions once into
+  per-agent accumulators, then run brain/integration, and/or split pair-force
+  assist from full GPU brain readback so not every output crosses the
+  GPU/CPU boundary every tick.
 
 Next performance target:
 
+- Restructure the CPU agent loop so each neighboring pair is evaluated once and
+  contributes to per-agent accumulators for force, neighbor stats, signal
+  stats, predation/contact biology, and bond formation.
 - Implement and benchmark a pair-force-only GPU assist mode.
 - Shrink/sparsify readback payload so fewer floats cross the GPU/CPU boundary.
 - Tune adaptive cadence with longer headed-browser runs on both the desktop and
@@ -395,6 +416,7 @@ CPU bench:
 
 ```powershell
 npm run bench:cpu -- --preset maze --ticks 500 --cap 1200 --seed 0xC0FFEE --profile
+node tools\bench-cpu.js --preset maze --ticks 500 --cap 1200 --seed 0xC0FFEE --profile --profileEvery 100
 ```
 
 Browser/GPU smoke:
@@ -402,6 +424,7 @@ Browser/GPU smoke:
 ```powershell
 node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 6 --speed 4 --gpu --port 9336
 node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 8 --speed 4 --seed 0xC0FFEE --gpu --port 9336
+node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 5 --speed 4 --seed 0xC0FFEE --profile --zoom 0.35 --port 9338
 ```
 
 CPU browser comparison:
@@ -448,6 +471,7 @@ git log --oneline -5
 3. Choose one narrow pass:
 
 - performance: pair-force-only GPU assist/readback reduction
+- performance: one-pass CPU pair accumulator restructure
 - agency: detour-navigation microtests
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization

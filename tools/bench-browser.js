@@ -94,6 +94,8 @@ const speed = Math.max(0.25, Number(readArg('speed', positional[2] || 4)) || 4);
 const warmup = Math.max(0, Number(readArg('warmup', 1000)) || 0);
 const seedArg = readArg('seed', null);
 const wantGpu = !!readArg('gpu', false);
+const wantProfile = !!readArg('profile', false);
+const zoomArg = readArg('zoom', null);
 const width = Math.max(320, Number(readArg('width', 1440)) || 1440);
 const height = Math.max(320, Number(readArg('height', 1000)) || 1000);
 const port = Math.max(1024, Number(readArg('port', positional[3] || 9225)) || 9225);
@@ -156,7 +158,7 @@ try {
     (async () => {
       const app = window.__primordia;
       if (!app) throw new Error('window.__primordia missing');
-      const { world, ui, camera, chart, PRESETS, gpu } = app;
+      const { world, renderer, ui, camera, chart, PRESETS, gpu, frameProfile } = app;
       if (!PRESETS['${preset}']) throw new Error('unknown preset ${preset}');
       const seedValue = ${seedArg == null ? 'null' : JSON.stringify(String(seedArg))};
       if (seedValue != null) {
@@ -178,9 +180,26 @@ try {
       PRESETS['${preset}'](world);
       chart.data.length = 0;
       camera.fit();
+      const zoomValue = ${zoomArg == null ? 'null' : JSON.stringify(String(zoomArg))};
+      if (zoomValue != null) {
+        const z = Number(zoomValue);
+        if (Number.isFinite(z) && z > 0) {
+          camera.zoom = z;
+          camera.clamp();
+        }
+      }
       ui.refreshStats();
       ui.speed = ${speed};
       ui.paused = false;
+      const wantProfile = ${wantProfile ? 'true' : 'false'};
+      if (wantProfile) {
+        if (typeof world.setProfiling === 'function') world.setProfiling(true);
+        if (renderer && typeof renderer.setProfiling === 'function') renderer.setProfiling(true);
+        if (frameProfile) {
+          frameProfile.reset?.();
+          frameProfile.enabled = true;
+        }
+      }
 
       const wantGpu = ${wantGpu ? 'true' : 'false'};
       let gpuReady = false;
@@ -220,6 +239,12 @@ try {
       }
       const elapsed = performance.now() - start;
       ui.paused = true;
+      const profile = wantProfile ? {
+        sim: world.profileSnapshot ? world.profileSnapshot() : null,
+        render: renderer && renderer.profileSummary ? renderer.profileSummary() : null,
+        frame: frameProfile && frameProfile.summary ? frameProfile.summary() : null,
+      } : null;
+      if (frameProfile) frameProfile.enabled = false;
       return {
         preset: '${preset}',
         seed: seedValue,
@@ -251,6 +276,7 @@ try {
         ticksPerSecond: +((world.tick - startTick) / elapsed * 1000).toFixed(1),
         population: world.particles.length,
         walls: world._wallCount,
+        profile,
       };
     })()
   `;

@@ -232,6 +232,10 @@ export function solidBlocksLineOfSight(walls, x0, y0, x1, y1) {
   const gy0 = clamp((y0 / CELL) | 0, 0, GH - 1);
   const gx1 = clamp((x1 / CELL) | 0, 0, GW - 1);
   const gy1 = clamp((y1 / CELL) | 0, 0, GH - 1);
+  return solidBlocksLineOfSightCells(walls, gx0, gy0, gx1, gy1);
+}
+
+function solidBlocksLineOfSightCells(walls, gx0, gy0, gx1, gy1) {
   const dx = gx1 - gx0;
   const dy = gy1 - gy0;
   const steps = Math.max(Math.abs(dx), Math.abs(dy));
@@ -407,6 +411,7 @@ export class World {
     this._profileEnabled = false;
     this._profileTotals = new Map();
     this._profileTicks = 0;
+    this._profileCounters = null;
   }
 
   // Attach a GPUPairForce kernel. World does not own its lifecycle; caller
@@ -435,12 +440,72 @@ export class World {
     this._profileEnabled = !!enabled;
     this._profileTotals.clear();
     this._profileTicks = 0;
+    this._profileCounters = enabled ? Object.create(null) : null;
   }
   profileSummary() {
     const ticks = Math.max(1, this._profileTicks || 0);
     const out = {};
     for (const [name, ms] of this._profileTotals) out[name] = +(ms / ticks).toFixed(3);
     return out;
+  }
+  profileSnapshot({ reset = false } = {}) {
+    const phases = this.profileSummary();
+    const metrics = this.profileMetrics();
+    const snap = {
+      tick: this.tick,
+      profileTicks: this._profileTicks || 0,
+      phases,
+      counters: this._profileCounters ? { ...this._profileCounters } : {},
+      metrics,
+    };
+    if (reset && this._profileEnabled) {
+      this._profileTotals.clear();
+      this._profileTicks = 0;
+      this._profileCounters = Object.create(null);
+    }
+    return snap;
+  }
+  profileMetrics() {
+    const ps = this.particles;
+    let bonds = 0;
+    let wallCarriers = 0;
+    let brainSlots = 0;
+    let energy = 0;
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
+      if (p.dead) continue;
+      bonds += p.bonds ? p.bonds.length : 0;
+      if ((p.wallCarry || 0) > 0) wallCarriers++;
+      if (p.genome && p.genome.brain) brainSlots += p.genome.brain.enabledCount();
+      energy += p.energy || 0;
+    }
+    const n = Math.max(1, ps.length);
+    let activeSound = 0;
+    for (let s = 0; s < this._soundLastEmit.length; s++) {
+      if (this.tick - this._soundLastEmit[s] < 60) activeSound++;
+    }
+    return {
+      population: ps.length,
+      walls: this._wallCount || 0,
+      solidWalls: this._solidWalls ? this._solidWalls().length : 0,
+      clusters: this._clusters ? this._clusters.length : 0,
+      bonds: (bonds / 2) | 0,
+      meanBonds: +(bonds / n).toFixed(3),
+      meanBrainSlots: +(brainSlots / n).toFixed(3),
+      meanEnergy: +(energy / n).toFixed(3),
+      wallCarriers,
+      births: this.totalBorn || 0,
+      deaths: this.totalDied || 0,
+      wallDigs: this.totalWallDigs || 0,
+      wallDeposits: this.totalWallDeposits || 0,
+      activeSound,
+      gpuEnabled: !!this._gpuEnabled,
+      gpuUsed: this._gpuTicksUsed || 0,
+      gpuFallback: this._gpuTicksFallback || 0,
+      gpuPending: this._gpuPendings ? this._gpuPendings.length : 0,
+      gpuCooldown: this._gpuCooldownTicks || 0,
+      gpuCooldowns: this._gpuAdaptiveCooldowns || 0,
+    };
   }
   _profileAdd(name, ms) {
     this._profileTotals.set(name, (this._profileTotals.get(name) || 0) + ms);
@@ -455,6 +520,22 @@ export class World {
     }
     this._solidWallVersion = this._wallsVersion;
     return out;
+  }
+  solidBlocksLineOfSightFast(x0, y0, x1, y1) {
+    const counters = this._profileCounters;
+    if (counters) counters.losTests = (counters.losTests || 0) + 1;
+    const gx0 = clamp((x0 / CELL) | 0, 0, GW - 1);
+    const gy0 = clamp((y0 / CELL) | 0, 0, GH - 1);
+    const gx1 = clamp((x1 / CELL) | 0, 0, GW - 1);
+    const gy1 = clamp((y1 / CELL) | 0, 0, GH - 1);
+    const dx0 = gx1 - gx0;
+    const dy0 = gy1 - gy0;
+    if (Math.max(Math.abs(dx0), Math.abs(dy0)) <= 1) {
+      if (counters) counters.losNearSkips = (counters.losNearSkips || 0) + 1;
+      return false;
+    }
+    if (counters) counters.losWalks = (counters.losWalks || 0) + 1;
+    return solidBlocksLineOfSightCells(this.walls, gx0, gy0, gx1, gy1);
   }
 
   // ────────────────────────────────────────────────────────────── lifecycle
@@ -909,7 +990,9 @@ export class World {
                 const dy = q.y - p.y;
                 const d2 = dx * dx + dy * dy;
                 if (d2 < cpuNeighborR2 && d2 > 1e-6 &&
-                    !(hasSolidSightBlockers && solidBlocksLineOfSight(walls, p.x, p.y, q.x, q.y))) {
+                    !(hasSolidSightBlockers && (profiling
+                      ? this.solidBlocksLineOfSightFast(p.x, p.y, q.x, q.y)
+                      : solidBlocksLineOfSight(walls, p.x, p.y, q.x, q.y)))) {
                   const d = Math.sqrt(d2);
                   if (!useGpuPairs) {
                     // Stats accumulation — skipped when GPU already produced them

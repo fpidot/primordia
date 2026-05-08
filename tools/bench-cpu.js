@@ -24,6 +24,7 @@ const cap = Math.max(1, Number(readArg('cap', positional[2] || 1500)) | 0);
 const seedRaw = readArg('seed', positional[3] || '0xC0FFEE');
 const seed = Number(seedRaw);
 const reportEvery = Math.max(0, Number(readArg('reportEvery', 0)) | 0);
+const profileEvery = Math.max(0, Number(readArg('profileEvery', 0)) | 0);
 const profile = process.argv.includes('--profile');
 
 if (!PRESETS[presetName]) {
@@ -36,16 +37,31 @@ Math.random = mulberry32(seed);
 const world = new World({ maxParticles: cap });
 if (presetName === 'soup') PRESETS.soup(world, Math.min(800, cap));
 else PRESETS[presetName](world);
-if (profile && typeof world.setProfiling === 'function') world.setProfiling(true);
+if ((profile || profileEvery) && typeof world.setProfiling === 'function') world.setProfiling(true);
 
 const startN = world.particles.length;
+const profileTrend = [];
 const t0 = performance.now();
+let lastWindowTick = 0;
+let lastWindowTime = t0;
 for (let i = 0; i < ticks; i++) {
   await world.step();
   if (reportEvery && (i + 1) % reportEvery === 0) {
     const elapsed = performance.now() - t0;
     const mspt = elapsed / (i + 1);
     console.log(`t=${world.tick} n=${world.particles.length} ms/tick=${mspt.toFixed(3)}`);
+  }
+  if (profileEvery && (i + 1) % profileEvery === 0 && typeof world.profileSnapshot === 'function') {
+    const now = performance.now();
+    const windowTicks = world.tick - lastWindowTick;
+    const windowMs = now - lastWindowTime;
+    const snap = world.profileSnapshot({ reset: true });
+    snap.elapsedMs = Number((now - t0).toFixed(1));
+    snap.windowTicks = windowTicks;
+    snap.windowMsPerTick = Number((windowMs / Math.max(1, windowTicks)).toFixed(3));
+    profileTrend.push(snap);
+    lastWindowTick = world.tick;
+    lastWindowTime = now;
   }
 }
 const elapsed = performance.now() - t0;
@@ -71,4 +87,5 @@ console.log(JSON.stringify({
   wallDeposits: world.totalWallDeposits || 0,
   wallCarriers,
   profile: profile && typeof world.profileSummary === 'function' ? world.profileSummary() : undefined,
+  profileTrend: profileTrend.length ? profileTrend : undefined,
 }, null, 2));

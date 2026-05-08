@@ -1,7 +1,7 @@
 // render.js — paints the chemical field (low-res, drawn via offscreen canvas)
 // and particles, both with a Camera transform applied for pan/zoom.
 
-import { GW, GH, W, H, CELL, WALL_SOLID } from './sim.js';
+import { GW, GH, W, H, CELL, WALL_SOLID, WALL_MEMBRANE, WALL_POROUS } from './sim.js';
 import { SPECIES_RGB, SPECIES_COLORS } from './genome.js';
 
 export class Camera {
@@ -165,6 +165,11 @@ export class Renderer {
     // the wall set changes. No raster buffer = no zoom-dependent blockiness.
     this._wallSig = -1;
     this._wallCellList = [];
+    this._wallTileList = [];
+    this._renderProfileEnabled = false;
+    this._renderProfileTotals = new Map();
+    this._renderProfileFrames = 0;
+    this._lastRenderStats = {};
     // Predator rim color cache — one "offset" hue per species derived by
     // brightening + slight hue rotation so the rim differs from the body
     // but reads as related, not as a universal red. Computed once at
@@ -211,10 +216,61 @@ export class Renderer {
     this.options[key] = value;
   }
 
+  setProfiling(enabled) {
+    this._renderProfileEnabled = !!enabled;
+    if (enabled) {
+      this._renderProfileTotals.clear();
+      this._renderProfileFrames = 0;
+    }
+  }
+
+  profileSummary({ reset = false } = {}) {
+    const frames = Math.max(1, this._renderProfileFrames || 0);
+    const phases = {};
+    for (const [key, value] of this._renderProfileTotals) {
+      phases[key] = +(value / frames).toFixed(3);
+    }
+    const summary = {
+      frames: this._renderProfileFrames || 0,
+      phases,
+      last: { ...this._lastRenderStats },
+    };
+    if (reset) {
+      this._renderProfileTotals.clear();
+      this._renderProfileFrames = 0;
+    }
+    return summary;
+  }
+
+  _profileAdd(name, ms) {
+    if (!this._renderProfileEnabled) return;
+    this._renderProfileTotals.set(name, (this._renderProfileTotals.get(name) || 0) + ms);
+  }
+
   render(world) {
+    const prof = this._renderProfileEnabled;
+    const start = prof ? performance.now() : 0;
+    let t = start;
     this.resizeIfNeeded();
+    if (prof) {
+      const n = performance.now();
+      this._profileAdd('resize', n - t);
+      t = n;
+    }
+    this._lastRenderStats = {};
     this.renderField(world);
+    if (prof) {
+      const n = performance.now();
+      this._profileAdd('field', n - t);
+      t = n;
+    }
     this.renderParticles(world);
+    if (prof) {
+      const n = performance.now();
+      this._profileAdd('particles', n - t);
+      this._profileAdd('render', n - start);
+      this._renderProfileFrames++;
+    }
   }
 
   renderField(world) {
@@ -265,10 +321,18 @@ export class Renderer {
     if (this._wallSig !== wallSig) {
       this._wallSig = wallSig;
       const list = [];
+      const tileSize = 4;
+      const tileW = Math.ceil(GW / tileSize);
+      const tileH = Math.ceil(GH / tileSize);
+      const tileCounts = new Uint16Array(tileW * tileH * 4);
       for (let y = 0; y < GH; y++) {
         for (let x = 0; x < GW; x++) {
           const wt = walls[y * GW + x];
           if (!wt) continue;
+          const ti = ((y / tileSize) | 0) * tileW + ((x / tileSize) | 0);
+          const to = ti * 4;
+          tileCounts[to]++;
+          if (wt < 4) tileCounts[to + wt]++;
           let cnt = 0;
           for (let dy = -1; dy <= 1; dy++) {
             const yy = y + dy;
@@ -287,7 +351,29 @@ export class Renderer {
           list.push({ type: wt, gx: x, gy: y, dens: cnt / 9, edge });
         }
       }
+      const tiles = [];
+      for (let ty = 0; ty < tileH; ty++) {
+        for (let tx = 0; tx < tileW; tx++) {
+          const ti = ty * tileW + tx;
+          const to = ti * 4;
+          const total = tileCounts[to];
+          if (!total) continue;
+          const solid = tileCounts[to + WALL_SOLID] || 0;
+          const glass = tileCounts[to + WALL_MEMBRANE] || 0;
+          const mud = tileCounts[to + WALL_POROUS] || 0;
+          let type = WALL_SOLID;
+          let dominant = solid;
+          if (glass > dominant) { type = WALL_MEMBRANE; dominant = glass; }
+          if (mud > dominant) { type = WALL_POROUS; dominant = mud; }
+          const gx = tx * tileSize;
+          const gy = ty * tileSize;
+          const sx = Math.min(tileSize, GW - gx);
+          const sy = Math.min(tileSize, GH - gy);
+          tiles.push({ type, gx, gy, sizeX: sx, sizeY: sy, density: total / (sx * sy), dominant: dominant / total });
+        }
+      }
       this._wallCellList = list;
+      this._wallTileList = tiles;
     }
 
     // 3. Clear bg canvas (in screen space) and blit the field with camera transform
@@ -312,6 +398,13 @@ export class Renderer {
       const maxGX = Math.min(GW - 1, Math.ceil((this.cam.x + this.cam.viewW / (2 * z) + pad) / CELL));
       const minGY = Math.max(0, Math.floor((this.cam.y - this.cam.viewH / (2 * z) - pad) / CELL));
       const maxGY = Math.min(GH - 1, Math.ceil((this.cam.y + this.cam.viewH / (2 * z) + pad) / CELL));
+      if (z < 0.48 && this._wallTileList && this._wallTileList.length > 0) {
+        this._lastRenderStats.wallMode = 'tile-lod';
+        this._lastRenderStats.wallTiles = this._wallTileList.length;
+        this.renderWallTiles(ctx, this._wallTileList, minGX, maxGX, minGY, maxGY, z);
+      } else {
+        this._lastRenderStats.wallMode = 'cell';
+        this._lastRenderStats.wallCells = list.length;
       // Bucket cells by colour key: "type|densBucket" → array of cells
       const buckets = this._wallBuckets || (this._wallBuckets = new Map());
       buckets.clear();
@@ -329,12 +422,12 @@ export class Renderer {
         const dens = (key % 16) / 8;
         const lerp = 1 - dens;
         let cr, cg, cb, alpha;
-        if (wt === 2) {
+        if (wt === WALL_MEMBRANE) {
           cr = 80 + lerp * 35;
           cg = 155 + lerp * 50;
           cb = 190 + lerp * 45;
           alpha = (95 + dens * 55) / 255;
-        } else if (wt === 3) {
+        } else if (wt === WALL_POROUS) {
           cr = 92 + lerp * 24;
           cg = 76 + lerp * 16;
           cb = 42 + lerp * 10;
@@ -369,11 +462,12 @@ export class Renderer {
         }
         ctx.lineWidth = Math.max(0.35, 0.9 / z);
         for (const [wt, path] of edgeBuckets) {
-          if (wt === 2) ctx.strokeStyle = 'rgba(175, 231, 247, 0.52)';
-          else if (wt === 3) ctx.strokeStyle = 'rgba(173, 138, 78, 0.42)';
+          if (wt === WALL_MEMBRANE) ctx.strokeStyle = 'rgba(175, 231, 247, 0.52)';
+          else if (wt === WALL_POROUS) ctx.strokeStyle = 'rgba(173, 138, 78, 0.42)';
           else ctx.strokeStyle = 'rgba(255, 253, 235, 0.36)';
           ctx.stroke(path);
         }
+      }
       }
     }
 
@@ -381,6 +475,47 @@ export class Renderer {
     ctx.lineWidth = 2 / this.cam.zoom;
     ctx.strokeStyle = 'rgba(120,150,200,0.18)';
     ctx.strokeRect(0, 0, W, H);
+  }
+
+  renderWallTiles(ctx, tiles, minGX, maxGX, minGY, maxGY, z) {
+    const buckets = this._wallTileBuckets || (this._wallTileBuckets = new Map());
+    buckets.clear();
+    for (let i = 0; i < tiles.length; i++) {
+      const t = tiles[i];
+      if (t.gx + t.sizeX < minGX || t.gx > maxGX || t.gy + t.sizeY < minGY || t.gy > maxGY) continue;
+      const densityBucket = Math.max(1, Math.min(8, (t.density * 8) | 0));
+      const dominantBucket = Math.max(1, Math.min(8, (t.dominant * 8) | 0));
+      const key = t.type * 128 + densityBucket * 16 + dominantBucket;
+      let arr = buckets.get(key);
+      if (!arr) { arr = []; buckets.set(key, arr); }
+      arr.push(t);
+    }
+    for (const [key, arr] of buckets) {
+      const type = (key / 128) | 0;
+      const density = ((key % 128) / 16 | 0) / 8;
+      const dominant = (key % 16) / 8;
+      const a = Math.min(0.92, 0.20 + density * 0.48 + dominant * 0.12);
+      if (type === WALL_MEMBRANE) ctx.fillStyle = `rgba(95,185,220,${a.toFixed(3)})`;
+      else if (type === WALL_POROUS) ctx.fillStyle = `rgba(118,94,52,${a.toFixed(3)})`;
+      else ctx.fillStyle = `rgba(226,222,207,${Math.min(0.96, a + 0.14).toFixed(3)})`;
+      for (let i = 0; i < arr.length; i++) {
+        const t = arr[i];
+        ctx.fillRect(t.gx * CELL, t.gy * CELL, t.sizeX * CELL, t.sizeY * CELL);
+      }
+    }
+    if (z > 0.32) {
+      ctx.lineWidth = Math.max(0.45, 0.75 / z);
+      for (const [, arr] of buckets) {
+        for (let i = 0; i < arr.length; i++) {
+          const t = arr[i];
+          if (t.density < 0.45) continue;
+          if (t.type === WALL_MEMBRANE) ctx.strokeStyle = 'rgba(170,226,244,0.20)';
+          else if (t.type === WALL_POROUS) ctx.strokeStyle = 'rgba(190,150,84,0.16)';
+          else ctx.strokeStyle = 'rgba(255,252,232,0.18)';
+          ctx.strokeRect(t.gx * CELL, t.gy * CELL, t.sizeX * CELL, t.sizeY * CELL);
+        }
+      }
+    }
   }
 
   renderClusterMembranes(ctx, world, z) {
@@ -486,6 +621,11 @@ export class Renderer {
     // green colony shows green-on-green edges. Bonds are batched per-color
     // (32-step quantisation) to keep stroke calls reasonable even at high N.
     const ps = world.particles;
+    if (z < 0.55) {
+      this.renderParticleDensityLod(ctx, world, minX, maxX, minY, maxY, z);
+      this.renderClusterFlags(ctx, world);
+      return;
+    }
     if (z > 0.4) {
       ctx.globalCompositeOperation = 'source-over';
       ctx.lineWidth = Math.max(0.8, 1.7 / z);
@@ -548,6 +688,7 @@ export class Renderer {
     // and it cost a per-particle drawImage + composite-mode toggle per frame.
     ctx.globalCompositeOperation = 'source-over';
     if (z < 0.85 && ps.length > 1200) {
+      this._lastRenderStats.particleMode = 'species-path';
       const paths = this._speciesParticlePaths || (this._speciesParticlePaths = SPECIES_COLORS.map(() => new Path2D()));
       for (let s = 0; s < paths.length; s++) paths[s] = new Path2D();
       const r = Math.max(1.7, 2.2 / Math.max(0.55, z));
@@ -568,6 +709,7 @@ export class Renderer {
       this.renderClusterFlags(ctx, world);
       return;
     }
+    this._lastRenderStats.particleMode = 'detail';
     for (let i = 0; i < ps.length; i++) {
       const p = ps[i];
       if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
@@ -787,6 +929,73 @@ export class Renderer {
       }
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  renderParticleDensityLod(ctx, world, minX, maxX, minY, maxY, z) {
+    const ps = world.particles;
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const binPx = Math.max(6, 7 * dpr);
+    const bins = this._particleDensityBins || (this._particleDensityBins = new Map());
+    bins.clear();
+    let visible = 0;
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
+      if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
+      const s = this.cam.worldToScreen(p.x, p.y);
+      if (s.x < -binPx || s.x > this.fg.width + binPx || s.y < -binPx || s.y > this.fg.height + binPx) continue;
+      const bx = Math.floor(s.x / binPx);
+      const by = Math.floor(s.y / binPx);
+      const key = `${bx},${by}`;
+      let b = bins.get(key);
+      if (!b) {
+        b = {
+          x: (bx + 0.5) * binPx,
+          y: (by + 0.5) * binPx,
+          n: 0,
+          energy: 0,
+          counts: new Uint16Array(SPECIES_COLORS.length),
+        };
+        bins.set(key, b);
+      }
+      b.n++;
+      b.energy += p.energy || 0;
+      b.counts[p.genome.species] = (b.counts[p.genome.species] || 0) + 1;
+      visible++;
+    }
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    let drawn = 0;
+    for (const b of bins.values()) {
+      let species = 0;
+      let best = 0;
+      for (let s = 0; s < b.counts.length; s++) {
+        if (b.counts[s] > best) { best = b.counts[s]; species = s; }
+      }
+      const dominance = best / Math.max(1, b.n);
+      const meanEnergy = b.energy / Math.max(1, b.n);
+      const r = Math.min(10 * dpr, (2.4 + Math.sqrt(b.n) * 2.0 + Math.min(2.2, meanEnergy * 0.16)) * dpr);
+      const alpha = Math.min(0.92, 0.32 + Math.sqrt(b.n) * 0.12 + dominance * 0.16);
+      const rgb = SPECIES_RGB[species] || [1, 1, 1];
+      const rr = (rgb[0] * 255) | 0;
+      const gg = (rgb[1] * 255) | 0;
+      const bb = (rgb[2] * 255) | 0;
+      ctx.fillStyle = `rgba(${rr},${gg},${bb},${alpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      if (b.n >= 5) {
+        ctx.strokeStyle = `rgba(238,246,255,${Math.min(0.42, 0.12 + b.n * 0.018).toFixed(3)})`;
+        ctx.lineWidth = Math.max(0.7, 0.9 * dpr);
+        ctx.stroke();
+      }
+      drawn++;
+    }
+    this._lastRenderStats.particleMode = 'density-lod';
+    this._lastRenderStats.particleBins = drawn;
+    this._lastRenderStats.visibleParticles = visible;
+    this.cam.apply(ctx);
   }
 
   renderClusterFlags(ctx, world) {

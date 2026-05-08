@@ -53,8 +53,37 @@ let statsTimer = 0;
 let chartTimer = 0;
 const STEP_FRAME_BUDGET_MS = 12;
 const MAX_STEP_BACKLOG = 12;
+const frameProfile = {
+  enabled: false,
+  totals: new Map(),
+  frames: 0,
+  reset() {
+    this.totals.clear();
+    this.frames = 0;
+  },
+  add(name, ms) {
+    if (!this.enabled) return;
+    this.totals.set(name, (this.totals.get(name) || 0) + ms);
+  },
+  summary({ reset = false } = {}) {
+    const frames = Math.max(1, this.frames || 0);
+    const phases = {};
+    for (const [key, value] of this.totals) phases[key] = +(value / frames).toFixed(3);
+    const out = { frames: this.frames || 0, phases };
+    if (reset) this.reset();
+    return out;
+  },
+};
 
 async function frame(now) {
+  const frameStart = frameProfile.enabled ? performance.now() : 0;
+  let sectionStart = frameStart;
+  const mark = (name) => {
+    if (!frameProfile.enabled) return;
+    const t = performance.now();
+    frameProfile.add(name, t - sectionStart);
+    sectionStart = t;
+  };
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
 
@@ -70,10 +99,13 @@ async function frame(now) {
       if (performance.now() - stepStart > STEP_FRAME_BUDGET_MS) break;
     }
   }
+  mark('step');
 
   camera.tickFollow(world);
   renderer.render(world);
+  mark('render');
   audioHum.tick(world, dt, camera);
+  mark('audio');
 
   if (!ui.paused && world.tick % 4 === 0) {
     chart.push(world.tick, world.populationBySpecies());
@@ -102,6 +134,11 @@ async function frame(now) {
   } else {
     fpsAcc = 0; fpsFrames = 0;
   }
+  mark('ui');
+  if (frameProfile.enabled) {
+    frameProfile.add('frame', performance.now() - frameStart);
+    frameProfile.frames++;
+  }
 
   requestAnimationFrame(frame);
 }
@@ -129,4 +166,4 @@ gpu.init().then(ok => {
   ui.onGPUStatusChange?.(gpu.describe());
 });
 
-window.__primordia = { world, renderer, ui, camera, chart, gpu, audioHum, PRESETS };
+window.__primordia = { world, renderer, ui, camera, chart, gpu, audioHum, PRESETS, frameProfile };

@@ -138,10 +138,18 @@ making the browser unusable.
    - seeded dense maze, 8s: adaptive GPU ~26.5 ticks/sec, CPU-only ~24.0
    - open soup, adaptive GPU: short 4s probes still pay startup tax, but an 8s
      run recovered to ~35 ticks/sec after cooldown
-   Next GPU target: reduce readback payload/frequency further, or split a
-   pair-force-only assist mode from full GPU brain mode so fast adapters can
-   keep useful GPU work without requiring every brain output to cross the
-   readback boundary every tick.
+   Current status: browser and CPU benches now expose rolling profiler windows.
+   Browser profiling splits frame time into sim/render/audio/UI; sim profiling
+   includes rolling phase costs and line-of-sight counters. Low-zoom rendering
+   now uses tile LOD for walls and screen-space density LOD for particles, so
+   zoomed-out views retain terrain/population structure without drawing every
+   bond/body ornament. A seeded 5s low-zoom maze browser probe showed render at
+   ~4.2 ms/frame while sim step remained ~28.5 ms/frame; GPU on this Intel
+   sample remained readback-limited (~59 ms readback, adaptive cooldown).
+   Conclusion: there are still small render polish wins, but the next meaningful
+   performance move is fundamental agent-loop restructuring: process particle
+   pairs once into per-agent accumulators, then run brain/integration, and/or
+   split GPU pair-force assist from full GPU brain readback.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful
