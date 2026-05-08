@@ -100,6 +100,8 @@ const CLUSTER_BUD_GIFT_FRAC = 0.22;
 const CLUSTER_BUD_MIN_GIFT = 1.4;
 const CLUSTER_BUD_TAX = 0.08;
 const CLUSTER_BUD_MUTATION_BOOST = 0.55;
+const CLUSTER_BUD_RESERVE_FRAC = 0.02;
+const CLUSTER_BUD_RESERVE_MAX = 48;
 const DEATH_DEPOSIT = 1.4;     // decay packet released on death
 const EAT_MAX = 0.18;          // max food a particle can eat per tick
 
@@ -553,6 +555,7 @@ export class World {
       wallDeposits: this.totalWallDeposits || 0,
       clusterBuds: this.totalClusterBuds || 0,
       clusterBudParticles: this.totalClusterBudParticles || 0,
+      clusterBudReserve: this.maxParticles - this._cellBirthLimit(),
       activeSound,
       gpuEnabled: !!this._gpuEnabled,
       gpuUsed: this._gpuTicksUsed || 0,
@@ -566,6 +569,17 @@ export class World {
   }
   _profileAdd(name, ms) {
     this._profileTotals.set(name, (this._profileTotals.get(name) || 0) + ms);
+  }
+  _clusterBudReserve() {
+    if (!this.clusterBudding) return 0;
+    if (this.maxParticles < CLUSTER_BUD_MIN_CHILDREN * 4) return 0;
+    return Math.min(
+      CLUSTER_BUD_RESERVE_MAX,
+      Math.max(CLUSTER_BUD_MIN_CHILDREN, Math.ceil(this.maxParticles * CLUSTER_BUD_RESERVE_FRAC)),
+    );
+  }
+  _cellBirthLimit() {
+    return Math.max(1, this.maxParticles - this._clusterBudReserve());
   }
   _solidWalls() {
     if (this._solidWallVersion === this._wallsVersion) return this._solidWallIndices;
@@ -899,6 +913,7 @@ export class World {
     const walls = this.walls, mut = this.mutagen;
     const hasWalls = this._wallCount > 0;
     const hasSolidSightBlockers = hasWalls && this._solidWalls().length > 0;
+    const cellBirthLimit = this._cellBirthLimit();
     const profiling = this._profileEnabled;
     let profileT = profiling ? performance.now() : 0;
     const markProfile = profiling
@@ -1860,7 +1875,7 @@ export class World {
       if (!reproVeto && p.wantMate > MATE_GATE && p.bonds.length > 0 &&
           p.energy > g.repro_thresh * 0.8 &&
           Math.random() < REPRO_PROB_SEX &&
-          this.particles.length + this.births.length < this.maxParticles) {
+          this.particles.length + this.births.length < cellBirthLimit) {
         for (const pid of p.bonds) {
           const partner = idMap[pid];
           if (!partner || partner.dead) continue;
@@ -1914,7 +1929,7 @@ export class World {
       }
       // Asexual fallback
       if (!didSex && !reproVeto && p.energy > g.repro_thresh && Math.random() < REPRO_PROB) {
-        if (this.particles.length + this.births.length < this.maxParticles) {
+        if (this.particles.length + this.births.length < cellBirthLimit) {
           const boost = 1 + Math.min(2, mut[fIdx] * 0.8);
           const childGenome = mutate(g, Math.random, boost);
           const e = p.energy * (1 - REPRO_TAX) * 0.5;

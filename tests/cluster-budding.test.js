@@ -59,3 +59,12 @@ await runTest('cluster-budding: stable clusters can reproduce as organisms', asy
   assert('children are marked as daughters', children.every(p => p.organismGeneration === 2));
   assert('daughter cluster is labeled Jr', world._clusters.some(c => c.organismGeneration === 2 && c.name.includes(' Jr ')));
 });
+
+await runTest('cluster-budding: cell births reserve headroom for organism buds', async () => {
+  const world = new World({ maxParticles: 1200 });
+  assert('cell birth cap leaves bud headroom', world._cellBirthLimit() <= 1176);
+  assert('bud reserve is large enough for a daughter', world.maxParticles - world._cellBirthLimit() >= 8);
+
+  const plain = new World({ maxParticles: 1200, clusterBudding: false });
+  assert('reserve disables with cluster budding off', plain._cellBirthLimit() === plain.maxParticles);
+});

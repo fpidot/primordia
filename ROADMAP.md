@@ -113,9 +113,12 @@ making the browser unusable.
    after the first implementation did **not** produce natural daughter
    clusters: eligible clusters do emerge, but normal particle reproduction
    fills the population cap before there are enough open slots for an 8+ member
-   bud. Next tuning target: give organism-level reproduction reserved headroom,
-   a pending-bud queue, or a replacement rule so successful clusters can bud
-   without being crowded out by cell-level births.
+   bud. Current status: ordinary particle births now stop below the hard cap
+   when cluster budding is enabled, reserving a small slot band for organism
+   reproduction. A seeded 6000-tick soup soak at cap 1200/start 300 produced
+   15 bud events, 133 budded particles, multiple live `Jr` clusters, and one
+   live `III` cluster. Next tuning target: compare reserve sizes and maybe add
+   a pending-bud queue so the mechanism remains robust across denser presets.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and

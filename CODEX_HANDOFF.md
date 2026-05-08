@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Record cluster budding soak results`
+  current `main` HEAD after this pass: `Reserve headroom for cluster budding`
 
 Recent useful commits:
 
-- current `main` HEAD - Record cluster budding soak results
+- current `main` HEAD - Reserve headroom for cluster budding
+- `cf04f2c` - Record cluster budding soak results
 - `6a85b9a` - Label cluster bud generations
 - `d3a2097` - Add cluster-level budding reproduction
 - `b688116` - Add experimental pair-only GPU assist
@@ -406,12 +407,22 @@ Organism-level reproduction:
     population stayed around 2495-2500, leaving fewer than the 8 open slots
     required for a bud.
 - Next design move: stop letting cell-level reproduction consume all available
-  particle slots. Candidate fixes:
-  - reserve a small headroom band for organism-level budding
-  - keep pending buds and fire them as soon as enough deaths open slots
-  - allow a successful bud to spend/replace a small number of ordinary births
-  - make bud size adaptive when only 4-7 slots are free, while still forming a
-    named cluster
+  particle slots.
+- Implemented fix: when `world.clusterBudding` is enabled, ordinary particle
+  reproduction stops below the hard cap and reserves a small band for organism
+  buds. For a cap-1200 world, the reserve is 24 slots. Cluster buds can still
+  use the full hard cap.
+- Validation after fix:
+  - soup seed `0x51A11`, 6000 ticks, cap 1200, start 300:
+    `clusterBuds=15`, `clusterBudParticles=133`, first `Jr` label by tick
+    2500, live `Jr` and `III` labels by the end.
+  - final population held around 1176 with a 24-slot reserve, so this is an
+    intentional soft cap for cell births, not a loss of the hard performance
+    cap.
+- Next tuning options:
+  - compare reserve sizes across maze/soup presets
+  - add a pending-bud queue if dense presets still miss the timing window
+  - allow adaptive smaller buds only if they can still become named clusters
 
 Construction:
 
@@ -486,7 +497,12 @@ Latest verification in the cluster-budding pass:
 
 - `node tests\cluster-budding.test.js` passed.
 - `node --check js\ui.js` passed after generation metadata was added to export/import.
-- `npm test` passed all 14 test files; the latest full suite took about 149 seconds.
+- After the headroom fix, a seeded long soak produced natural `Jr` and `III`
+  clusters:
+  `soup`, seed `0x51A11`, 6000 ticks, cap 1200, start 300,
+  `clusterBuds=15`, `clusterBudParticles=133`.
+- `npm test` passed all 14 test files after the headroom fix; the latest full
+  suite took about 148 seconds.
 - Quick CPU smoke passed:
   `node tools\bench-cpu.js --preset maze --ticks 300 --cap 800 --seed 0xC0FFEE --profile --profileEvery 150`.
 
