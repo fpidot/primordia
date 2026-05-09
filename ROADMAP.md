@@ -141,7 +141,12 @@ making the browser unusable.
    challenges. A 2400-tick `0x51A11` soup probe showed high-slot variants still
    appear (`maxSlots=7`) but mean slots stayed around 4.25; challenge survival
    was non-monotonic, so this is now a repeatable measurement path rather than
-   evidence that defense has already reliably evolved.
+   evidence that defense has already reliably evolved. A follow-up three-seed
+   3000-tick probe is recorded in `docs/DEFENSE_SOAK_RESULTS.md`; final
+   descendants were worse than founders in all three open-predator challenges,
+   mixed in mud-refuge challenges, and roughly stable in glass-gap challenges.
+   That points to a real gap between "predation pressure exists" and "replayable
+   predator-defense behavior has evolved."
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and
@@ -581,6 +586,12 @@ hit-but-alive fraction, mud/refuge use, and slot histograms. First useful probe
 (`soup`, seed `0x51A11`, cap 1200, 2400 ticks) showed predation pressure and
 high-slot variants, but not yet a monotonic survival gain from descendants over
 founders. Repeat across seeds and longer soaks before tuning.
+
+Three-seed 3000-tick follow-up: see `docs/DEFENSE_SOAK_RESULTS.md`. Meat energy
+exceeded field energy in all three seeds and high-slot variants still appeared
+(`maxSlots` 7-8), but final descendants underperformed founders in all open
+predator challenge replays. Current interpretation: soup evolution is producing
+predation-rich ecology, not yet robust, portable defensive behavior.
 
 Brain-slot note: the structural cap remains 10 and add-slot mutation still has
 more raw probability than remove-slot mutation. Current observed lower averages

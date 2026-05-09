@@ -388,6 +388,15 @@ Predation and food pressure:
   lower averages likely reflect ecological selection/lifetime changes and
   measuring mean slots rather than p90/max. The defense harness now reports
   mean, p90, max, and `slotHist`.
+- Multi-seed harness use on 2026-05-09 is recorded in
+  `docs/DEFENSE_SOAK_RESULTS.md`.
+  Three 3000-tick soup soaks (`0x51A11`, `0xB00D1E`, `0xC0FFEE`) all ended with
+  meat energy above field energy and max brain slots 7-8, but descendants did
+  not outperform founders in standardized open-predator challenges. Final
+  open-predator survival deltas were -0.230, -0.271, and -0.500. Mud-refuge
+  deltas were also negative, while glass-gap was roughly stable. Treat this as
+  evidence that predation pressure is real but robust defensive behavior has
+  not yet emerged in short soup soaks.
 
 Obstacle navigation:
 

@@ -1,0 +1,78 @@
+# Defense Soak Results
+
+This is a running notebook for `tools/defense-soak.js`: evolve populations,
+snapshot ancestors and descendants, then replay cloned cohorts in standardized
+danger arenas.
+
+## 2026-05-09 - three-seed soup probe
+
+Command shape:
+
+```powershell
+node tools\defense-soak.js --preset soup --ticks 3000 --samples "0,1000,2000,3000" --cap 1200 --start 800 --sampleSize 48 --challengeTicks 240 --seed <seed> --json
+```
+
+Seeds:
+
+- `0x51A11`
+- `0xB00D1E`
+- `0xC0FFEE`
+
+### Final normal-life state
+
+| seed | tick | population | mean slots | p90 slots | max slots | cluster buds | meat energy | field energy |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `0x51A11` | 3000 | 1173 | 4.179 | 5 | 7 | 0 | 283242 | 199125 |
+| `0xB00D1E` | 3000 | 1176 | 4.224 | 5 | 8 | 4 | 335940 | 206854 |
+| `0xC0FFEE` | 3000 | 1176 | 4.368 | 5 | 7 | 0 | 254249 | 201196 |
+
+Interpretation:
+
+- Meat energy exceeded field-food energy in all three runs.
+- High-slot variants still appear (`maxSlots` 7-8), but the population mean
+  remains under 4.5 and p90 remains 5.
+- Cluster budding is seed-sensitive at this horizon: one seed produced four
+  buds by tick 3000, two produced none.
+
+### Founder to descendant challenge deltas
+
+Delta is final snapshot survival minus founder snapshot survival in the same
+standardized challenge. Negative means tick-3000 descendants survived worse
+than founders in that replay arena.
+
+| seed | challenge | founder survival | final survival | delta |
+|---|---|---:|---:|---:|
+| `0x51A11` | predator | 0.938 | 0.708 | -0.230 |
+| `0x51A11` | mud-refuge | 0.917 | 0.792 | -0.125 |
+| `0x51A11` | glass-gap | 0.979 | 1.000 | +0.021 |
+| `0xB00D1E` | predator | 0.854 | 0.583 | -0.271 |
+| `0xB00D1E` | mud-refuge | 0.854 | 0.667 | -0.187 |
+| `0xB00D1E` | glass-gap | 1.000 | 0.938 | -0.062 |
+| `0xC0FFEE` | predator | 0.896 | 0.396 | -0.500 |
+| `0xC0FFEE` | mud-refuge | 0.833 | 0.667 | -0.166 |
+| `0xC0FFEE` | glass-gap | 0.958 | 1.000 | +0.042 |
+
+Interpretation:
+
+- These descendants are not yet reliably better than founders in standardized
+  predator-defense challenges.
+- Glass remains strongly protective, but that may be terrain geometry rather
+  than evolved behavior.
+- The evolved soup population may be optimizing for normal ecological churn,
+  predation, reproduction, and local cluster survival rather than for a sudden
+  replay-arena predator drop.
+- Current next step: run longer soaks and/or compare against ancestor genomes
+  in the exact same normal-world ecological context. If defense remains flat or
+  negative, improve the raw scaffolding for danger response before tuning
+  rewards directly.
+
+## Open questions
+
+- Are high-slot variants dying faster, reproducing less, or simply rare because
+  3000 ticks is too short?
+- Does organism-level budding preserve any defensive topology at 6000+ ticks?
+- Does predator pressure select for becoming a better predator more than for
+  becoming better prey?
+- Are the replay arenas too harsh, too artificial, or missing the signals that
+  descendants evolved to use in the original soup?
+
