@@ -360,6 +360,34 @@ Predation and food pressure:
   and mortality pressure in that seed. The next question is whether avoidance,
   kin defense, mud/glass exploitation, cluster alarms, and defensive topology
   evolve under that pressure.
+- Defense testing harness now exists:
+  `tools/defense-soak.js`.
+  It runs an evolution soak, snapshots populations at requested ticks, clones
+  a mixed elite/random sample, freezes reproduction by default for challenge
+  fairness, and replays those clones in standardized danger arenas:
+  `predator`, `mud-refuge`, and `glass-gap`.
+- Useful command:
+  `node tools\defense-soak.js --preset soup --ticks 2400 --samples "0,600,1200,2400" --cap 1200 --start 800 --sampleSize 48 --challengeTicks 240 --seed 0x51A11`
+- The local `npm run`/PowerShell route may strip flag names; the tool has a
+  positional fallback and this also works:
+  `npm run soak:defense -- --ticks 10 --samples "0,10" --cap 80 --start 40 --sampleSize 8 --challengeTicks 8 --challenges predator --seed 0x51A11`
+- First useful probe:
+  `soup`, seed `0x51A11`, cap 1200, start 800, snapshots `0,600,1200,2400`,
+  sample size 48, challenge ticks 240.
+  At tick 2400, normal-life metrics were population 1175, predation energy
+  225192.797, field energy 155109.434, mean brain slots 4.254, p90 slots 5,
+  max slots 7, and one cluster bud.
+  Challenge survival was non-monotonic:
+  founders did well in some arenas, tick-1200 descendants did worse in the
+  open predator arena, and tick-2400 descendants recovered in predator/mud but
+  did worse in glass-gap. Interpret as "now measurable," not proof of evolved
+  defense yet.
+- Brain-slot observation:
+  the cap is still 10, initial brains still start around 4 slots, and add-slot
+  structural mutation is still more likely than remove-slot mutation. Recent
+  lower averages likely reflect ecological selection/lifetime changes and
+  measuring mean slots rather than p90/max. The defense harness now reports
+  mean, p90, max, and `slotHist`.
 
 Obstacle navigation:
 
@@ -560,6 +588,10 @@ Latest verification in the cluster-budding pass:
   - `node --check tools\bench-cpu.js` passed.
   - `node tools\bench-cpu.js --preset soup --ticks 1800 --cap 1200 --seed 0x51A11 --profileEvery 600` passed and produced the measured meat-vs-field figures above.
   - `npm test` passed all 16 test files.
+- Defense-soak harness verification:
+  - `node --check tools\defense-soak.js` passed.
+  - `node tools\defense-soak.js --ticks 60 --samples "0,30,60" --cap 180 --start 100 --sampleSize 12 --challengeTicks 24 --challenges predator,mud-refuge --seed 0x51A11` passed.
+  - `npm run soak:defense -- --ticks 10 --samples "0,10" --cap 80 --start 40 --sampleSize 8 --challengeTicks 8 --challenges predator --seed 0x51A11` passed through the positional fallback.
 
 Core:
 
@@ -636,7 +668,8 @@ git log --oneline -5
 
 - performance: pair-force-only GPU assist/readback reduction
 - performance: lower-write CPU pair-loop redesign if GPU readback remains limiting
-- agency: detour-navigation microtests
+- agency: repeat `tools\defense-soak.js` across seeds/longer windows, then add
+  detour-navigation microtests if defense remains non-monotonic
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization
 

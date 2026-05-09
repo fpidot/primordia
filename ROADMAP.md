@@ -136,6 +136,12 @@ making the browser unusable.
    field-food energy from meat energy. The immediate follow-up is not "add
    predation" but measure whether stronger predator pressure produces evolved
    avoidance, kin defense, obstacle use, or cluster-level rescue behavior.
+   Current status: `tools/defense-soak.js` snapshots evolving populations and
+   replays cloned cohorts in standardized predator, mud-refuge, and glass-gap
+   challenges. A 2400-tick `0x51A11` soup probe showed high-slot variants still
+   appear (`maxSlots=7`) but mean slots stayed around 4.25; challenge survival
+   was non-monotonic, so this is now a repeatable measurement path rather than
+   evidence that defense has already reliably evolved.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and
@@ -566,6 +572,23 @@ and attributed 1483 of 2457 deaths to recent predation. The sharper research
 question is now whether that pressure selects for useful defenses: avoidance,
 glass/mud exploitation, tighter kin aversion, cluster alarms, or organism-level
 budding that preserves defensive topology.
+
+Defense testing harness: `tools/defense-soak.js` now records ancestor and
+descendant snapshots, clones a mixed elite/random cohort, freezes reproduction
+for challenge fairness, and replays the clones against standardized predator,
+mud-refuge, and glass-gap arenas. It reports survival, predation deaths,
+hit-but-alive fraction, mud/refuge use, and slot histograms. First useful probe
+(`soup`, seed `0x51A11`, cap 1200, 2400 ticks) showed predation pressure and
+high-slot variants, but not yet a monotonic survival gain from descendants over
+founders. Repeat across seeds and longer soaks before tuning.
+
+Brain-slot note: the structural cap remains 10 and add-slot mutation still has
+more raw probability than remove-slot mutation. Current observed lower averages
+are likely ecological/measurement effects: stronger scarcity and predation,
+shorter lifetimes, and judging mean slots rather than max/p90. The new defense
+harness reports mean, p90, max, and histogram so future runs can separate
+"high-slot variants never appear" from "high-slot variants appear but do not
+take over."
 
 ### Comm metric `flash` component
 
