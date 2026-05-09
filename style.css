@@ -347,7 +347,7 @@ select {
 }
 .cluster-row {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto auto auto auto auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 6px;
   padding: 4px 6px;
@@ -391,7 +391,7 @@ select {
 }
 .curated-row {
   display: grid;
-  grid-template-columns: 12px minmax(50px, 0.7fr) minmax(38px, 1fr) auto auto auto auto;
+  grid-template-columns: 12px minmax(50px, 0.7fr) minmax(38px, 1fr) auto auto;
   align-items: center;
   gap: 5px;
   padding: 4px 6px;
@@ -430,6 +430,62 @@ select {
   font-size: 9px;
 }
 .curated-row .btn-mini:hover { color: var(--fg); border-color: var(--accent); }
+
+.row-menu {
+  position: relative;
+  justify-self: end;
+}
+.row-menu summary {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: rgba(0,0,0,0.18);
+  color: var(--fg-dim);
+  cursor: pointer;
+  list-style: none;
+}
+.row-menu summary::-webkit-details-marker { display: none; }
+.row-menu summary::marker { content: ''; }
+.row-menu[open] summary,
+.row-menu summary:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: #1d2330;
+}
+.menu-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 12px;
+}
+.menu-bars i {
+  display: block;
+  height: 1px;
+  background: currentColor;
+}
+.row-menu-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 72px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(10, 14, 22, 0.98);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.45);
+}
+.row-menu-popover .btn-mini {
+  width: 100%;
+  text-align: left;
+  padding: 4px 7px;
+}
 
 button[data-preset] {
   display: flex;

@@ -109,6 +109,22 @@ export class UI {
     lock(this.curatedEl, '_curatedPointerInside', '_lastCuratedSig');
   }
 
+  bindRowMenus(root) {
+    if (!root) return;
+    root.querySelectorAll('.row-menu').forEach(menu => {
+      menu.addEventListener('click', e => e.stopPropagation());
+      menu.addEventListener('toggle', () => {
+        if (!menu.open) return;
+        root.querySelectorAll('.row-menu[open]').forEach(other => {
+          if (other !== menu) other.open = false;
+        });
+      });
+      menu.querySelectorAll('[data-act]').forEach(btn => {
+        btn.addEventListener('click', () => { menu.open = false; });
+      });
+    });
+  }
+
   bindHelpDocs() {
     if (!this.helpModalEl || !this.helpBodyEl || !this.helpTitleEl) return;
     document.querySelectorAll('[data-help-doc]').forEach(btn => {
@@ -984,17 +1000,21 @@ export class UI {
       const c = clusters[i];
       const col = SPECIES_COLORS[c.species] || '#fff';
       const chasing = this.isClusterChased(c);
+      const menu = rowActionMenu([
+        ['zoom', 'zoom'],
+        ['chase', chasing ? 'stop' : 'chase', chasing ? 'active' : ''],
+        ['copy', 'copy'],
+        ['export', 'export'],
+      ]);
       html += `<div class="cluster-row ${chasing ? 'chasing' : ''}" data-anchor="${c.anchorId}">
         <span class="swatch" style="background:${col}"></span>
         <span class="name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span>
         <span class="pop">${c.count}</span>
-        <button class="btn-mini btn-zoom" data-act="zoom">zoom</button>
-        <button class="btn-mini btn-chase ${chasing ? 'active' : ''}" data-act="chase">${chasing ? '×' : 'chase'}</button>
-        <button class="btn-mini" data-act="copy">copy</button>
-        <button class="btn-mini" data-act="export">export</button>
+        ${menu}
       </div>`;
     }
     this.clustersEl.innerHTML = html;
+    this.bindRowMenus(this.clustersEl);
     this.clustersEl.querySelectorAll('.cluster-row').forEach(row => {
       const anchor = parseInt(row.dataset.anchor);
       row.querySelector('[data-act="zoom"]').addEventListener('click', (e) => {
@@ -1020,7 +1040,7 @@ export class UI {
         }
         const btn = e.currentTarget;
         btn.classList.toggle('active', !alreadyChasing);
-        btn.textContent = alreadyChasing ? 'chase' : '×';
+        btn.textContent = alreadyChasing ? 'chase' : 'stop';
         row.classList.toggle('chasing', !alreadyChasing);
         this._lastClustersSig = null;  // force re-render so chasing state updates
       });
@@ -1127,30 +1147,37 @@ export class UI {
     for (const row of particleRows) {
       const p = row.p;
       const col = SPECIES_COLORS[p.species] || '#fff';
+      const menu = rowActionMenu([
+        ['inspect', 'view'],
+        ['copy', 'copy'],
+        ['export', 'export'],
+      ]);
       html += `<div class="curated-row" data-kind="particle" data-id="${p.id}">
         <span class="swatch" style="background:${col}"></span>
         <span class="label">${escapeHtml(row.label)}</span>
         <span class="who">#${p.id}</span>
         <span class="metric">${escapeHtml(row.value)}</span>
-        <button class="btn-mini" data-act="inspect">view</button>
-        <button class="btn-mini" data-act="copy">copy</button>
-        <button class="btn-mini" data-act="export">export</button>
+        ${menu}
       </div>`;
     }
     for (const row of clusterRows) {
       const c = row.cluster;
       const col = SPECIES_COLORS[c.species] || '#fff';
+      const menu = rowActionMenu([
+        ['inspect', 'view'],
+        ['copy', 'copy'],
+        ['export', 'export'],
+      ]);
       html += `<div class="curated-row cluster-pick" data-kind="cluster" data-anchor="${c.anchorId}">
         <span class="swatch" style="background:${col}"></span>
         <span class="label" title="${escapeHtml(c.name)}">${escapeHtml(row.label)}</span>
         <span class="who">${escapeHtml(c.name)}</span>
         <span class="metric">${escapeHtml(row.value)}</span>
-        <button class="btn-mini" data-act="inspect">view</button>
-        <button class="btn-mini" data-act="copy">copy</button>
-        <button class="btn-mini" data-act="export">export</button>
+        ${menu}
       </div>`;
     }
     this.curatedEl.innerHTML = html;
+    this.bindRowMenus(this.curatedEl);
     this.curatedEl.querySelectorAll('.curated-row').forEach(row => {
       row.querySelector('[data-act="inspect"]').addEventListener('click', () => {
         if (row.dataset.kind === 'cluster') {
@@ -1948,6 +1975,20 @@ function escapeHtml(s) {
 
 function escapeAttr(s) {
   return escapeHtml(s).replace(/"/g, '&quot;');
+}
+
+function rowActionMenu(actions) {
+  const buttons = actions
+    .filter(Boolean)
+    .map(([act, label, extraClass = '']) => {
+      const cls = `btn-mini ${extraClass}`.trim();
+      return `<button class="${cls}" data-act="${escapeAttr(act)}">${escapeHtml(label)}</button>`;
+    })
+    .join('');
+  return `<details class="row-menu">
+    <summary aria-label="Actions" title="Actions"><span class="menu-bars" aria-hidden="true"><i></i><i></i><i></i></span></summary>
+    <div class="row-menu-popover">${buttons}</div>
+  </details>`;
 }
 
 function renderHelpMarkdown(markdown) {

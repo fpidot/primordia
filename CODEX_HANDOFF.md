@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Attach cluster cell births to organisms`
+  current `main` HEAD after this pass: `Panel action menus and stronger membranes`
 
 Recent useful commits:
 
-- current `main` HEAD - Attach cluster cell births to organisms
+- current `main` HEAD - Panel action menus and stronger membranes
+- `eb47c55` - Attach cluster cell births to organisms
 - `3f21607` - Bound offspring energy provisioning
 - `9e76516` - Tighten defense evidence harness
 - `40521ad` - Record calibrated defense soaks
@@ -648,8 +649,9 @@ Construction:
 
 High-priority polish:
 
-- Best/top panel buttons can still feel jittery or hard to click under live
-  rebuild; earlier fixes helped, but keep testing while unpaused.
+- Best/top panel rows now use one hamburger action menu per row instead of
+  always-visible action buttons, which should reduce hover/click jitter during
+  live rebuilds; keep testing while unpaused.
 - "View" from Best Now/Top Cluster should reliably:
   - center target
   - clear/replace stale card
@@ -784,6 +786,12 @@ Latest verification in the cluster-budding pass:
     3, `clusterCellBirths=186`, mean slots 4.102, max slots 6, mean energy
     17.290. Replay survival was predator 0.641 -> 0.813 -> 0.797,
     mud-refuge 0.766 -> 0.781 -> 0.829, glass-gap 0.766 -> 0.922 -> 0.906.
+- Panel action menu and membrane polish verification:
+  - Confirmed local Primordia server at `http://127.0.0.1:8765/`; port `5173`
+    was a different local project. The Primordia server is static, so edits are
+    visible after browser refresh, not hot-reloaded automatically.
+  - `node --check js\ui.js` and `node --check js\render.js` passed.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9231` passed with no page errors.
 
 Core:
 

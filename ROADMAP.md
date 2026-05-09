@@ -52,11 +52,13 @@ making the browser unusable.
    cards so they never spawn partly off screen, and support particle/cluster
    chase directly from cards. Current status: first pass shipped, including
    right-click pan, clamped cards, wall cards, card cluster chase/stop, compact
-   cluster labels, visible cluster membranes, and visible-wall render culling.
-   Current polish pass: chased clusters should pulse their membrane only, not
-   every member with a large halo; Best Now "view" should always center the
-   target, clear/replace stale cards, and keep cards on screen. Live sidebar
-   panels must not rebuild hovered button elements under the pointer.
+   cluster labels, visible cluster membranes, visible-wall render culling, more
+   opaque cluster membranes, and compact hamburger action menus in Best Now and
+   Top Clusters. Current polish pass: chased clusters should pulse their
+   membrane only, not every member with a large halo; Best Now "view" should
+   always center the target, clear/replace stale cards, and keep cards on
+   screen. Live sidebar panels must not rebuild hovered menu elements under the
+   pointer.
 1. **Make communication useful, not just visible.**
    Add small costs for signaling, then attach cluster-local payoffs to received
    bond messages: hunting coordination, foraging efficiency, and construction
@@ -325,7 +327,9 @@ making the browser unusable.
   consistent now that the control surface has grown. Current status: first
   pass groups the left sidebar into Run/World/Data and the right sidebar into
   Tools/Lineages/Log, with world actions grouped by state, population, and
-  environment. Tabs should read visually as tabs, not command buttons.
+  environment; Best Now and Top Clusters now use compact per-row action menus
+  instead of always-visible action-button clusters. Tabs should read visually as
+  tabs, not command buttons.
 - user-adjustable preset initial population, so testing can trade ecological
   richness against frame rate without editing code
 - simplified preset buttons: no numeric subtitles and no separate Empty preset,
@@ -375,8 +379,13 @@ Current implementation:
 - Human-name suffix pool is now much larger, with common names and nicknames;
   live clusters strongly avoid duplicate given names and still filter out names
   that collide with species color names.
+- Cluster membranes are now a little more opaque so named organisms remain
+  visible in dense runs.
 - Particle bodies should have slight deterministic per-individual color jitter
   so same-species groups look organic without fragmenting species identity.
+- Optional next visual experiment: one-hop bonded-neighbor color averaging for
+  particle bodies. Keep it nonrecursive, detail-render-only or cached, and
+  measure before enabling at high population.
 - Visual signal flashes should feel more like radiating waves: two soft
   concentric rings, roughly half a second apart, with the earlier inner ring
   about two-thirds the radius of the later outer ring.
