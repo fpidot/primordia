@@ -62,6 +62,55 @@ function quantile(values, q) {
   return s[Math.min(s.length - 1, Math.max(0, Math.floor((s.length - 1) * q)))];
 }
 
+function mean(values) {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+}
+
+function minOf(values) {
+  return values.length ? Math.min(...values) : 0;
+}
+
+function maxOf(values) {
+  return values.length ? Math.max(...values) : 0;
+}
+
+function aggregateChallengeTrials(kind, trials) {
+  if (!trials.length) return { kind, repeats: 0, survival: 0, trials: [] };
+  const get = key => trials.map(t => Number(t[key]) || 0);
+  const survival = get('survival');
+  return {
+    kind,
+    repeats: trials.length,
+    start: trials[0].start,
+    predatorCount: trials[0].predatorCount,
+    cohortEnergy: trials[0].cohortEnergy,
+    hunterEnergy: trials[0].hunterEnergy,
+    hunterDrive: trials[0].hunterDrive,
+    hunterPreference: trials[0].hunterPreference,
+    hunterAttraction: trials[0].hunterAttraction,
+    survival: round(mean(survival)),
+    survivalMin: round(minOf(survival)),
+    survivalMax: round(maxOf(survival)),
+    aliveMean: round(mean(get('alive'))),
+    predationDeaths: round(mean(get('predationDeaths'))),
+    predationDeathsMin: round(minOf(get('predationDeaths'))),
+    predationDeathsMax: round(maxOf(get('predationDeaths'))),
+    predationEnergy: round(mean(get('predationEnergy'))),
+    combatAttacks: round(mean(get('combatAttacks'))),
+    combatKills: round(mean(get('combatKills'))),
+    combatCounters: round(mean(get('combatCounters'))),
+    combatEscapes: round(mean(get('combatEscapes'))),
+    combatFailedCost: round(mean(get('combatFailedCost'))),
+    fieldEnergy: round(mean(get('fieldEnergy'))),
+    hitAliveFrac: round(mean(get('hitAliveFrac'))),
+    injuredAliveFrac: round(mean(get('injuredAliveFrac'))),
+    meanSlotsAlive: round(mean(get('meanSlotsAlive'))),
+    mudUsePerTick: round(mean(get('mudUsePerTick'))),
+    safeSidePerTick: round(mean(get('safeSidePerTick'))),
+    trials,
+  };
+}
+
 async function withSeed(seed, fn) {
   const prev = Math.random;
   Math.random = mulberry32(seed >>> 0);
@@ -161,6 +210,12 @@ function challengeGenomeFromSample(sample, freezeReproduction) {
   return g;
 }
 
+function challengeEnergyFromSample(sample, opts) {
+  return Number.isFinite(opts.cohortEnergy)
+    ? opts.cohortEnergy
+    : Math.max(3, Math.min(10, sample.energy || 4));
+}
+
 function makeHunterGenome(opts = {}) {
   const attraction = Number.isFinite(opts.hunterAttraction) ? opts.hunterAttraction : 1;
   const preference = Number.isFinite(opts.hunterPreference) ? opts.hunterPreference : 1;
@@ -245,14 +300,18 @@ async function runChallenge(kind, cohort, opts, seed) {
     const cohortParticles = [];
     const centerX = kind === 'glass-gap' ? W * 0.36 : W * 0.5;
     const centerY = H * 0.5;
+    const jitter = Math.max(0, opts.challengeJitter || 0);
+    const cohortPhase = Math.random() * Math.PI * 2;
     for (let i = 0; i < cohort.length; i++) {
-      const a = (i / Math.max(1, cohort.length)) * Math.PI * 2;
-      const r = 8 + (i % 5) * 5;
+      const sample = cohort[i];
+      const a = cohortPhase + (i / Math.max(1, cohort.length)) * Math.PI * 2 +
+        (Math.random() - 0.5) * 0.18 * jitter;
+      const r = 8 + (i % 5) * 5 + (Math.random() - 0.5) * 4 * jitter;
       const p = world.addParticle(
         centerX + Math.cos(a) * r,
         centerY + Math.sin(a) * r,
-        challengeGenomeFromSample(cohort[i], opts.freezeReproduction),
-        Math.max(3, Math.min(10, cohort[i].energy || 4)),
+        challengeGenomeFromSample(sample, opts.freezeReproduction),
+        challengeEnergyFromSample(sample, opts),
       );
       if (p) {
         p.vx = 0;
@@ -263,9 +322,12 @@ async function runChallenge(kind, cohort, opts, seed) {
 
     const hunterBase = makeHunterGenome(opts);
     const predatorX = kind === 'glass-gap' ? W * 0.63 : W * 0.5;
+    const predatorPhase = Math.random() * Math.PI * 2;
     for (let i = 0; i < predatorCount; i++) {
-      const a = (i / Math.max(1, predatorCount)) * Math.PI * 2;
-      const r = kind === 'glass-gap' ? 24 + (i % 3) * 8 : 42 + (i % 5) * 5;
+      const a = predatorPhase + (i / Math.max(1, predatorCount)) * Math.PI * 2 +
+        (Math.random() - 0.5) * 0.24 * jitter;
+      const r = (kind === 'glass-gap' ? 24 + (i % 3) * 8 : 42 + (i % 5) * 5) +
+        (Math.random() - 0.5) * 8 * jitter;
       const h = world.addParticle(
         predatorX + Math.cos(a) * r,
         centerY + Math.sin(a) * r,
@@ -305,6 +367,7 @@ async function runChallenge(kind, cohort, opts, seed) {
     const slots = alive.map(p => p.genome.brain.enabledCount());
     return {
       kind,
+      challengeSeed: seed >>> 0,
       start,
       alive: alive.length,
       survival: round(alive.length / Math.max(1, start)),
@@ -321,6 +384,7 @@ async function runChallenge(kind, cohort, opts, seed) {
       combatFailedCost: round(world.totalCombatFailedCost || 0),
       fieldEnergy: round(world.totalFieldEnergyGain || 0),
       predatorCount,
+      cohortEnergy: Number.isFinite(opts.cohortEnergy) ? round(opts.cohortEnergy) : null,
       hunterEnergy: round(opts.hunterEnergy),
       hunterDrive: round(opts.hunterDrive),
       hunterPreference: round(opts.hunterPreference),
@@ -348,6 +412,10 @@ async function main() {
   const hunterPreference = Number(readArgCompat('hunterPreference', 13, 1));
   const hunterAttraction = Number(readArgCompat('hunterAttraction', 14, 1));
   const hunterSenseRadius = Math.max(1, Number(readArgCompat('hunterSenseRadius', 15, 70)));
+  const challengeRepeats = Math.max(1, Number(readArgCompat('challengeRepeats', 16, 1)) | 0);
+  const challengeJitter = Math.max(0, Number(readArgCompat('challengeJitter', 17, challengeRepeats > 1 ? 1 : 0)));
+  const cohortEnergyRaw = readArgCompat('cohortEnergy', 18, '');
+  const cohortEnergy = cohortEnergyRaw === '' ? NaN : Math.max(0.1, Number(cohortEnergyRaw));
   const samples = parseSamples(readArgCompat('samples', 1, ''), ticks);
   const challengeKinds = readArgCompat('challenges', 6, 'predator,mud-refuge,glass-gap')
     .split(',')
@@ -365,6 +433,9 @@ async function main() {
     hunterPreference,
     hunterAttraction,
     hunterSenseRadius,
+    challengeRepeats,
+    challengeJitter,
+    cohortEnergy,
   };
 
   const t0 = performance.now();
@@ -380,8 +451,15 @@ async function main() {
     const challenges = [];
     for (let i = 0; i < challengeKinds.length; i++) {
       const kind = challengeKinds[i];
-      const result = await runChallenge(kind, cohort, opts, (seed ^ world.tick ^ ((i + 1) * 0x9E3779B9)) >>> 0);
-      challenges.push(result);
+      const trials = [];
+      const baseSeed = (seed ^ world.tick ^ ((i + 1) * 0x9E3779B9)) >>> 0;
+      for (let r = 0; r < opts.challengeRepeats; r++) {
+        const challengeSeed = (baseSeed ^ ((r + 1) * 0x85EBCA6B)) >>> 0;
+        const result = await runChallenge(kind, cohort, opts, challengeSeed);
+        result.repeat = r;
+        trials.push(result);
+      }
+      challenges.push(aggregateChallengeTrials(kind, trials));
     }
     snapshots.push({
       ...summary,
@@ -421,6 +499,9 @@ async function main() {
     hunterPreference,
     hunterAttraction,
     hunterSenseRadius,
+    challengeRepeats,
+    challengeJitter,
+    cohortEnergy: Number.isFinite(cohortEnergy) ? cohortEnergy : null,
     freezeReproduction: opts.freezeReproduction,
     elapsedMs: round(elapsedMs, 1),
     snapshots,
@@ -436,6 +517,9 @@ async function main() {
   console.log('tick | mode | pop | meanSlots | p90/max | meatE | combat | fieldE | challenge | survival | predDeaths | injured | mudUse | safeSide');
   for (const s of snapshots) {
     for (const c of s.challenges) {
+      const survival = c.repeats > 1
+        ? `${c.survival.toFixed(2)}(${c.survivalMin.toFixed(2)}-${c.survivalMax.toFixed(2)})`
+        : c.survival.toFixed(2);
       console.log([
         s.tick,
         s.combatMode,
@@ -446,7 +530,7 @@ async function main() {
         `${s.combatKills}/${s.combatCounters}/${s.combatEscapes}`,
         Math.round(s.fieldEnergy),
         c.kind,
-        c.survival.toFixed(2),
+        survival,
         c.predationDeaths,
         (c.injuredAliveFrac || 0).toFixed(2),
         c.mudUsePerTick.toFixed(2),

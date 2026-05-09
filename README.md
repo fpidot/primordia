@@ -39,13 +39,16 @@ model used by the browser app.
 ## Defense soak probe
 
 ```sh
-npm run soak:defense -- --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 180 --combat event --predatorRatio 0.2 --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5
+npm run soak:defense -- --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 180 --combat event --predatorRatio 0.2 --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --challengeRepeats 3 --challengeJitter 1
 ```
 
 The defense probe evolves a population, snapshots cohorts, and replays them in
 predator, mud-refuge, and glass-gap arenas. The hunter knobs above tune replay
 pressure separately from the normal world, which keeps short challenge runs
-from becoming too lethal to interpret.
+from becoming too lethal to interpret. `--challengeRepeats` and
+`--challengeJitter` reduce dependence on one exact placement. Add
+`--cohortEnergy 5` when you want founder and descendant cohorts to enter replay
+with identical starting energy.
 
 ## Browser timing probe
 

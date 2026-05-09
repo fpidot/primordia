@@ -166,14 +166,22 @@ making the browser unusable.
    0.5 --hunterPreference 0 --hunterEnergy 5`. On seed `0x51A11`, this left
    founder open-predator survival around 0.69 and tick-1200 descendants around
    0.72, leaving room to measure improvement or regression.
-   The first post-fix deterministic calibrated soaks are now recorded in
-   `docs/DEFENSE_SOAK_RESULTS.md`: three 3000-tick event-mode seeds had
-   positive average survival deltas versus founders (`+0.067` predator,
-   `+0.033` mud-refuge, `+0.083` glass-gap), but individual seed/arena results
-   were mixed. A 6000-tick `0x51A11` persistence check kept mud/glass survival
-   above founders but open-predator survival fell below founder level. Current
-   read: the combat/damage scaffold likely fixed a real incentive problem, but
-   robust long-run defensive behavior is not proven.
+   Latest evidence pass: `tools/defense-soak.js` now supports repeated replay
+   trials (`--challengeRepeats`) with seeded placement jitter
+   (`--challengeJitter`) and fixed replay cohort energy (`--cohortEnergy`) for
+   energy-confound checks. Six 6000-tick soup seeds with three jittered replays
+   per snapshot/challenge showed positive mean survival deltas at tick 6000 in
+   all three arenas, both with sampled energy and with fixed energy 5:
+   predator `+0.180`, mud-refuge `+0.147`, glass-gap `+0.164` in the fixed
+   energy control. Current read: event combat, damage sensing, and the existing
+   cluster/organism machinery now produce measurable replay-survival selection
+   under calibrated predators. This still does not prove sophisticated defense
+   such as coordinated retreat, rescue, or path planning. The next best move is
+   replay realism and behavior evidence: preserve sampled cohorts/top clusters
+   from snapshots and measure predator distance, retreat vector, cluster
+   cohesion, alarms, mud/glass use, and counter/escape behavior before changing
+   the selection mechanics again. If behavior evidence remains shallow, the
+   most promising structural target is stronger cluster-level selection.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and

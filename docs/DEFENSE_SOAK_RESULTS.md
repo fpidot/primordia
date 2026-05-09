@@ -235,3 +235,85 @@ Interpretation:
 - Next best test: preserve/export the sampled cohorts or top clusters from each
   snapshot so we can inspect/replay lineages directly instead of only aggregate
   sampled survival.
+
+## 2026-05-09 - six-seed repeated-replay evidence pass
+
+This pass tightened the evidence in two ways:
+
+- Each snapshot/challenge uses three seeded replay trials with small placement
+  jitter: `--challengeRepeats 3 --challengeJitter 1`.
+- The same six seeds were also rerun with `--cohortEnergy 5` so founder and
+  descendant cohorts enter replay with the same energy. This checks whether the
+  survival gain is more than "descendants are better fed."
+
+Command shape:
+
+```powershell
+node tools\defense-soak.js --preset soup --ticks 6000 --cap 900 --start 500 --seed <seed> --samples "0,3000,6000" --sampleSize 40 --challengeTicks 180 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --challengeRepeats 3 --challengeJitter 1 --json
+```
+
+Fixed-energy command adds:
+
+```powershell
+--cohortEnergy 5
+```
+
+Seeds:
+
+- `0x51A11`
+- `0xA11CE`
+- `0xB00D1E`
+- `0xC0FFEE`
+- `0xD15EA5E`
+- `0xF00D`
+
+### Normal-life state at tick 6000
+
+Normal-life metrics are identical between the natural-energy and fixed-energy
+replay passes because only the replay clone energy differs.
+
+| seed | mean slots | p90 slots | max slots | cluster buds | predation deaths | meat energy | field energy |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `0x51A11` | 4.329 | 5 | 8 | 16 | 383 | 5,013 | 288,947 |
+| `0xA11CE` | 4.245 | 5 | 8 | 17 | 571 | 6,565 | 311,505 |
+| `0xB00D1E` | 4.294 | 5 | 7 | 25 | 556 | 8,547 | 302,468 |
+| `0xC0FFEE` | 4.230 | 5 | 6 | 30 | 386 | 6,833 | 298,946 |
+| `0xD15EA5E` | 4.180 | 5 | 7 | 24 | 534 | 8,651 | 304,934 |
+| `0xF00D` | 4.174 | 5 | 7 | 39 | 329 | 4,164 | 303,720 |
+
+### Natural-energy replay aggregates
+
+This is the default challenge behavior: replay clones keep sampled energy,
+clamped to 3-10.
+
+| challenge | founder mean | tick-3000 mean | delta 3000 | positive seeds | tick-6000 mean | delta 6000 | positive seeds |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| predator | 0.696 | 0.850 | +0.154 | 5/6 | 0.869 | +0.173 | 6/6 |
+| mud-refuge | 0.721 | 0.849 | +0.128 | 6/6 | 0.901 | +0.180 | 6/6 |
+| glass-gap | 0.819 | 0.970 | +0.150 | 6/6 | 0.986 | +0.167 | 6/6 |
+
+### Fixed-energy replay aggregates
+
+This is the stricter test: every replayed cohort particle starts at energy 5.
+
+| challenge | founder mean | tick-3000 mean | delta 3000 | positive seeds | tick-6000 mean | delta 6000 | positive seeds |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| predator | 0.699 | 0.842 | +0.143 | 5/6 | 0.879 | +0.180 | 6/6 |
+| mud-refuge | 0.736 | 0.833 | +0.097 | 6/6 | 0.883 | +0.147 | 6/6 |
+| glass-gap | 0.822 | 0.965 | +0.143 | 6/6 | 0.986 | +0.164 | 6/6 |
+
+Interpretation:
+
+- This is substantially stronger evidence than the earlier three-seed pass.
+- Positive deltas persist under fixed-energy replay, so the effect is not only
+  higher descendant energy.
+- The most conservative read is that event combat, damage sensing, and the
+  existing cluster/organism machinery now produce measurable replay-survival
+  selection under calibrated predators.
+- It still does not prove sophisticated defensive behavior such as coordinated
+  retreat, rescue, or navigation. The next question is behavioral: what are the
+  successful descendants doing?
+- Best next implementation target: export/replay sampled cohorts and top
+  clusters from snapshots, then add behavior metrics such as predator distance,
+  retreat vector, cluster cohesion under attack, alarm activity, mud/glass use,
+  and counter/escape rates.

@@ -40,11 +40,17 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Make predation economy measurable`
+  current `main` HEAD after this pass: `Tighten defense evidence harness`
 
 Recent useful commits:
 
-- current `main` HEAD - Make predation economy measurable
+- current `main` HEAD - Tighten defense evidence harness
+- `40521ad` - Record calibrated defense soaks
+- `600368c` - Calibrate defense challenge harness
+- `e894d15` - Add event combat pressure
+- `a6d448c` - Record defense soak findings
+- `d0754af` - Add defense challenge soak harness
+- `12c69df` - Make predation economy measurable
 - `2e790dd` - Add motor slip proprioception
 - `ae44643` - Reserve headroom for cluster budding
 - `cf04f2c` - Record cluster budding soak results
@@ -365,9 +371,13 @@ Predation and food pressure:
   It runs an evolution soak, snapshots populations at requested ticks, clones
   a mixed elite/random sample, freezes reproduction by default for challenge
   fairness, and replays those clones in standardized danger arenas:
-  `predator`, `mud-refuge`, and `glass-gap`.
+  `predator`, `mud-refuge`, and `glass-gap`. It now supports repeated replay
+  trials with seeded placement jitter (`--challengeRepeats`,
+  `--challengeJitter`) and fixed replay cohort energy (`--cohortEnergy`) to
+  check whether survival gains are just energy differences.
 - Useful command:
-  `node tools\defense-soak.js --preset soup --ticks 2400 --samples "0,600,1200,2400" --cap 1200 --start 800 --sampleSize 48 --challengeTicks 240 --seed 0x51A11`
+  `node tools\defense-soak.js --preset soup --ticks 6000 --cap 900 --start 500 --seed 0x51A11 --samples "0,3000,6000" --sampleSize 40 --challengeTicks 180 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --challengeRepeats 3 --challengeJitter 1 --json`
+  Add `--cohortEnergy 5` for the fixed-energy control.
 - The local `npm run`/PowerShell route may strip flag names; the tool has a
   positional fallback and this also works:
   `npm run soak:defense -- --ticks 10 --samples "0,10" --cap 80 --start 40 --sampleSize 8 --challengeTicks 8 --challenges predator --seed 0x51A11`
@@ -467,6 +477,22 @@ Predation and food pressure:
   383. Survival was predator 0.800 -> 0.875 -> 0.700, mud-refuge 0.700 -> 0.825
   -> 0.800, glass-gap 0.775 -> 0.975 -> 0.950. Conclusion: event combat likely
   improved incentives, but robust long-run defense is not solved.
+- Tighter six-seed repeated-replay pass:
+  six 6000-tick soup seeds (`0x51A11`, `0xA11CE`, `0xB00D1E`, `0xC0FFEE`,
+  `0xD15EA5E`, `0xF00D`) were run with snapshots 0,3000,6000, three replay
+  trials per snapshot/challenge, and placement jitter. Normal-life tick-6000
+  state across those seeds stayed in the expected band: population 879-894,
+  mean brain slots 4.174-4.329, p90 slots 5, max slots 6-8, and cluster buds
+  16-39. Natural-energy replay showed positive tick-6000 survival deltas in
+  all six seeds for all three challenge arenas. The fixed-energy replay
+  control (`--cohortEnergy 5`) also stayed positive at tick 6000 in all three
+  arenas: predator +0.180, mud-refuge +0.147, glass-gap +0.164 mean survival
+  delta versus founders, with 6/6 positive seeds for each arena. Conclusion:
+  this is now measurable replay-survival selection under calibrated predators,
+  not merely descendants entering replay with more energy. It is still not
+  proof of sophisticated defensive behavior. Next step should be replay
+  realism and behavior metrics, then stronger cluster-level selection if the
+  behavior still looks shallow.
 
 Obstacle navigation:
 
@@ -695,6 +721,18 @@ Latest verification in the cluster-budding pass:
     `0xB00D1E`, and `0xC0FFEE`.
   - One post-fix 6000-tick calibrated persistence check passed for seed
     `0x51A11`.
+- Tighter defense evidence verification:
+  - `node --check tools\defense-soak.js` passed.
+  - Repeated-replay smoke passed with
+    `--challengeRepeats 3 --challengeJitter 1`.
+  - Fixed-energy repeated-replay smoke passed with `--cohortEnergy 5`; latest
+    quick smoke used cap 120/start 80/sample 20/challenge 40 and produced
+    varied predator survival 0.85-0.95 across two jittered repeats.
+  - Six 6000-tick repeated-replay soaks passed for seeds `0x51A11`,
+    `0xA11CE`, `0xB00D1E`, `0xC0FFEE`, `0xD15EA5E`, and `0xF00D`.
+  - The same six seeds passed again with fixed replay cohort energy 5.
+  - `npm test -- event-combat.test.js terrain-sensors.test.js` passed.
+  - `git diff --check` passed with only the repo's usual CRLF warnings.
 
 Core:
 
@@ -771,8 +809,11 @@ git log --oneline -5
 
 - performance: pair-force-only GPU assist/readback reduction
 - performance: lower-write CPU pair-loop redesign if GPU readback remains limiting
-- agency: repeat `tools\defense-soak.js` across seeds/longer windows, then add
-  detour-navigation microtests if defense remains non-monotonic
+- agency: add replay realism and behavior metrics for sampled cohorts/top
+  clusters, then pursue stronger cluster-level selection if the behavior still
+  looks shallow
+- agency: add detour-navigation microtests for food/prey behind glass with a
+  nearby opening
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization
 
