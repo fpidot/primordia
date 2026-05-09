@@ -425,6 +425,30 @@ Predation and food pressure:
   `node tools\bench-cpu.js --preset soup --ticks 700 --cap 900 --seed 0xBEE5 --combat nibble`
   measured 13.773 ms/tick. The same command with `--combat event` measured
   14.309 ms/tick, about a 4% overhead in that run.
+- Defense replay calibration pass:
+  `tools\defense-soak.js` now exposes challenge-predator controls:
+  `--hunterDrive`, `--hunterEnergy`, `--hunterPreference`,
+  `--hunterAttraction`, and `--hunterSenseRadius`. Challenge results also
+  include `injuredAlive` / `injuredAliveFrac`, which is more useful than
+  `hitAlive` for event combat because escaped/injured survivors do not get a
+  predation-death attribution timestamp.
+- Calibration finding:
+  the original event challenge default (`hunterDrive=4`,
+  `hunterPreference=1`, `hunterEnergy=9`, `predatorRatio=0.35`) is too lethal
+  for short replay interpretation; a founder-only `0x51A11` probe at cap 120,
+  start 80, sample 32, challenge 180 had open-predator survival 0.125.
+  A milder setting
+  `--combat event --predatorRatio 0.2 --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5`
+  produced founder survival 0.656 in the same probe while still producing
+  7 kills, 10 counters, 4 escapes, and injured survivors.
+- Short calibrated event-mode descendant probe:
+  `node tools\defense-soak.js --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 180 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --json`
+  passed. At tick 1200, normal life had 704 combat attacks, 165 kills, 59
+  counters, 432 escapes, 172.48 failed-cost energy, 224 predation-attributed
+  deaths, mean slots 4.160, p90 slots 5, and max slots 6. Challenge survival:
+  open predator 0.688 founders to 0.719 at tick 1200; mud-refuge 0.750 to
+  0.594; glass-gap 0.750 to 0.813. Treat as a calibrated harness result, not
+  proof of evolved defense.
 
 Obstacle navigation:
 
@@ -639,6 +663,12 @@ Latest verification in the cluster-budding pass:
   - The same defense-soak command with `--combat event` passed.
   - `node tools\bench-cpu.js --preset soup --ticks 700 --cap 900 --seed 0xBEE5 --combat nibble` passed.
   - The same CPU bench with `--combat event` passed.
+- Defense calibration verification:
+  - `node --check tools\defense-soak.js` passed.
+  - Three founder-only calibration probes passed: default event predator,
+    mild event predator, and medium event predator.
+  - `node tools\defense-soak.js --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 180 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --json` passed.
+  - `npm test -- event-combat.test.js terrain-sensors.test.js` passed.
 
 Core:
 

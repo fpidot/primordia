@@ -158,6 +158,14 @@ making the browser unusable.
    counters, 447 escapes, and 179.84 failed-cost energy in normal life. Treat
    this as a better selection-pressure scaffold, not yet evidence that robust
    defense has emerged.
+   Follow-up harness calibration exposed challenge predator controls
+   (`--hunterDrive`, `--hunterEnergy`, `--hunterPreference`,
+   `--hunterAttraction`, `--hunterSenseRadius`) plus injured-survivor
+   telemetry. Recommended near-term defense replay setting is now milder than
+   the first lethal probe: `--combat event --predatorRatio 0.2 --hunterDrive
+   0.5 --hunterPreference 0 --hunterEnergy 5`. On seed `0x51A11`, this left
+   founder open-predator survival around 0.69 and tick-1200 descendants around
+   0.72, leaving room to measure improvement or regression.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and
@@ -624,6 +632,18 @@ ms/tick event, roughly a 4% cost in that probe. The new standardized predator
 challenge is much harsher under event combat, so future defense soaks should
 either run longer or tune challenge strength before interpreting low survival
 as ecological failure.
+
+Defense replay calibration now has explicit hunter knobs. The original event
+challenge default (`hunterDrive=4`, `hunterPreference=1`, `hunterEnergy=9`,
+`predatorRatio=0.35`) drove founder survival to about 0.13 in a 180-tick
+open-predator replay. A milder setting (`hunterDrive=0.5`,
+`hunterPreference=0`, `hunterEnergy=5`, `predatorRatio=0.2`) produced founder
+survival around 0.66-0.69 while still producing kills, counters, escapes, and
+injured survivors. In a 1200-tick `0x51A11` event-mode soak with that milder
+replay predator, open-predator survival went from 0.688 at founders to 0.719
+at tick 1200; mud-refuge survival fell from 0.750 to 0.594; glass-gap survival
+rose from 0.750 to 0.813. This is encouraging only as calibration: run longer
+and across seeds before reading it as evolved defense.
 
 Brain-slot note: the structural cap remains 10 and add-slot mutation still has
 more raw probability than remove-slot mutation. Current observed lower averages

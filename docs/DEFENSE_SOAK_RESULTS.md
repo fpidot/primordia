@@ -112,3 +112,49 @@ Interpretation:
 - Next defense soaks should run longer, compare several seeds, and consider
   dialing challenge predator strength separately from normal-world combat so
   replay arenas are not just instant execution chambers for naive cohorts.
+
+### Challenge calibration pass
+
+The defense harness now exposes predator replay controls:
+
+- `--hunterDrive`
+- `--hunterEnergy`
+- `--hunterPreference`
+- `--hunterAttraction`
+- `--hunterSenseRadius`
+
+It also reports `injuredAlive` / `injuredAliveFrac` for event-combat survivors
+that were hurt but not killed.
+
+Founder-only calibration, all on seed `0x51A11`, cap 120, start 80, sample 32,
+open-predator challenge only, event combat, 180 challenge ticks:
+
+| setting | predator ratio | hunter drive | hunter pref | hunter energy | survival | kills | counters | escapes |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| default lethal | 0.35 | 4.00 | 1 | 9 | 0.125 | 27 | 1 | 0 |
+| mild calibrated | 0.20 | 0.50 | 0 | 5 | 0.656 | 7 | 10 | 4 |
+| medium calibrated | 0.25 | 0.65 | 0 | 6 | 0.563 | 12 | 9 | 5 |
+
+Short calibrated descendant probe:
+
+```powershell
+node tools\defense-soak.js --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples "0,600,1200" --sampleSize 32 --challengeTicks 180 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --json
+```
+
+Normal life at tick 1200: population 881, combat attacks 704, kills 165,
+counters 59, escapes 432, failed cost 172.48, predation deaths 224, mean slots
+4.160, p90 slots 5, max slots 6.
+
+| challenge | founder survival | tick-600 survival | tick-1200 survival |
+|---|---:|---:|---:|
+| predator | 0.688 | 0.656 | 0.719 |
+| mud-refuge | 0.750 | 0.594 | 0.594 |
+| glass-gap | 0.750 | 0.781 | 0.813 |
+
+Interpretation:
+
+- The mild setting leaves enough survivors that improvement can be measured.
+- The one-seed, 1200-tick result is mixed: predator and glass-gap improve
+  slightly, mud-refuge worsens.
+- Recommended next run: three or more seeds at 3000-6000 ticks with the mild
+  calibrated challenge, then compare survival deltas and injured-survivor rates.

@@ -161,21 +161,24 @@ function challengeGenomeFromSample(sample, freezeReproduction) {
   return g;
 }
 
-function makeHunterGenome() {
+function makeHunterGenome(opts = {}) {
+  const attraction = Number.isFinite(opts.hunterAttraction) ? opts.hunterAttraction : 1;
+  const preference = Number.isFinite(opts.hunterPreference) ? opts.hunterPreference : 1;
+  const drive = Number.isFinite(opts.hunterDrive) ? opts.hunterDrive : 4;
   const g = makeGenome(0);
-  g.attraction.fill(1);
-  g.cohesion = 0.15;
-  g.sense[0] = 0.2;
-  g.sense[1] = 1.2;
-  g.efficiency = 1.5;
-  g.metab = 0.012;
+  g.attraction.fill(attraction);
+  g.cohesion = Number.isFinite(opts.hunterCohesion) ? opts.hunterCohesion : 0.15;
+  g.sense[0] = Number.isFinite(opts.hunterFoodSense) ? opts.hunterFoodSense : 0.2;
+  g.sense[1] = Number.isFinite(opts.hunterDecaySense) ? opts.hunterDecaySense : 1.2;
+  g.efficiency = Number.isFinite(opts.hunterEfficiency) ? opts.hunterEfficiency : 1.5;
+  g.metab = Number.isFinite(opts.hunterMetab) ? opts.hunterMetab : 0.012;
   g.repro_thresh = 9999;
-  g.sense_radius = 70;
-  g.kin_aversion = -0.3;
-  if (g.prey_preference) g.prey_preference.fill(1);
+  g.sense_radius = Number.isFinite(opts.hunterSenseRadius) ? opts.hunterSenseRadius : 70;
+  g.kin_aversion = Number.isFinite(opts.hunterKinAversion) ? opts.hunterKinAversion : -0.3;
+  if (g.prey_preference) g.prey_preference.fill(preference);
   g.brain.enabled.fill(0);
   g.brain.biasO.fill(0);
-  g.brain.biasO[OUT_PREDATION] = 4;
+  g.brain.biasO[OUT_PREDATION] = drive;
   g.brain.biasO[OUT_REPRO_GATE] = -8;
   return g;
 }
@@ -258,7 +261,7 @@ async function runChallenge(kind, cohort, opts, seed) {
       }
     }
 
-    const hunterBase = makeHunterGenome();
+    const hunterBase = makeHunterGenome(opts);
     const predatorX = kind === 'glass-gap' ? W * 0.63 : W * 0.5;
     for (let i = 0; i < predatorCount; i++) {
       const a = (i / Math.max(1, predatorCount)) * Math.PI * 2;
@@ -267,7 +270,7 @@ async function runChallenge(kind, cohort, opts, seed) {
         predatorX + Math.cos(a) * r,
         centerY + Math.sin(a) * r,
         cloneGenome(hunterBase),
-        9,
+        opts.hunterEnergy,
       );
       if (h) {
         h.vx = 0;
@@ -298,6 +301,7 @@ async function runChallenge(kind, cohort, opts, seed) {
     const start = cohortParticles.length;
     const alive = cohortParticles.filter(p => p && !p.dead);
     const hitAlive = alive.filter(p => p.lastPredationTick >= 0).length;
+    const injuredAlive = alive.filter(p => p.lastDamageTick >= 0).length;
     const slots = alive.map(p => p.genome.brain.enabledCount());
     return {
       kind,
@@ -306,6 +310,8 @@ async function runChallenge(kind, cohort, opts, seed) {
       survival: round(alive.length / Math.max(1, start)),
       hitAlive,
       hitAliveFrac: round(hitAlive / Math.max(1, start)),
+      injuredAlive,
+      injuredAliveFrac: round(injuredAlive / Math.max(1, start)),
       predationDeaths: world.totalPredationDeaths || 0,
       predationEnergy: round(world.totalPredationEnergyGain || 0),
       combatAttacks: world.totalCombatAttacks || 0,
@@ -314,6 +320,11 @@ async function runChallenge(kind, cohort, opts, seed) {
       combatEscapes: world.totalCombatEscapes || 0,
       combatFailedCost: round(world.totalCombatFailedCost || 0),
       fieldEnergy: round(world.totalFieldEnergyGain || 0),
+      predatorCount,
+      hunterEnergy: round(opts.hunterEnergy),
+      hunterDrive: round(opts.hunterDrive),
+      hunterPreference: round(opts.hunterPreference),
+      hunterAttraction: round(opts.hunterAttraction),
       meanSlotsAlive: round(slots.reduce((a, b) => a + b, 0) / Math.max(1, slots.length)),
       mudUsePerTick: round(mudUseSamples / Math.max(1, sampleTicks * start)),
       safeSidePerTick: round(safeSideSamples / Math.max(1, sampleTicks * start)),
@@ -330,8 +341,13 @@ async function main() {
   const seed = parseSeed(seedRaw);
   const sampleSize = Math.max(4, Number(readArgCompat('sampleSize', 4, 48)) | 0);
   const challengeTicks = Math.max(1, Number(readArgCompat('challengeTicks', 5, 240)) | 0);
-  const predatorRatio = Math.max(0.05, Number(readArgCompat('predatorRatio', 9, 0.35)));
+  const predatorRatio = Math.max(0, Number(readArgCompat('predatorRatio', 9, 0.35)));
   const combatMode = readArgCompat('combat', 10, 'nibble') === 'event' ? 'event' : 'nibble';
+  const hunterEnergy = Math.max(0.1, Number(readArgCompat('hunterEnergy', 11, 9)));
+  const hunterDrive = Number(readArgCompat('hunterDrive', 12, 4));
+  const hunterPreference = Number(readArgCompat('hunterPreference', 13, 1));
+  const hunterAttraction = Number(readArgCompat('hunterAttraction', 14, 1));
+  const hunterSenseRadius = Math.max(1, Number(readArgCompat('hunterSenseRadius', 15, 70)));
   const samples = parseSamples(readArgCompat('samples', 1, ''), ticks);
   const challengeKinds = readArgCompat('challenges', 6, 'predator,mud-refuge,glass-gap')
     .split(',')
@@ -344,6 +360,11 @@ async function main() {
     freezeReproduction: !hasFlag('allowRepro'),
     challengeSampleEvery: 12,
     combatMode,
+    hunterEnergy,
+    hunterDrive,
+    hunterPreference,
+    hunterAttraction,
+    hunterSenseRadius,
   };
 
   const t0 = performance.now();
@@ -395,6 +416,11 @@ async function main() {
     challengeTicks,
     predatorRatio,
     combatMode,
+    hunterEnergy,
+    hunterDrive,
+    hunterPreference,
+    hunterAttraction,
+    hunterSenseRadius,
     freezeReproduction: opts.freezeReproduction,
     elapsedMs: round(elapsedMs, 1),
     snapshots,
@@ -407,7 +433,7 @@ async function main() {
 
   console.log(JSON.stringify(result, null, 2));
   console.log('\nDefense challenge summary');
-  console.log('tick | mode | pop | meanSlots | p90/max | meatE | combat | fieldE | challenge | survival | predDeaths | hitAlive | mudUse | safeSide');
+  console.log('tick | mode | pop | meanSlots | p90/max | meatE | combat | fieldE | challenge | survival | predDeaths | injured | mudUse | safeSide');
   for (const s of snapshots) {
     for (const c of s.challenges) {
       console.log([
@@ -422,7 +448,7 @@ async function main() {
         c.kind,
         c.survival.toFixed(2),
         c.predationDeaths,
-        c.hitAliveFrac.toFixed(2),
+        (c.injuredAliveFrac || 0).toFixed(2),
         c.mudUsePerTick.toFixed(2),
         c.safeSidePerTick.toFixed(2),
       ].join(' | '));
