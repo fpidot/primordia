@@ -58,7 +58,7 @@ const K_MOTION_COST = 0.0014; // per-tick energy cost of |v|^2 (raised from 0.00
 // Field constants — tightened for survival pressure. Earlier values produced
 // a stable thriving equilibrium with no evolutionary advancement: ambient
 // food + carcass recycling kept everyone fed regardless of fitness. Reduced
-// PHOTO 33%, PHOTO_SOFT capped lower, DECAY_TO_FOOD halved.
+// PHOTO 42%, PHOTO_SOFT capped lower, DECAY_TO_FOOD halved.
 const DIFFUSE = 0.10;          // 3x3 mean blend factor
 const DECAY_LOSS = 0.0006;     // food decay
 const DECAY_DECAY = 0.003;     // decay channel decay
@@ -71,8 +71,8 @@ const MUTAGEN_DECAY = 0.004;
 const FOOD_CAP = 6.0;
 const DECAY_CAP = 10.0;
 const MUTAGEN_CAP = 4.0;
-const PHOTO = 0.0008;          // ambient food regen per cell per tick (was 0.0012)
-const PHOTO_SOFT = 0.7;        // photo tapers off above this food level (was 1.1)
+const PHOTO = 0.0007;          // ambient food regen per cell per tick (was 0.0012)
+const PHOTO_SOFT = 0.6;        // photo tapers off above this food level (was 1.1)
 const SOUND_CAP = 4.0;
 const SOUND_DIFFUSE = 0.28;    // sound spreads quickly...
 const SOUND_DECAY = 0.08;      // ...and now fades much slower than before
@@ -104,6 +104,8 @@ const CLUSTER_BUD_RESERVE_FRAC = 0.02;
 const CLUSTER_BUD_RESERVE_MAX = 48;
 const DEATH_DEPOSIT = 1.4;     // decay packet released on death
 const EAT_MAX = 0.18;          // max food a particle can eat per tick
+const PREDATION_BASE_RATE = 0.20;
+const PREDATION_CONVERSION = 0.90;
 
 // Bonds — Phase 3d
 const MAX_BONDS = 4;
@@ -384,6 +386,13 @@ export class World {
     this.totalWallDeposits = 0;
     this.totalClusterBuds = 0;
     this.totalClusterBudParticles = 0;
+    this.totalFieldFoodEaten = 0;
+    this.totalFieldEnergyGain = 0;
+    this.totalPredationEvents = 0;
+    this.totalPredationDrain = 0;
+    this.totalPredationEnergyGain = 0;
+    this.totalPredationFatalDrains = 0;
+    this.totalPredationDeaths = 0;
 
     this.clades = new CladeTracker();
 
@@ -553,6 +562,13 @@ export class World {
       deaths: this.totalDied || 0,
       wallDigs: this.totalWallDigs || 0,
       wallDeposits: this.totalWallDeposits || 0,
+      fieldFoodEaten: +(this.totalFieldFoodEaten || 0).toFixed(3),
+      fieldEnergyGain: +(this.totalFieldEnergyGain || 0).toFixed(3),
+      predationEvents: this.totalPredationEvents || 0,
+      predationDrain: +(this.totalPredationDrain || 0).toFixed(3),
+      predationEnergyGain: +(this.totalPredationEnergyGain || 0).toFixed(3),
+      predationFatalDrains: this.totalPredationFatalDrains || 0,
+      predationDeaths: this.totalPredationDeaths || 0,
       clusterBuds: this.totalClusterBuds || 0,
       clusterBudParticles: this.totalClusterBudParticles || 0,
       clusterBudReserve: this.maxParticles - this._cellBirthLimit(),
@@ -688,6 +704,13 @@ export class World {
       prevSignalR: 0, prevSignalG: 0, prevSignalB: 0,
       signalFlash: 0, signalAboveLast: 0, signalAboveSince: 0,
       predationGain: 0,
+      predationEvents: 0,
+      predationDrain: 0,
+      predationEnergyGain: 0,
+      predationFatalDrains: 0,
+      predationKills: 0,
+      lastPredatorId: 0,
+      lastPredationTick: -9999,
       soundCh: 0, soundAmp: 0,
       wantBond: 0, wantMate: 0,
       bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
@@ -791,6 +814,15 @@ export class World {
     this.totalDied = 0;
     this.totalWallDigs = 0;
     this.totalWallDeposits = 0;
+    this.totalClusterBuds = 0;
+    this.totalClusterBudParticles = 0;
+    this.totalFieldFoodEaten = 0;
+    this.totalFieldEnergyGain = 0;
+    this.totalPredationEvents = 0;
+    this.totalPredationDrain = 0;
+    this.totalPredationEnergyGain = 0;
+    this.totalPredationFatalDrains = 0;
+    this.totalPredationDeaths = 0;
     this._wallCount = 0;
     // Bump version so the renderer's wall cache key changes — without this,
     // the previous preset's walls keep displaying until the user paints
@@ -1217,12 +1249,28 @@ export class World {
                         const huntCoord = p.cluster
                           ? Math.max(0, p.incomingBondMsgR)
                           : 0;
-                        const baseRate = 0.18 * willBoost * totalMult *
+                        const baseRate = PREDATION_BASE_RATE * willBoost * totalMult *
                           (1 + huntCoord * COORD_HUNT_BONUS);
-                        const drain = Math.min(q.energy * baseRate, 0.7);
+                        const drain = Math.min(q.energy, q.energy * baseRate, 0.7);
+                        const gain = drain * PREDATION_CONVERSION;
                         q.energy -= drain;
-                        // Phase 6 — predator efficiency raised 0.55 → 0.80.
-                        p.energy += drain * 0.80;
+                        // Predation is deliberately a richer but riskier meal
+                        // than field food: close contact, target preference,
+                        // and coordination are required, but successful meat
+                        // transfers most of the victim's lost energy.
+                        p.energy += gain;
+                        this.totalPredationEvents++;
+                        this.totalPredationDrain += drain;
+                        this.totalPredationEnergyGain += gain;
+                        p.predationEvents = (p.predationEvents || 0) + 1;
+                        p.predationDrain = (p.predationDrain || 0) + drain;
+                        p.predationEnergyGain = (p.predationEnergyGain || 0) + gain;
+                        q.lastPredatorId = p.id;
+                        q.lastPredationTick = this.tick;
+                        if (q.energy <= 0) {
+                          this.totalPredationFatalDrains++;
+                          p.predationFatalDrains = (p.predationFatalDrains || 0) + 1;
+                        }
                       }
                     }
                     // Bond formation: only checked when i.id < j.id to avoid
@@ -1840,6 +1888,10 @@ export class World {
       const eatGain = eat * g.efficiency * effMult;
       f0[fIdx] -= eat;
       dE += eatGain;
+      if (eat > 0) {
+        this.totalFieldFoodEaten += eat;
+        this.totalFieldEnergyGain += eatGain;
+      }
       // emit chemicals — body baseline plus brain decision
       const eF = g.emit[0] + Math.max(0, out[OUT_EMIT_FOOD]) * 0.06;
       const eD = g.emit[1] + Math.max(0, out[OUT_EMIT_DECAY]) * 0.06;
@@ -1874,6 +1926,13 @@ export class World {
         f1[fIdx] = Math.min(DECAY_CAP, f1[fIdx] + DEATH_DEPOSIT);
         this._decayActive = true;
         this.totalDied++;
+        if (p.lastPredatorId && this.tick - (p.lastPredationTick || -9999) <= 12) {
+          this.totalPredationDeaths++;
+          const predator = idMap[p.lastPredatorId];
+          if (predator && !predator.dead) {
+            predator.predationKills = (predator.predationKills || 0) + 1;
+          }
+        }
         this._deathSoundEvents.push({ x: p.x, y: p.y, id: p.id, energy: p.energy, tick: this.tick });
         this.clades.onParticleDie(p, this.tick);
         // Bond cost — losing a member drains every surviving partner. Bonds
@@ -1931,6 +1990,13 @@ export class World {
             organismGeneration: p.organismGeneration || 1,
             signalR: 0, signalG: 0, signalB: 0,
             predationGain: 0,
+            predationEvents: 0,
+            predationDrain: 0,
+            predationEnergyGain: 0,
+            predationFatalDrains: 0,
+            predationKills: 0,
+            lastPredatorId: 0,
+            lastPredationTick: -9999,
             soundCh: 0, soundAmp: 0,
             wantBond: 0, wantMate: 0,
             bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
@@ -1976,6 +2042,13 @@ export class World {
             organismGeneration: p.organismGeneration || 1,
             signalR: 0, signalG: 0, signalB: 0,
             predationGain: 0,
+            predationEvents: 0,
+            predationDrain: 0,
+            predationEnergyGain: 0,
+            predationFatalDrains: 0,
+            predationKills: 0,
+            lastPredatorId: 0,
+            lastPredationTick: -9999,
             soundCh: 0, soundAmp: 0,
             wantBond: 0, wantMate: 0,
             bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
@@ -2660,6 +2733,13 @@ export class World {
       wallDigs: this.totalWallDigs,
       wallDeposits: this.totalWallDeposits,
       wallCarriers: carrying,
+      fieldFoodEaten: this.totalFieldFoodEaten || 0,
+      fieldEnergyGain: this.totalFieldEnergyGain || 0,
+      predationEvents: this.totalPredationEvents || 0,
+      predationDrain: this.totalPredationDrain || 0,
+      predationEnergyGain: this.totalPredationEnergyGain || 0,
+      predationFatalDrains: this.totalPredationFatalDrains || 0,
+      predationDeaths: this.totalPredationDeaths || 0,
       meanShelter: alive ? shelterSum / alive : 0,
       shelteredFrac: alive ? shelteredN / alive : 0,
     };
@@ -2734,6 +2814,15 @@ export class World {
       mutagen: Array.from(this.mutagen),
       totalWallDigs: this.totalWallDigs,
       totalWallDeposits: this.totalWallDeposits,
+      totalClusterBuds: this.totalClusterBuds || 0,
+      totalClusterBudParticles: this.totalClusterBudParticles || 0,
+      totalFieldFoodEaten: this.totalFieldFoodEaten || 0,
+      totalFieldEnergyGain: this.totalFieldEnergyGain || 0,
+      totalPredationEvents: this.totalPredationEvents || 0,
+      totalPredationDrain: this.totalPredationDrain || 0,
+      totalPredationEnergyGain: this.totalPredationEnergyGain || 0,
+      totalPredationFatalDrains: this.totalPredationFatalDrains || 0,
+      totalPredationDeaths: this.totalPredationDeaths || 0,
       wallMeta,
       clades: this.clades.toJSON(),
       particles: this.particles.map(p => ({
@@ -2746,6 +2835,11 @@ export class World {
         shelterRelief: p.shelterRelief || 0,
         wallDigs: p.wallDigs || 0,
         wallDeposits: p.wallDeposits || 0,
+        predationEvents: p.predationEvents || 0,
+        predationDrain: p.predationDrain || 0,
+        predationEnergyGain: p.predationEnergyGain || 0,
+        predationFatalDrains: p.predationFatalDrains || 0,
+        predationKills: p.predationKills || 0,
         genome: genomeToJSON(p.genome),
       })),
     };
@@ -2815,6 +2909,15 @@ export class World {
     }
     this.totalWallDigs = data.totalWallDigs || 0;
     this.totalWallDeposits = data.totalWallDeposits || 0;
+    this.totalClusterBuds = data.totalClusterBuds || 0;
+    this.totalClusterBudParticles = data.totalClusterBudParticles || 0;
+    this.totalFieldFoodEaten = data.totalFieldFoodEaten || 0;
+    this.totalFieldEnergyGain = data.totalFieldEnergyGain || 0;
+    this.totalPredationEvents = data.totalPredationEvents || 0;
+    this.totalPredationDrain = data.totalPredationDrain || 0;
+    this.totalPredationEnergyGain = data.totalPredationEnergyGain || 0;
+    this.totalPredationFatalDrains = data.totalPredationFatalDrains || 0;
+    this.totalPredationDeaths = data.totalPredationDeaths || 0;
     if (Array.isArray(data.wallMeta)) {
       for (const row of data.wallMeta) {
         const idx = row[0] | 0;
@@ -2842,6 +2945,13 @@ export class World {
         cladeId: op.cladeId ?? 0,
         signalR: 0, signalG: 0, signalB: 0,
         predationGain: 0,
+        predationEvents: op.predationEvents || 0,
+        predationDrain: op.predationDrain || 0,
+        predationEnergyGain: op.predationEnergyGain || 0,
+        predationFatalDrains: op.predationFatalDrains || 0,
+        predationKills: op.predationKills || 0,
+        lastPredatorId: 0,
+        lastPredationTick: -9999,
         soundCh: 0, soundAmp: 0,
         wantBond: 0, wantMate: 0,
         bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,

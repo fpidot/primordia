@@ -873,22 +873,25 @@ export class UI {
     if (this._lastVitals) {
       const dt = (now - this._lastVitals.t) / 1000;
       if (dt > 0.05) {
-        const dDied = this.world.totalDied - this._lastVitals.died;
-        const dBorn = this.world.totalBorn - this._lastVitals.born;
-        const dDig = this.world.totalWallDigs - (this._lastVitals.wallDigs || 0);
-        const dBuild = this.world.totalWallDeposits - (this._lastVitals.wallDeposits || 0);
+        const dDied = Math.max(0, this.world.totalDied - this._lastVitals.died);
+        const dBorn = Math.max(0, this.world.totalBorn - this._lastVitals.born);
+        const dDig = Math.max(0, this.world.totalWallDigs - (this._lastVitals.wallDigs || 0));
+        const dBuild = Math.max(0, this.world.totalWallDeposits - (this._lastVitals.wallDeposits || 0));
+        const dHunts = Math.max(0, (this.world.totalPredationEvents || 0) - (this._lastVitals.predationEvents || 0));
         // exponential smoothing to keep the readout stable
         const alpha = 0.3;
         this._deathRate = (this._deathRate || 0) * (1 - alpha) + (dDied / dt) * alpha;
         this._birthRate = (this._birthRate || 0) * (1 - alpha) + (dBorn / dt) * alpha;
         this._digRate = (this._digRate || 0) * (1 - alpha) + (dDig / dt) * alpha;
         this._buildRate = (this._buildRate || 0) * (1 - alpha) + (dBuild / dt) * alpha;
+        this._huntRate = (this._huntRate || 0) * (1 - alpha) + (dHunts / dt) * alpha;
         this._lastVitals = {
           t: now,
           died: this.world.totalDied,
           born: this.world.totalBorn,
           wallDigs: this.world.totalWallDigs,
           wallDeposits: this.world.totalWallDeposits,
+          predationEvents: this.world.totalPredationEvents || 0,
         };
       }
     } else {
@@ -898,11 +901,13 @@ export class UI {
         born: this.world.totalBorn,
         wallDigs: this.world.totalWallDigs,
         wallDeposits: this.world.totalWallDeposits,
+        predationEvents: this.world.totalPredationEvents || 0,
       };
       this._deathRate = 0;
       this._birthRate = 0;
       this._digRate = 0;
       this._buildRate = 0;
+      this._huntRate = 0;
     }
     const lowPct = (v.lowFrac * 100).toFixed(0);
     const shelteredPct = (v.shelteredFrac * 100).toFixed(0);
@@ -916,9 +921,12 @@ export class UI {
     html += `<div class="row-stat"><span></span><span>carrying</span><span class="num">${v.wallCarriers}</span></div>`;
     html += `<div class="row-stat"><span></span><span>dig / build</span><span class="num">${v.wallDigs}/${v.wallDeposits}</span></div>`;
     html += `<div class="row-stat"><span></span><span>shelter</span><span class="num">${v.meanShelter.toFixed(3)} · ${shelteredPct}%</span></div>`;
+    html += `<div class="row-stat"><span></span><span>meat / field E</span><span class="num">${v.predationEnergyGain.toFixed(1)} / ${v.fieldEnergyGain.toFixed(1)}</span></div>`;
+    html += `<div class="row-stat"><span></span><span>hunt hits</span><span class="num">${v.predationEvents} · deaths ${v.predationDeaths}</span></div>`;
     html += `<div class="row-stat"><span></span><span>births/s</span><span class="num">${(this._birthRate || 0).toFixed(1)}</span></div>`;
     html += `<div class="row-stat"><span></span><span>deaths/s</span><span class="num">${(this._deathRate || 0).toFixed(1)}</span></div>`;
     html += `<div class="row-stat"><span></span><span>dig/build/s</span><span class="num">${(this._digRate || 0).toFixed(1)}/${(this._buildRate || 0).toFixed(1)}</span></div>`;
+    html += `<div class="row-stat"><span></span><span>hunt hits/s</span><span class="num">${(this._huntRate || 0).toFixed(1)}</span></div>`;
 
     this.statsEl.innerHTML = html;
 

@@ -86,6 +86,13 @@ console.log(JSON.stringify({
   wallDigs: world.totalWallDigs || 0,
   wallDeposits: world.totalWallDeposits || 0,
   wallCarriers,
+  fieldFoodEaten: Number((world.totalFieldFoodEaten || 0).toFixed(3)),
+  fieldEnergyGain: Number((world.totalFieldEnergyGain || 0).toFixed(3)),
+  predationEvents: world.totalPredationEvents || 0,
+  predationDrain: Number((world.totalPredationDrain || 0).toFixed(3)),
+  predationEnergyGain: Number((world.totalPredationEnergyGain || 0).toFixed(3)),
+  predationFatalDrains: world.totalPredationFatalDrains || 0,
+  predationDeaths: world.totalPredationDeaths || 0,
   profile: profile && typeof world.profileSummary === 'function' ? world.profileSummary() : undefined,
   profileTrend: profileTrend.length ? profileTrend : undefined,
 }, null, 2));

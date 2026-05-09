@@ -35,6 +35,12 @@ making the browser unusable.
   no wall change over 3k ticks, meaning the trait had weak selection access.
 - Brain slots drift upward and can hit the cap. The cap should rise in small
   steps with tests, not leap far enough to sink browser frame rate.
+- Predation pressure is real but was previously hard to see. The sim now
+  tracks field-food energy, meat energy, hunt hits, direct fatal drains, and
+  deaths that occur soon after predation. A seeded 1800-tick soup soak
+  (`0x51A11`, cap 1200) measured ~108k field-food energy, ~148k predation
+  energy, 463k hunt contacts, and 1483 predation-attributed deaths out of
+  2457 total deaths.
 
 ### Near-term execution plan
 
@@ -125,6 +131,11 @@ making the browser unusable.
    15 bud events, 133 budded particles, multiple live `Jr` clusters, and one
    live `III` cluster. Next tuning target: compare reserve sizes and maybe add
    a pending-bud queue so the mechanism remains robust across denser presets.
+   Ecology pressure status: ambient food has been nudged lower again, predation
+   conversion has been raised, and the vitals/bench counters now separate
+   field-food energy from meat energy. The immediate follow-up is not "add
+   predation" but measure whether stronger predator pressure produces evolved
+   avoidance, kin defense, obstacle use, or cluster-level rescue behavior.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and
@@ -547,6 +558,14 @@ not-eating-clustermates. After 7k-tick soak `cluster_affinity` mean was
 ~0.08 (slightly positive). Predator population stayed at 33–51%. Is the
 ecosystem locking into a stable predator-prey-loyalist mix, or is it
 still drifting? Long-soak (50k+ ticks) needed to know.
+
+Update: predation telemetry now shows that meat is already a major energy
+source in at least one normal soup soak, not a missing behavior. A 1800-tick
+`0x51A11` run at cap 1200 measured predation energy above field-food energy
+and attributed 1483 of 2457 deaths to recent predation. The sharper research
+question is now whether that pressure selects for useful defenses: avoidance,
+glass/mud exploitation, tighter kin aversion, cluster alarms, or organism-level
+budding that preserves defensive topology.
 
 ### Comm metric `flash` component
 

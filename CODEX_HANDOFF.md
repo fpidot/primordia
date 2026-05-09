@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add motor slip proprioception`
+  current `main` HEAD after this pass: `Make predation economy measurable`
 
 Recent useful commits:
 
-- current `main` HEAD - Add motor slip proprioception
+- current `main` HEAD - Make predation economy measurable
+- `2e790dd` - Add motor slip proprioception
 - `ae44643` - Reserve headroom for cluster budding
 - `cf04f2c` - Record cluster budding soak results
 - `6a85b9a` - Label cluster bud generations
@@ -334,6 +335,32 @@ Food sensing:
   is too weak in crowded/ecological conditions, gradients are too local, or
   neural/motor outputs overpower genome-level food force.
 
+Predation and food pressure:
+
+- Ambient field food is intentionally lower than early builds, and predation
+  is now a richer but riskier meal: contact, attraction/cohesion, prey
+  preference, and optional hunt coordination all have to line up.
+- The transfer is now capped by victim energy, so a strong hunter cannot gain
+  more energy than the prey actually had.
+- The sim now tracks:
+  - field food eaten
+  - field-food energy gained
+  - hunt contact events
+  - victim energy drained by predation
+  - predator energy gained from meat
+  - direct fatal drains
+  - deaths within a short window after predation
+- Vitals and CPU bench output expose the meat-vs-field economy directly.
+- Latest measured soak:
+  `node tools\bench-cpu.js --preset soup --ticks 1800 --cap 1200 --seed 0x51A11 --profileEvery 600`
+  ended with population 1173, born 3630, died 2457, field energy
+  107983.797, predation energy 147985.021, 463349 hunt contacts, no direct
+  fatal drains, and 1483 predation-attributed deaths.
+- Interpretation: predation is not absent. It already supplies major energy
+  and mortality pressure in that seed. The next question is whether avoidance,
+  kin defense, mud/glass exploitation, cluster alarms, and defensive topology
+  evolve under that pressure.
+
 Obstacle navigation:
 
 - User specifically wants to know whether behavior like "food/prey behind
@@ -522,10 +549,17 @@ Latest verification in the cluster-budding pass:
   - `node tests\proprioception.test.js` passed.
   - `node tests\terrain-sensors.test.js` passed.
   - `node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 6 --speed 4 --seed 0xC0FFEE --gpu --port 9336` passed with GPU ready/enabled and no page or GPU validation errors after the WGSL `MAX_V_SIM` fix.
-- `npm test` passed all 15 test files after the proprioception pass and took
-  about 139 seconds.
+- `npm test` passed all 16 test files after the predation economy pass and
+  took about 139 seconds.
 - Quick CPU smoke passed:
   `node tools\bench-cpu.js --preset maze --ticks 300 --cap 800 --seed 0xC0FFEE --profile --profileEvery 150`.
+- Predation economy pass verification:
+  - `node tests\predation-economy.test.js` passed.
+  - `node --check js\sim.js` passed.
+  - `node --check js\ui.js` passed.
+  - `node --check tools\bench-cpu.js` passed.
+  - `node tools\bench-cpu.js --preset soup --ticks 1800 --cap 1200 --seed 0x51A11 --profileEvery 600` passed and produced the measured meat-vs-field figures above.
+  - `npm test` passed all 16 test files.
 
 Core:
 
@@ -538,6 +572,7 @@ Targeted:
 ```powershell
 node tests\run-all.js signal-transmission.test.js terrain-sensors.test.js
 node tests\run-all.js food-chemotaxis.test.js mud-terrain.test.js
+node tests\run-all.js predation-economy.test.js
 node tests\run-all.js baseline-soup.test.js baseline-maze.test.js
 ```
 
