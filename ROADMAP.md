@@ -166,6 +166,14 @@ making the browser unusable.
    0.5 --hunterPreference 0 --hunterEnergy 5`. On seed `0x51A11`, this left
    founder open-predator survival around 0.69 and tick-1200 descendants around
    0.72, leaving room to measure improvement or regression.
+   The first post-fix deterministic calibrated soaks are now recorded in
+   `docs/DEFENSE_SOAK_RESULTS.md`: three 3000-tick event-mode seeds had
+   positive average survival deltas versus founders (`+0.067` predator,
+   `+0.033` mud-refuge, `+0.083` glass-gap), but individual seed/arena results
+   were mixed. A 6000-tick `0x51A11` persistence check kept mud/glass survival
+   above founders but open-predator survival fell below founder level. Current
+   read: the combat/damage scaffold likely fixed a real incentive problem, but
+   robust long-run defensive behavior is not proven.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and
@@ -644,6 +652,17 @@ replay predator, open-predator survival went from 0.688 at founders to 0.719
 at tick 1200; mud-refuge survival fell from 0.750 to 0.594; glass-gap survival
 rose from 0.750 to 0.813. This is encouraging only as calibration: run longer
 and across seeds before reading it as evolved defense.
+
+Deterministic replay fix and longer results: `tools/defense-soak.js` now awaits
+the full async challenge body inside `withSeed`, so replay challenge RNG stays
+seeded. After that fix, three calibrated 3000-tick event-mode soaks at cap
+900/start 500 produced positive average survival deltas over founders:
+open-predator `+0.067`, mud-refuge `+0.033`, and glass-gap `+0.083`. The result
+is promising but mixed: one seed regressed in open-predator, one regressed in
+mud-refuge, and glass-gap was flat in one seed. A `0x51A11` 6000-tick check
+showed max brain slots reaching 8 and mean slots 4.329, but open-predator
+survival fell to 0.700 versus founder 0.800 after being 0.875 at tick 3000.
+So: likely structural improvement, not solved defense.
 
 Brain-slot note: the structural cap remains 10 and add-slot mutation still has
 more raw probability than remove-slot mutation. Current observed lower averages

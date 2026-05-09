@@ -62,11 +62,11 @@ function quantile(values, q) {
   return s[Math.min(s.length - 1, Math.max(0, Math.floor((s.length - 1) * q)))];
 }
 
-function withSeed(seed, fn) {
+async function withSeed(seed, fn) {
   const prev = Math.random;
   Math.random = mulberry32(seed >>> 0);
   try {
-    return fn();
+    return await fn();
   } finally {
     Math.random = prev;
   }

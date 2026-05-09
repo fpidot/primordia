@@ -126,6 +126,12 @@ The defense harness now exposes predator replay controls:
 It also reports `injuredAlive` / `injuredAliveFrac` for event-combat survivors
 that were hurt but not killed.
 
+Note: a follow-up pass fixed `withSeed` so async challenge replays keep their
+seeded RNG for the full replay. The multi-seed tables below are the canonical
+post-fix measurements; the earlier calibration numbers were useful for choosing
+the mild hunter setting but should not be treated as exact reproducibility
+targets.
+
 Founder-only calibration, all on seed `0x51A11`, cap 120, start 80, sample 32,
 open-predator challenge only, event combat, 180 challenge ticks:
 
@@ -158,3 +164,74 @@ Interpretation:
   slightly, mud-refuge worsens.
 - Recommended next run: three or more seeds at 3000-6000 ticks with the mild
   calibrated challenge, then compare survival deltas and injured-survivor rates.
+
+## 2026-05-09 - deterministic calibrated event-combat soaks
+
+After fixing async seeded replay handling, the calibrated event-combat defense
+probe was rerun across three seeds.
+
+Command shape:
+
+```powershell
+node tools\defense-soak.js --preset soup --ticks 3000 --cap 900 --start 500 --seed <seed> --samples "0,1000,2000,3000" --sampleSize 40 --challengeTicks 180 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --json
+```
+
+### Final normal-life state at tick 3000
+
+| seed | population | mean slots | p90 slots | max slots | cluster buds | combat attacks | combat kills | counters | escapes | predation deaths | meat energy | field energy |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `0x51A11` | 882 | 4.167 | 5 | 7 | 10 | 1157 | 143 | 93 | 843 | 236 | 2,022 | 136,957 |
+| `0xB00D1E` | 882 | 4.222 | 5 | 6 | 12 | 1687 | 352 | 130 | 1073 | 482 | 5,031 | 142,045 |
+| `0xC0FFEE` | 882 | 4.136 | 5 | 6 | 13 | 927 | 131 | 143 | 608 | 274 | 4,266 | 143,190 |
+
+### Founder-to-tick-3000 survival deltas
+
+| seed | predator delta | mud-refuge delta | glass-gap delta |
+|---|---:|---:|---:|
+| `0x51A11` | +0.075 | +0.125 | +0.200 |
+| `0xB00D1E` | -0.025 | +0.075 | +0.000 |
+| `0xC0FFEE` | +0.150 | -0.100 | +0.050 |
+| mean | +0.067 | +0.033 | +0.083 |
+
+Interpretation:
+
+- This is the first calibrated defense probe with a positive average survival
+  delta across all three arenas.
+- The signal is mixed by seed and arena, so it is not proof that robust defense
+  is solved.
+- Open predator and glass-gap look more encouraging than mud-refuge.
+- Brain capacity did not run away: mean slots stayed around 4.1-4.2, p90 stayed
+  5, and max reached 6-7 by tick 3000.
+- Organism budding was present in all three seeds at this lower cap/start
+  setting (10, 12, and 13 bud events by tick 3000).
+
+### One-seed 6000-tick persistence check
+
+Command:
+
+```powershell
+node tools\defense-soak.js --preset soup --ticks 6000 --cap 900 --start 500 --seed 0x51A11 --samples "0,3000,6000" --sampleSize 40 --challengeTicks 180 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --json
+```
+
+Normal life at tick 6000: population 882, mean slots 4.329, p90 slots 5, max
+slots 8, cluster buds 16, combat attacks 1473, combat kills 231, counters 152,
+escapes 1006, predation deaths 383, meat energy 5,013, field energy 288,947.
+
+| challenge | founder | tick 3000 | tick 6000 |
+|---|---:|---:|---:|
+| predator | 0.800 | 0.875 | 0.700 |
+| mud-refuge | 0.700 | 0.825 | 0.800 |
+| glass-gap | 0.775 | 0.975 | 0.950 |
+
+Interpretation:
+
+- The 6000-tick persistence check is not monotonic: open-predator survival fell
+  below founder level, while mud-refuge and glass-gap remained above founders.
+- Brain complexity continued to produce higher-slot variants (`maxSlots=8`) but
+  population mean rose only modestly.
+- Current conclusion: event combat plus damage sensing probably fixed a real
+  structural incentive problem and produced measurable positive defense signal
+  at 3000 ticks, but long-run robust defense is not yet proven.
+- Next best test: preserve/export the sampled cohorts or top clusters from each
+  snapshot so we can inspect/replay lineages directly instead of only aggregate
+  sampled survival.

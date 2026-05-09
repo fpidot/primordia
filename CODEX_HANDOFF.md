@@ -449,6 +449,24 @@ Predation and food pressure:
   open predator 0.688 founders to 0.719 at tick 1200; mud-refuge 0.750 to
   0.594; glass-gap 0.750 to 0.813. Treat as a calibrated harness result, not
   proof of evolved defense.
+- Async seed fix:
+  `tools\defense-soak.js` had a subtle reproducibility issue: `withSeed`
+  restored `Math.random` immediately after an async challenge returned its
+  Promise, not after the full replay finished. It now `await`s the challenge
+  body before restoring the prior RNG. Treat post-fix results as canonical.
+- Post-fix calibrated 3000-tick event soaks:
+  three seeds were run with
+  `--ticks 3000 --cap 900 --start 500 --samples 0,1000,2000,3000 --sampleSize 40 --challengeTicks 180 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5`.
+  Final average survival deltas versus founders were positive but modest:
+  predator +0.067, mud-refuge +0.033, glass-gap +0.083. Per-seed details are in
+  `docs/DEFENSE_SOAK_RESULTS.md`.
+- Post-fix 6000-tick persistence check:
+  `0x51A11` was run to 6000 ticks with snapshots 0,3000,6000. At tick 6000:
+  population 882, mean slots 4.329, p90 slots 5, max slots 8, cluster buds 16,
+  combat attacks 1473, kills 231, counters 152, escapes 1006, predation deaths
+  383. Survival was predator 0.800 -> 0.875 -> 0.700, mud-refuge 0.700 -> 0.825
+  -> 0.800, glass-gap 0.775 -> 0.975 -> 0.950. Conclusion: event combat likely
+  improved incentives, but robust long-run defense is not solved.
 
 Obstacle navigation:
 
@@ -669,6 +687,14 @@ Latest verification in the cluster-budding pass:
     mild event predator, and medium event predator.
   - `node tools\defense-soak.js --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 180 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --json` passed.
   - `npm test -- event-combat.test.js terrain-sensors.test.js` passed.
+- Deterministic calibrated defense verification:
+  - `node --check tools\defense-soak.js` passed after the async seed fix.
+  - A quick post-fix smoke run passed:
+    `node tools\defense-soak.js --preset soup --ticks 0 --cap 120 --start 80 --seed 0x51A11 --samples 0 --sampleSize 24 --challengeTicks 60 --predatorRatio 0.2 --challenges predator --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --json`.
+  - Three post-fix 3000-tick calibrated soaks passed for seeds `0x51A11`,
+    `0xB00D1E`, and `0xC0FFEE`.
+  - One post-fix 6000-tick calibrated persistence check passed for seed
+    `0x51A11`.
 
 Core:
 
