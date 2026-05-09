@@ -95,6 +95,12 @@ function summarizeWorld(world) {
     population: ps.length,
     births: world.totalBorn || 0,
     deaths: world.totalDied || 0,
+    combatMode: world.combatMode || 'nibble',
+    combatAttacks: world.totalCombatAttacks || 0,
+    combatKills: world.totalCombatKills || 0,
+    combatCounters: world.totalCombatCounters || 0,
+    combatEscapes: world.totalCombatEscapes || 0,
+    combatFailedCost: round(world.totalCombatFailedCost || 0),
     predationDeaths: world.totalPredationDeaths || 0,
     predationEnergy: round(world.totalPredationEnergyGain || 0),
     fieldEnergy: round(world.totalFieldEnergyGain || 0),
@@ -224,7 +230,11 @@ function addFoodOasis(world, x, y, radiusCells, amount) {
 async function runChallenge(kind, cohort, opts, seed) {
   return withSeed(seed, async () => {
     const predatorCount = Math.max(1, Math.round(cohort.length * opts.predatorRatio));
-    const world = new World({ maxParticles: cohort.length + predatorCount + 16, clusterBudding: false });
+    const world = new World({
+      maxParticles: cohort.length + predatorCount + 16,
+      clusterBudding: false,
+      combatMode: opts.combatMode,
+    });
     world.reset();
     if (kind === 'glass-gap') addGlassGap(world);
     if (kind === 'mud-refuge') addMudRefuge(world);
@@ -298,6 +308,11 @@ async function runChallenge(kind, cohort, opts, seed) {
       hitAliveFrac: round(hitAlive / Math.max(1, start)),
       predationDeaths: world.totalPredationDeaths || 0,
       predationEnergy: round(world.totalPredationEnergyGain || 0),
+      combatAttacks: world.totalCombatAttacks || 0,
+      combatKills: world.totalCombatKills || 0,
+      combatCounters: world.totalCombatCounters || 0,
+      combatEscapes: world.totalCombatEscapes || 0,
+      combatFailedCost: round(world.totalCombatFailedCost || 0),
       fieldEnergy: round(world.totalFieldEnergyGain || 0),
       meanSlotsAlive: round(slots.reduce((a, b) => a + b, 0) / Math.max(1, slots.length)),
       mudUsePerTick: round(mudUseSamples / Math.max(1, sampleTicks * start)),
@@ -316,6 +331,7 @@ async function main() {
   const sampleSize = Math.max(4, Number(readArgCompat('sampleSize', 4, 48)) | 0);
   const challengeTicks = Math.max(1, Number(readArgCompat('challengeTicks', 5, 240)) | 0);
   const predatorRatio = Math.max(0.05, Number(readArgCompat('predatorRatio', 9, 0.35)));
+  const combatMode = readArgCompat('combat', 10, 'nibble') === 'event' ? 'event' : 'nibble';
   const samples = parseSamples(readArgCompat('samples', 1, ''), ticks);
   const challengeKinds = readArgCompat('challenges', 6, 'predator,mud-refuge,glass-gap')
     .split(',')
@@ -327,11 +343,12 @@ async function main() {
     predatorRatio,
     freezeReproduction: !hasFlag('allowRepro'),
     challengeSampleEvery: 12,
+    combatMode,
   };
 
   const t0 = performance.now();
   Math.random = mulberry32(seed);
-  const world = new World({ maxParticles: cap });
+  const world = new World({ maxParticles: cap, combatMode });
   initPreset(world, presetName, Math.min(startCount, cap));
 
   const snapshots = [];
@@ -377,6 +394,7 @@ async function main() {
     sampleSize,
     challengeTicks,
     predatorRatio,
+    combatMode,
     freezeReproduction: opts.freezeReproduction,
     elapsedMs: round(elapsedMs, 1),
     snapshots,
@@ -389,15 +407,17 @@ async function main() {
 
   console.log(JSON.stringify(result, null, 2));
   console.log('\nDefense challenge summary');
-  console.log('tick | pop | meanSlots | p90/max | meatE | fieldE | challenge | survival | predDeaths | hitAlive | mudUse | safeSide');
+  console.log('tick | mode | pop | meanSlots | p90/max | meatE | combat | fieldE | challenge | survival | predDeaths | hitAlive | mudUse | safeSide');
   for (const s of snapshots) {
     for (const c of s.challenges) {
       console.log([
         s.tick,
+        s.combatMode,
         s.population,
         s.meanSlots.toFixed(2),
         `${s.p90Slots}/${s.maxSlots}`,
         Math.round(s.predationEnergy),
+        `${s.combatKills}/${s.combatCounters}/${s.combatEscapes}`,
         Math.round(s.fieldEnergy),
         c.kind,
         c.survival.toFixed(2),

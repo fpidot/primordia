@@ -26,6 +26,7 @@ const seed = Number(seedRaw);
 const reportEvery = Math.max(0, Number(readArg('reportEvery', 0)) | 0);
 const profileEvery = Math.max(0, Number(readArg('profileEvery', 0)) | 0);
 const profile = process.argv.includes('--profile');
+const combatMode = readArg('combat', positional[4] || 'nibble') === 'event' ? 'event' : 'nibble';
 
 if (!PRESETS[presetName]) {
   console.error(`Unknown preset "${presetName}". Options: ${Object.keys(PRESETS).join(', ')}`);
@@ -34,7 +35,7 @@ if (!PRESETS[presetName]) {
 
 Math.random = mulberry32(seed);
 
-const world = new World({ maxParticles: cap });
+const world = new World({ maxParticles: cap, combatMode });
 if (presetName === 'soup') PRESETS.soup(world, Math.min(800, cap));
 else PRESETS[presetName](world);
 if ((profile || profileEvery) && typeof world.setProfiling === 'function') world.setProfiling(true);
@@ -74,6 +75,7 @@ console.log(JSON.stringify({
   seed: seedRaw,
   ticks,
   cap,
+  combatMode,
   startN,
   endN: world.particles.length,
   elapsedMs: Number(elapsed.toFixed(1)),
@@ -93,6 +95,11 @@ console.log(JSON.stringify({
   predationEnergyGain: Number((world.totalPredationEnergyGain || 0).toFixed(3)),
   predationFatalDrains: world.totalPredationFatalDrains || 0,
   predationDeaths: world.totalPredationDeaths || 0,
+  combatAttacks: world.totalCombatAttacks || 0,
+  combatKills: world.totalCombatKills || 0,
+  combatCounters: world.totalCombatCounters || 0,
+  combatEscapes: world.totalCombatEscapes || 0,
+  combatFailedCost: Number((world.totalCombatFailedCost || 0).toFixed(3)),
   profile: profile && typeof world.profileSummary === 'function' ? world.profileSummary() : undefined,
   profileTrend: profileTrend.length ? profileTrend : undefined,
 }, null, 2));

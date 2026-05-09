@@ -32,7 +32,9 @@ The CPU probe reports timing plus construction diagnostics (`wallDigs`,
 `profileMetrics()`) so builder and organism-level reproduction regressions are
 easy to spot during performance work. `--profileEvery` emits rolling phase
 windows and line-of-sight counters (`losHashSkips`, `losWalks`, etc.) for
-degradation checks.
+degradation checks. Use `--combat nibble` or `--combat event` to compare the
+legacy contact-predation model against the event-style attack/counter/escape
+model used by the browser app.
 
 ## Browser timing probe
 

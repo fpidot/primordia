@@ -36,7 +36,7 @@ import {
 const PARTICLE_STRIDE_F32 = 16;
 const RESULT_STRIDE_F32   = 30;       // forces+stats(12) + outputs(18); h stays GPU-resident
 const PAIR_RESULT_STRIDE_F32 = 20;    // forces+stats(12) + quadrant stats(8)
-const EXTRAS_STRIDE_F32   = 40;       // chem + sound + bondMsg + cluster + wallCarry + terrain + proprioception
+const EXTRAS_STRIDE_F32   = 44;       // chem + sound + bondMsg + cluster + wallCarry + terrain + proprioception + damage
 const BRAIN_STRIDE_F32    = BRAIN_PACK_STRIDE;
 const STATE_STRIDE_F32    = N_HIDDEN_MAX + 8; // h state + GPU-only quadrant scratch
 const PARAMS_SIZE         = 48;
@@ -61,6 +61,7 @@ const READBACK_SLOTS      = 3;
 //   28..31: solid proximity n/s/e/w
 //   32..35: glass proximity n/s/e/w
 //   36..39: previous motor x/y, forward progress, slip
+//   40..43: recent damage, damage dx/dy, damage age
 const EXTRAS_BOND_MSG_R_OFFSET = 10;
 const EXTRAS_BOND_MSG_G_OFFSET = 11;
 const EXTRAS_BOND_MSG_B_OFFSET = 12;
@@ -457,6 +458,10 @@ fn brain_forward(@builtin(global_invocation_id) id: vec3u) {
   inp[57] = extras[eo + 37u];     // previous motor y
   inp[58] = extras[eo + 38u];     // previous motor progress
   inp[59] = extras[eo + 39u];     // previous motor slip
+  inp[60] = extras[eo + 40u];     // recent damage
+  inp[61] = extras[eo + 41u];     // damage source dx
+  inp[62] = extras[eo + 42u];     // damage source dy
+  inp[63] = extras[eo + 43u];     // damage age
 
   // Forward — compute new hidden state
   var h_new: array<f32, ${N_HIDDEN_MAX}>;

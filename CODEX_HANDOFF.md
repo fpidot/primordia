@@ -397,6 +397,34 @@ Predation and food pressure:
   deltas were also negative, while glass-gap was roughly stable. Treat this as
   evidence that predation pressure is real but robust defensive behavior has
   not yet emerged in short soup soaks.
+- Event combat pass:
+  the browser app now creates `new World({ combatMode: 'event' })`. The
+  constructor still supports `combatMode: 'nibble'` for regression and
+  comparison runs. Event combat replaces continuous mutual nibbling with
+  discrete attack outcomes:
+  kill and consume, counterkill, or escape with injuries. Failed attacks pay
+  `COMBAT_ATTACK_COST`, receive no food, and increase `totalCombatFailedCost`.
+  Successful kills consume the victim's remaining energy with conversion loss.
+  Counterkills consume the attacker after its spent attack cost.
+- New damage feedback:
+  event injuries write `recentDamage`, `damageDirX`, `damageDirY`, and
+  `lastDamageTick` on particles. Brain inputs 60-63 are now
+  `damage.recent`, `damage.dx`, `damage.dy`, and `damage.age`, and the GPU
+  extras stride is 44 with offsets 40-43 mirroring those signals. Recent
+  damage inside a named cluster can also trigger `cluster.alarm`.
+- Short event-vs-nibble comparison:
+  `node tools\defense-soak.js --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 180 --predatorRatio 0.35 --combat <mode> --json`
+  was run for `nibble` and `event`. At tick 1200, nibble mode produced 653
+  predation-attributed deaths and 67,937 meat energy. Event mode produced 206
+  predation-attributed deaths, 1,274 meat energy, 698 attacks, 136 kills, 70
+  counters, 447 escapes, and 179.84 failed-cost energy. Interpretation:
+  event mode gives much cleaner selection pressure and removes the old
+  nibble incentive, but the predator replay challenge becomes far harsher and
+  still does not prove evolved defense in a short soak.
+- Combat-mode performance probe:
+  `node tools\bench-cpu.js --preset soup --ticks 700 --cap 900 --seed 0xBEE5 --combat nibble`
+  measured 13.773 ms/tick. The same command with `--combat event` measured
+  14.309 ms/tick, about a 4% overhead in that run.
 
 Obstacle navigation:
 
@@ -601,6 +629,16 @@ Latest verification in the cluster-budding pass:
   - `node --check tools\defense-soak.js` passed.
   - `node tools\defense-soak.js --ticks 60 --samples "0,30,60" --cap 180 --start 100 --sampleSize 12 --challengeTicks 24 --challenges predator,mud-refuge --seed 0x51A11` passed.
   - `npm run soak:defense -- --ticks 10 --samples "0,10" --cap 80 --start 40 --sampleSize 8 --challengeTicks 8 --challenges predator --seed 0x51A11` passed through the positional fallback.
+- Event-combat pass verification:
+  - `npm test -- event-combat.test.js` passed.
+  - `npm test -- terrain-sensors.test.js` passed after updating expected sensor
+    count to 64.
+  - `npm test` passed all 17 test files in about 151 seconds.
+  - `git diff --check` passed with only the repo's usual CRLF warnings.
+  - `node tools\defense-soak.js --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 180 --predatorRatio 0.35 --combat nibble --json` passed.
+  - The same defense-soak command with `--combat event` passed.
+  - `node tools\bench-cpu.js --preset soup --ticks 700 --cap 900 --seed 0xBEE5 --combat nibble` passed.
+  - The same CPU bench with `--combat event` passed.
 
 Core:
 
@@ -613,7 +651,7 @@ Targeted:
 ```powershell
 node tests\run-all.js signal-transmission.test.js terrain-sensors.test.js
 node tests\run-all.js food-chemotaxis.test.js mud-terrain.test.js
-node tests\run-all.js predation-economy.test.js
+node tests\run-all.js predation-economy.test.js event-combat.test.js
 node tests\run-all.js baseline-soup.test.js baseline-maze.test.js
 ```
 

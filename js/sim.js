@@ -106,6 +106,16 @@ const DEATH_DEPOSIT = 1.4;     // decay packet released on death
 const EAT_MAX = 0.18;          // max food a particle can eat per tick
 const PREDATION_BASE_RATE = 0.20;
 const PREDATION_CONVERSION = 0.90;
+const COMBAT_ATTACK_GATE = 0.35;
+const COMBAT_ATTACK_COST = 0.32;
+const COMBAT_ATTACK_COOLDOWN = 5;
+const COMBAT_KILL_CONVERSION = 0.82;
+const COMBAT_COUNTER_CONVERSION = 0.65;
+const COMBAT_ESCAPE_INJURY = 0.22;
+const COMBAT_ESCAPE_ATTACKER_INJURY = 0.10;
+const COMBAT_ESCAPE_MARGIN = 0.15;
+const DAMAGE_SENSOR_DECAY = 0.86;
+const DAMAGE_SENSOR_WINDOW = 90;
 
 // Bonds — Phase 3d
 const MAX_BONDS = 4;
@@ -393,6 +403,17 @@ export class World {
     this.totalPredationEnergyGain = 0;
     this.totalPredationFatalDrains = 0;
     this.totalPredationDeaths = 0;
+    this.totalCombatContacts = 0;
+    this.totalCombatOneSidedContacts = 0;
+    this.totalCombatMutualContacts = 0;
+    this.totalCombatAttacks = 0;
+    this.totalCombatKills = 0;
+    this.totalCombatCounters = 0;
+    this.totalCombatEscapes = 0;
+    this.totalCombatInjuries = 0;
+    this.totalCombatFailedCost = 0;
+
+    this.combatMode = opts.combatMode || 'nibble';
 
     this.clades = new CladeTracker();
 
@@ -569,6 +590,16 @@ export class World {
       predationEnergyGain: +(this.totalPredationEnergyGain || 0).toFixed(3),
       predationFatalDrains: this.totalPredationFatalDrains || 0,
       predationDeaths: this.totalPredationDeaths || 0,
+      combatMode: this.combatMode || 'nibble',
+      combatContacts: this.totalCombatContacts || 0,
+      combatOneSidedContacts: this.totalCombatOneSidedContacts || 0,
+      combatMutualContacts: this.totalCombatMutualContacts || 0,
+      combatAttacks: this.totalCombatAttacks || 0,
+      combatKills: this.totalCombatKills || 0,
+      combatCounters: this.totalCombatCounters || 0,
+      combatEscapes: this.totalCombatEscapes || 0,
+      combatInjuries: this.totalCombatInjuries || 0,
+      combatFailedCost: +(this.totalCombatFailedCost || 0).toFixed(3),
       clusterBuds: this.totalClusterBuds || 0,
       clusterBudParticles: this.totalClusterBudParticles || 0,
       clusterBudReserve: this.maxParticles - this._cellBirthLimit(),
@@ -711,6 +742,11 @@ export class World {
       predationKills: 0,
       lastPredatorId: 0,
       lastPredationTick: -9999,
+      lastAttackTick: -9999,
+      recentDamage: 0,
+      damageDirX: 0,
+      damageDirY: 0,
+      lastDamageTick: -9999,
       soundCh: 0, soundAmp: 0,
       wantBond: 0, wantMate: 0,
       bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
@@ -823,6 +859,15 @@ export class World {
     this.totalPredationEnergyGain = 0;
     this.totalPredationFatalDrains = 0;
     this.totalPredationDeaths = 0;
+    this.totalCombatContacts = 0;
+    this.totalCombatOneSidedContacts = 0;
+    this.totalCombatMutualContacts = 0;
+    this.totalCombatAttacks = 0;
+    this.totalCombatKills = 0;
+    this.totalCombatCounters = 0;
+    this.totalCombatEscapes = 0;
+    this.totalCombatInjuries = 0;
+    this.totalCombatFailedCost = 0;
     this._wallCount = 0;
     // Bump version so the renderer's wall cache key changes — without this,
     // the previous preset's walls keep displaying until the user paints
@@ -860,6 +905,218 @@ export class World {
   }
 
   // ────────────────────────────────────────────────────────────── brushes
+
+  _predationPull(attacker, victim) {
+    const g = attacker.genome;
+    return victim.species === attacker.species ? g.cohesion : g.attraction[victim.species];
+  }
+
+  _predationMultiplier(attacker, victim) {
+    const pCl = attacker.cluster;
+    const qCl = victim.cluster;
+    const kinShared = pCl && pCl === qCl;
+    const kinMult = kinShared
+      ? Math.max(0, Math.min(1.5, 1 - (attacker.genome.kin_aversion || 0.5)))
+      : 1;
+    const pref = attacker.genome.prey_preference;
+    const speciesMult = pref
+      ? Math.max(0, 1 + pref[victim.species])
+      : 1;
+    return kinMult * speciesMult;
+  }
+
+  _canPredate(attacker, victim) {
+    if (!attacker || !victim || attacker.dead || victim.dead) return false;
+    if ((victim.energy || 0) <= 0.05) return false;
+    if (this._predationPull(attacker, victim) <= 0.45) return false;
+    return this._predationMultiplier(attacker, victim) > 0.001;
+  }
+
+  _eventAttackIntent(attacker, victim) {
+    if (!this._canPredate(attacker, victim)) return null;
+    const driveRaw = Math.max(0, attacker.predationGain || 0);
+    if (driveRaw <= COMBAT_ATTACK_GATE) return null;
+    if (this.tick - (attacker.lastAttackTick || -9999) < COMBAT_ATTACK_COOLDOWN) return null;
+    if ((attacker.energy || 0) <= COMBAT_ATTACK_COST + 0.05) return null;
+    const drive = (driveRaw - COMBAT_ATTACK_GATE) / (1 - COMBAT_ATTACK_GATE);
+    const huntCoord = attacker.cluster ? Math.max(0, attacker.incomingBondMsgR || 0) : 0;
+    const energyTerm = 0.65 + Math.min(1.35, (attacker.energy || 0) / 7);
+    return {
+      power: drive * this._predationMultiplier(attacker, victim) * energyTerm *
+        (1 + huntCoord * COORD_HUNT_BONUS),
+      cost: COMBAT_ATTACK_COST,
+    };
+  }
+
+  _guardPower(defender) {
+    const guardDrive = Math.max(0, -(defender.predationGain || 0));
+    if (guardDrive <= 0) return 0;
+    const energyTerm = 0.75 + Math.min(1.25, (defender.energy || 0) / 8);
+    const bondTerm = 1 + Math.min(0.4, (defender.bonds ? defender.bonds.length : 0) * 0.08);
+    const alarmTerm = defender.cluster && defender.cluster.alarm ? 1.2 : 1;
+    return guardDrive * energyTerm * bondTerm * alarmTerm;
+  }
+
+  _recordDamage(target, amount, source) {
+    if (!target || target.dead || amount <= 0) return;
+    const sx = source ? source.x - target.x : 0;
+    const sy = source ? source.y - target.y : 0;
+    const len = Math.hypot(sx, sy) || 1;
+    target.recentDamage = Math.min(4, (target.recentDamage || 0) * 0.35 + amount);
+    target.damageDirX = sx / len;
+    target.damageDirY = sy / len;
+    target.lastDamageTick = this.tick;
+  }
+
+  _applyCombatDamage(target, amount, source, idMap) {
+    if (!target || target.dead || amount <= 0) return 0;
+    const damage = Math.min(target.energy || 0, amount);
+    target.energy -= damage;
+    this._recordDamage(target, damage, source);
+    if (damage > 0) this.totalCombatInjuries++;
+    if (target.energy <= 0) this._killParticle(target, idMap);
+    return damage;
+  }
+
+  _killParticle(p, idMap = this._idLookup) {
+    if (!p || p.dead) return false;
+    const gx = clamp((p.x / CELL) | 0, 0, GW - 1);
+    const gy = clamp((p.y / CELL) | 0, 0, GH - 1);
+    const fIdx = gy * GW + gx;
+    p.shelterRelief = 0;
+    if ((p.wallCarry || 0) > 0 && this.walls[fIdx] === WALL_OPEN) {
+      this.walls[fIdx] = WALL_SOLID;
+      this._wallCount++;
+      this._wallsVersion++;
+      this.wallOwnerId[fIdx] = p.id;
+      this.wallOwnerClusterId[fIdx] = p.cluster ? (p.cluster.anchorId || p.cluster.root || 0) : 0;
+      this.wallOwnerCladeId[fIdx] = p.cladeId || 0;
+      this.wallOwnerTick[fIdx] = this.tick;
+      p.wallCarry--;
+      this.totalWallDeposits++;
+      p.wallDeposits = (p.wallDeposits || 0) + 1;
+      this._wallSoundEvents.push({ kind: 'plop', x: p.x, y: p.y, id: p.id });
+    }
+    p.energy = 0;
+    p.dead = true;
+    if (idMap) idMap[p.id] = null;
+    this.field[1][fIdx] = Math.min(DECAY_CAP, this.field[1][fIdx] + DEATH_DEPOSIT);
+    this._decayActive = true;
+    this.totalDied++;
+    if (p.lastPredatorId && this.tick - (p.lastPredationTick || -9999) <= 12) {
+      this.totalPredationDeaths++;
+      const predator = idMap ? idMap[p.lastPredatorId] : null;
+      if (predator && !predator.dead) {
+        predator.predationKills = (predator.predationKills || 0) + 1;
+      }
+    }
+    this._deathSoundEvents.push({ x: p.x, y: p.y, id: p.id, energy: p.energy, tick: this.tick });
+    this.clades.onParticleDie(p, this.tick);
+    if (p.bonds.length > 0) {
+      const drainPerPartner = BOND_DEATH_DRAIN / p.bonds.length;
+      for (const partnerId of p.bonds) {
+        const partner = idMap ? idMap[partnerId] : null;
+        if (partner && !partner.dead) {
+          partner.energy -= drainPerPartner;
+          if (partner.energy < 0) partner.energy = 0;
+        }
+      }
+    }
+    return true;
+  }
+
+  _combatConsume(killer, victim, conversion, idMap) {
+    const drained = Math.max(0, victim.energy || 0);
+    const gain = drained * conversion;
+    victim.lastPredatorId = killer.id;
+    victim.lastPredationTick = this.tick;
+    this._recordDamage(victim, drained, killer);
+    killer.energy += gain;
+    this.totalPredationEvents++;
+    this.totalPredationDrain += drained;
+    this.totalPredationEnergyGain += gain;
+    this.totalPredationFatalDrains++;
+    killer.predationEvents = (killer.predationEvents || 0) + 1;
+    killer.predationDrain = (killer.predationDrain || 0) + drained;
+    killer.predationEnergyGain = (killer.predationEnergyGain || 0) + gain;
+    killer.predationFatalDrains = (killer.predationFatalDrains || 0) + 1;
+    this._killParticle(victim, idMap);
+    return gain;
+  }
+
+  _resolveSingleEventAttack(attacker, defender, intent, idMap) {
+    if (!intent || attacker.dead || defender.dead) return;
+    attacker.energy -= intent.cost;
+    attacker.lastAttackTick = this.tick;
+    this.totalCombatAttacks++;
+    const guard = this._guardPower(defender);
+    if (guard >= intent.power * 1.15) {
+      this.totalCombatCounters++;
+      this.totalCombatFailedCost += intent.cost;
+      this._combatConsume(defender, attacker, COMBAT_COUNTER_CONVERSION, idMap);
+      return;
+    }
+    if (intent.power >= guard * 1.1 + COMBAT_ESCAPE_MARGIN) {
+      this.totalCombatKills++;
+      this._combatConsume(attacker, defender, COMBAT_KILL_CONVERSION, idMap);
+      return;
+    }
+    this.totalCombatEscapes++;
+    this.totalCombatFailedCost += intent.cost;
+    const defenderDamage = COMBAT_ESCAPE_INJURY * (0.7 + Math.min(1.5, intent.power));
+    const attackerDamage = COMBAT_ESCAPE_ATTACKER_INJURY * (0.7 + Math.min(1.5, guard));
+    this._applyCombatDamage(defender, defenderDamage, attacker, idMap);
+    this._applyCombatDamage(attacker, attackerDamage, defender, idMap);
+  }
+
+  _resolveMutualEventAttack(a, b, aIntent, bIntent, idMap) {
+    a.energy -= aIntent.cost;
+    b.energy -= bIntent.cost;
+    a.lastAttackTick = this.tick;
+    b.lastAttackTick = this.tick;
+    this.totalCombatAttacks += 2;
+    if (aIntent.power > bIntent.power + COMBAT_ESCAPE_MARGIN) {
+      this.totalCombatKills++;
+      this.totalCombatFailedCost += bIntent.cost;
+      this._combatConsume(a, b, COMBAT_KILL_CONVERSION, idMap);
+      return;
+    }
+    if (bIntent.power > aIntent.power + COMBAT_ESCAPE_MARGIN) {
+      this.totalCombatKills++;
+      this.totalCombatFailedCost += aIntent.cost;
+      this._combatConsume(b, a, COMBAT_KILL_CONVERSION, idMap);
+      return;
+    }
+    this.totalCombatEscapes++;
+    this.totalCombatFailedCost += aIntent.cost + bIntent.cost;
+    this._applyCombatDamage(a, COMBAT_ESCAPE_ATTACKER_INJURY * (0.8 + bIntent.power), b, idMap);
+    this._applyCombatDamage(b, COMBAT_ESCAPE_ATTACKER_INJURY * (0.8 + aIntent.power), a, idMap);
+  }
+
+  _resolveEventCombat(a, b, idMap) {
+    if (!a || !b || a.dead || b.dead) return;
+    const aIntent = this._eventAttackIntent(a, b);
+    const bIntent = this._eventAttackIntent(b, a);
+    if (!aIntent && !bIntent) return;
+    this.totalCombatContacts++;
+    if (aIntent && bIntent) {
+      this.totalCombatMutualContacts++;
+      this._resolveMutualEventAttack(a, b, aIntent, bIntent, idMap);
+    } else {
+      this.totalCombatOneSidedContacts++;
+      if (aIntent) this._resolveSingleEventAttack(a, b, aIntent, idMap);
+      else this._resolveSingleEventAttack(b, a, bIntent, idMap);
+    }
+  }
+
+  _recordNibbleContact(a, b) {
+    const aIntent = this._canPredate(a, b);
+    const bIntent = this._canPredate(b, a);
+    if (!aIntent && !bIntent) return;
+    this.totalCombatContacts++;
+    if (aIntent && bIntent) this.totalCombatMutualContacts++;
+    else this.totalCombatOneSidedContacts++;
+  }
 
   brushApply(kind, x, y, radius, strength, spawnSpecies = 0) {
     const r = Math.max(1, radius);
@@ -1023,6 +1280,10 @@ export class World {
             if (m.dead) continue;
             const top = Math.max(m.bondMsgR, m.bondMsgG, m.bondMsgB);
             if (top > 0.85) { alarmTrigger = 1; break; }
+            if ((m.recentDamage || 0) > 0 && this.tick - (m.lastDamageTick || -9999) < 20) {
+              alarmTrigger = 1;
+              break;
+            }
           }
         }
         c.alarm = alarmTrigger ? 1 : (c.alarm || 0) * 0.5;
@@ -1146,6 +1407,8 @@ export class World {
       let qcnt0 = 0, qcnt1 = 0, qcnt2 = 0, qcnt3 = 0;
       let qsig0 = 0, qsig1 = 0, qsig2 = 0, qsig3 = 0;
       let qsigN0 = 0, qsigN1 = 0, qsigN2 = 0, qsigN3 = 0;
+      if (p.dead) continue;
+
       if (useGpuPairs) {
         const ro = i * this._gpuResultStride;
         const r = this._gpuResults;
@@ -1218,6 +1481,10 @@ export class World {
                       ax += dx * inv * f;
                       ay += dy * inv * f;
                     }
+                    if (this.combatMode === 'event') {
+                      if (i < j) this._resolveEventCombat(p, q, idMap);
+                    } else {
+                      if (i < j) this._recordNibbleContact(p, q);
                     // Predation: positive attraction + contact = energy drain.
                     // The brain's OUT_PREDATION further amplifies if active,
                     // so evolved hunters get an edge.
@@ -1273,13 +1540,14 @@ export class World {
                         }
                       }
                     }
+                    }
                     // Bond formation: only checked when i.id < j.id to avoid
                     // double work. Both must want bond; both must have a free
                     // slot; not already bonded; close enough. Cluster affinity
                     // shifts each side's effective gate when both are already
                     // in the same named cluster — positive affinity makes
                     // colony loyalty (extra bonds within own group) easier.
-                    if (i < j &&
+                    if (!p.dead && !q.dead && i < j &&
                         d < BOND_FORM_DIST &&
                         p.bonds.length < MAX_BONDS && q.bonds.length < MAX_BONDS &&
                         !p.bonds.includes(q.id) && !q.bonds.includes(p.id)) {
@@ -1495,6 +1763,14 @@ export class World {
         inp[57] = p.lastMotorY || 0;
         inp[58] = p.lastMotorProgress || 0;
         inp[59] = p.lastMotorSlip || 0;
+        const damageAge = this.tick - (p.lastDamageTick || -9999);
+        const damageFresh = damageAge >= 0 && damageAge < DAMAGE_SENSOR_WINDOW
+          ? (p.recentDamage || 0) * Math.pow(DAMAGE_SENSOR_DECAY, damageAge)
+          : 0;
+        inp[60] = Math.tanh(damageFresh);
+        inp[61] = damageFresh > 0.001 ? (p.damageDirX || 0) : 0;
+        inp[62] = damageFresh > 0.001 ? (p.damageDirY || 0) : 0;
+        inp[63] = damageFresh > 0.001 ? Math.tanh(damageAge / 30) : 0;
         g.brain.forward(inp, out);
       }
 
@@ -1911,42 +2187,7 @@ export class World {
 
       // Death
       if (p.energy <= 0) {
-        p.shelterRelief = 0;
-        if ((p.wallCarry || 0) > 0 && walls[fIdx] === WALL_OPEN) {
-          walls[fIdx] = WALL_SOLID;
-          this._wallCount++;
-          this._wallsVersion++;
-          this.setWallMeta(fIdx, p);
-          p.wallCarry--;
-          this.totalWallDeposits++;
-          p.wallDeposits = (p.wallDeposits || 0) + 1;
-          this._wallSoundEvents.push({ kind: 'plop', x: p.x, y: p.y, id: p.id });
-        }
-        p.dead = true;
-        f1[fIdx] = Math.min(DECAY_CAP, f1[fIdx] + DEATH_DEPOSIT);
-        this._decayActive = true;
-        this.totalDied++;
-        if (p.lastPredatorId && this.tick - (p.lastPredationTick || -9999) <= 12) {
-          this.totalPredationDeaths++;
-          const predator = idMap[p.lastPredatorId];
-          if (predator && !predator.dead) {
-            predator.predationKills = (predator.predationKills || 0) + 1;
-          }
-        }
-        this._deathSoundEvents.push({ x: p.x, y: p.y, id: p.id, energy: p.energy, tick: this.tick });
-        this.clades.onParticleDie(p, this.tick);
-        // Bond cost — losing a member drains every surviving partner. Bonds
-        // also break naturally next tick when partners notice p.dead.
-        if (p.bonds.length > 0) {
-          const drainPerPartner = BOND_DEATH_DRAIN / p.bonds.length;
-          for (const partnerId of p.bonds) {
-            const partner = idMap[partnerId];
-            if (partner && !partner.dead) {
-              partner.energy -= drainPerPartner;
-              if (partner.energy < 0) partner.energy = 0;
-            }
-          }
-        }
+        this._killParticle(p, idMap);
         continue;
       }
 
@@ -1997,6 +2238,11 @@ export class World {
             predationKills: 0,
             lastPredatorId: 0,
             lastPredationTick: -9999,
+            lastAttackTick: -9999,
+            recentDamage: 0,
+            damageDirX: 0,
+            damageDirY: 0,
+            lastDamageTick: -9999,
             soundCh: 0, soundAmp: 0,
             wantBond: 0, wantMate: 0,
             bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
@@ -2049,6 +2295,11 @@ export class World {
             predationKills: 0,
             lastPredatorId: 0,
             lastPredationTick: -9999,
+            lastAttackTick: -9999,
+            recentDamage: 0,
+            damageDirX: 0,
+            damageDirY: 0,
+            lastDamageTick: -9999,
             soundCh: 0, soundAmp: 0,
             wantBond: 0, wantMate: 0,
             bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
@@ -2296,6 +2547,14 @@ export class World {
       extras[o + 37] = p.lastMotorY || 0;
       extras[o + 38] = p.lastMotorProgress || 0;
       extras[o + 39] = p.lastMotorSlip || 0;
+      const damageAge = this.tick - (p.lastDamageTick || -9999);
+      const damageFresh = damageAge >= 0 && damageAge < DAMAGE_SENSOR_WINDOW
+        ? (p.recentDamage || 0) * Math.pow(DAMAGE_SENSOR_DECAY, damageAge)
+        : 0;
+      extras[o + 40] = Math.tanh(damageFresh);
+      extras[o + 41] = damageFresh > 0.001 ? (p.damageDirX || 0) : 0;
+      extras[o + 42] = damageFresh > 0.001 ? (p.damageDirY || 0) : 0;
+      extras[o + 43] = damageFresh > 0.001 ? Math.tanh(damageAge / 30) : 0;
     }
   }
 
@@ -2740,6 +2999,13 @@ export class World {
       predationEnergyGain: this.totalPredationEnergyGain || 0,
       predationFatalDrains: this.totalPredationFatalDrains || 0,
       predationDeaths: this.totalPredationDeaths || 0,
+      combatMode: this.combatMode || 'nibble',
+      combatContacts: this.totalCombatContacts || 0,
+      combatAttacks: this.totalCombatAttacks || 0,
+      combatKills: this.totalCombatKills || 0,
+      combatCounters: this.totalCombatCounters || 0,
+      combatEscapes: this.totalCombatEscapes || 0,
+      combatFailedCost: this.totalCombatFailedCost || 0,
       meanShelter: alive ? shelterSum / alive : 0,
       shelteredFrac: alive ? shelteredN / alive : 0,
     };
@@ -2823,6 +3089,16 @@ export class World {
       totalPredationEnergyGain: this.totalPredationEnergyGain || 0,
       totalPredationFatalDrains: this.totalPredationFatalDrains || 0,
       totalPredationDeaths: this.totalPredationDeaths || 0,
+      combatMode: this.combatMode || 'nibble',
+      totalCombatContacts: this.totalCombatContacts || 0,
+      totalCombatOneSidedContacts: this.totalCombatOneSidedContacts || 0,
+      totalCombatMutualContacts: this.totalCombatMutualContacts || 0,
+      totalCombatAttacks: this.totalCombatAttacks || 0,
+      totalCombatKills: this.totalCombatKills || 0,
+      totalCombatCounters: this.totalCombatCounters || 0,
+      totalCombatEscapes: this.totalCombatEscapes || 0,
+      totalCombatInjuries: this.totalCombatInjuries || 0,
+      totalCombatFailedCost: this.totalCombatFailedCost || 0,
       wallMeta,
       clades: this.clades.toJSON(),
       particles: this.particles.map(p => ({
@@ -2840,6 +3116,11 @@ export class World {
         predationEnergyGain: p.predationEnergyGain || 0,
         predationFatalDrains: p.predationFatalDrains || 0,
         predationKills: p.predationKills || 0,
+        lastAttackTick: p.lastAttackTick || -9999,
+        recentDamage: p.recentDamage || 0,
+        damageDirX: p.damageDirX || 0,
+        damageDirY: p.damageDirY || 0,
+        lastDamageTick: p.lastDamageTick || -9999,
         genome: genomeToJSON(p.genome),
       })),
     };
@@ -2918,6 +3199,16 @@ export class World {
     this.totalPredationEnergyGain = data.totalPredationEnergyGain || 0;
     this.totalPredationFatalDrains = data.totalPredationFatalDrains || 0;
     this.totalPredationDeaths = data.totalPredationDeaths || 0;
+    this.combatMode = data.combatMode || this.combatMode || 'nibble';
+    this.totalCombatContacts = data.totalCombatContacts || 0;
+    this.totalCombatOneSidedContacts = data.totalCombatOneSidedContacts || 0;
+    this.totalCombatMutualContacts = data.totalCombatMutualContacts || 0;
+    this.totalCombatAttacks = data.totalCombatAttacks || 0;
+    this.totalCombatKills = data.totalCombatKills || 0;
+    this.totalCombatCounters = data.totalCombatCounters || 0;
+    this.totalCombatEscapes = data.totalCombatEscapes || 0;
+    this.totalCombatInjuries = data.totalCombatInjuries || 0;
+    this.totalCombatFailedCost = data.totalCombatFailedCost || 0;
     if (Array.isArray(data.wallMeta)) {
       for (const row of data.wallMeta) {
         const idx = row[0] | 0;
@@ -2952,6 +3243,11 @@ export class World {
         predationKills: op.predationKills || 0,
         lastPredatorId: 0,
         lastPredationTick: -9999,
+        lastAttackTick: op.lastAttackTick || -9999,
+        recentDamage: op.recentDamage || 0,
+        damageDirX: op.damageDirX || 0,
+        damageDirY: op.damageDirY || 0,
+        lastDamageTick: op.lastDamageTick || -9999,
         soundCh: 0, soundAmp: 0,
         wantBond: 0, wantMate: 0,
         bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,

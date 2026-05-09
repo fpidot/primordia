@@ -76,3 +76,39 @@ Interpretation:
 - Are the replay arenas too harsh, too artificial, or missing the signals that
   descendants evolved to use in the original soup?
 
+## 2026-05-09 - event combat comparison
+
+Event combat was added after the three-seed probe above to replace continuous
+mutual nibbling with discrete attack outcomes: kill and consume, counterkill,
+or escape with injuries. Failed attacks now pay an energy cost and give no food.
+
+Command shape:
+
+```powershell
+node tools\defense-soak.js --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 180 --predatorRatio 0.35 --combat <nibble|event> --json
+```
+
+### Normal-life comparison at tick 1200
+
+| mode | population | predation deaths | meat energy | field energy | attacks | kills | counters | escapes | failed cost |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `nibble` | 882 | 653 | 67,937 | 51,192 | 0 | 0 | 0 | 0 | 0 |
+| `event` | 882 | 206 | 1,274 | 50,282 | 698 | 136 | 70 | 447 | 179.84 |
+
+### Challenge note
+
+Under event combat, the standardized predator challenge became much harsher:
+at tick 1200, open-predator survival was 0.094 in event mode versus 0.969 in
+nibble mode for the same seed and cohort size. Glass-gap survival stayed high
+in event mode (0.938 at tick 1200), which suggests the challenge harness is
+now more decisively measuring lethal predator exposure and obstacle separation.
+
+Interpretation:
+
+- Event combat gives a cleaner ecological signal: failed attacks are costly,
+  kills are meaningful, and counters/escapes are visible.
+- The short comparison does not yet show evolved defense. It mostly proves the
+  pressure and measurement are sharper.
+- Next defense soaks should run longer, compare several seeds, and consider
+  dialing challenge predator strength separately from normal-world combat so
+  replay arenas are not just instant execution chambers for naive cohorts.

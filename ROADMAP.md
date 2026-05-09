@@ -147,6 +147,17 @@ making the browser unusable.
    mixed in mud-refuge challenges, and roughly stable in glass-gap challenges.
    That points to a real gap between "predation pressure exists" and "replayable
    predator-defense behavior has evolved."
+   Current event-combat update: the app now starts in an experimental
+   kill/counter/escape combat mode while the old nibble mode remains available
+   to `World({ combatMode: 'nibble' })`, CPU bench, and defense-soak comparisons.
+   Failed attacks now cost energy and give no food; successful attacks are
+   full consume events; counterattacks can kill the attacker; close escapes
+   injure both sides and write damage-memory sensors. A short `0x51A11`
+   comparison at cap 900/start 500/tick 1200 showed event combat replacing
+   tens of thousands of nibble transfers with 698 attacks, 136 kills, 70
+   counters, 447 escapes, and 179.84 failed-cost energy in normal life. Treat
+   this as a better selection-pressure scaffold, not yet evidence that robust
+   defense has emerged.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and
@@ -592,6 +603,27 @@ exceeded field energy in all three seeds and high-slot variants still appeared
 (`maxSlots` 7-8), but final descendants underperformed founders in all open
 predator challenge replays. Current interpretation: soup evolution is producing
 predation-rich ecology, not yet robust, portable defensive behavior.
+
+Event-combat follow-up: the old contact-predation model is now kept as
+`combatMode: 'nibble'`, and the browser app starts in `combatMode: 'event'`.
+In event mode, positive predation drive over a gate attempts an attack and pays
+a fixed cost. Outcomes are discrete: kill and consume prey, get counterkilled
+by a guarding prey, or escape with small injuries to both. Failed attacks have
+no food gain and are explicitly net negative. Damage writes four new brain
+sensors (`damage.recent`, `damage.dx`, `damage.dy`, `damage.age`) and can trigger
+cluster alarm propagation, giving organisms a raw signal for "that hurt, from
+that direction" without hard-coding what response is good.
+
+Short comparison (`soup`, seed `0x51A11`, cap 900, start 500, 1200 ticks,
+samples 0/600/1200, sample size 32, challenge ticks 180): nibble mode at tick
+1200 produced 653 predation-attributed deaths and 67,937 meat energy; event
+mode produced 206 predation-attributed deaths and 1,274 meat energy plus 698
+attacks, 136 kills, 70 counters, 447 escapes, and 179.84 failed-cost energy.
+CPU bench at 700 ticks/cap 900 was 13.773 ms/tick nibble versus 14.309
+ms/tick event, roughly a 4% cost in that probe. The new standardized predator
+challenge is much harsher under event combat, so future defense soaks should
+either run longer or tune challenge strength before interpreting low survival
+as ecological failure.
 
 Brain-slot note: the structural cap remains 10 and add-slot mutation still has
 more raw probability than remove-slot mutation. Current observed lower averages

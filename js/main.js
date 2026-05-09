@@ -11,7 +11,7 @@ import { gpu } from './gpu.js';
 import { GPUPairForce } from './gpu_pairforce.js';
 import { audioHum } from './audio.js';
 
-const world = new World();
+const world = new World({ combatMode: 'event' });
 const bgCanvas = document.getElementById('canvas-bg');
 const fgCanvas = document.getElementById('canvas-fg');
 const camera = new Camera();

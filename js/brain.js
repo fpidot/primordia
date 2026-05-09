@@ -85,6 +85,10 @@ export const SENSOR_NAMES = [
   /* 57 */ 'motor.prev.y',              // previous tick's intended thrust y
   /* 58 */ 'motor.progress',            // previous thrust's actual forward progress
   /* 59 */ 'motor.slip',                // high when intended thrust failed to move body forward
+  /* 60 */ 'damage.recent',              // recent energy loss from attack/counter/injury
+  /* 61 */ 'damage.dx',                  // direction toward the most recent damage source
+  /* 62 */ 'damage.dy',
+  /* 63 */ 'damage.age',                 // time since damage, saturating over short windows
 ];
 export const N_INPUT = SENSOR_NAMES.length;
 
