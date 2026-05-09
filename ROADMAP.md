@@ -379,8 +379,8 @@ Current implementation:
 - Human-name suffix pool is now much larger, with common names and nicknames;
   live clusters strongly avoid duplicate given names and still filter out names
   that collide with species color names.
-- Cluster membranes are now a little more opaque so named organisms remain
-  visible in dense runs.
+- Cluster membrane interior shading is now a little more opaque while edge
+  strokes stay restrained, so named organisms remain visible in dense runs.
 - Particle bodies should have slight deterministic per-individual color jitter
   so same-species groups look organic without fragmenting species identity.
 - Optional next visual experiment: one-hop bonded-neighbor color averaging for

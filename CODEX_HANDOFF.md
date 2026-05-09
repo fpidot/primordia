@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Panel action menus and stronger membranes`
+  current `main` HEAD after this pass: `Tune membrane fill opacity`
 
 Recent useful commits:
 
-- current `main` HEAD - Panel action menus and stronger membranes
+- current `main` HEAD - Tune membrane fill opacity
+- `2834862` - Panel action menus and stronger membranes
 - `eb47c55` - Attach cluster cell births to organisms
 - `3f21607` - Bound offspring energy provisioning
 - `9e76516` - Tighten defense evidence harness

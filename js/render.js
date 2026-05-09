@@ -553,8 +553,8 @@ export class Renderer {
       const ring = pts.filter(Boolean);
       if (ring.length < 4) {
         const rr = Math.max(8, (c.radius || 8) + 4 + chaseBoost * 2.5);
-        ctx.fillStyle = `rgba(${rgb}, ${isChased ? 0.13 + chaseBoost * 0.035 : 0.11})`;
-        ctx.strokeStyle = `rgba(${rgb}, ${isChased ? 0.58 + chaseBoost * 0.18 : 0.46})`;
+        ctx.fillStyle = `rgba(${rgb}, ${isChased ? 0.11 + chaseBoost * 0.025 : 0.10})`;
+        ctx.strokeStyle = `rgba(${rgb}, ${isChased ? 0.48 + chaseBoost * 0.18 : 0.36})`;
         ctx.lineWidth = Math.max(0.6, (isChased ? 1.45 : 1.1) / z);
         ctx.beginPath();
         ctx.arc(c.cx, c.cy, rr, 0, Math.PI * 2);
@@ -570,8 +570,8 @@ export class Renderer {
         p.x += dx / d * pad;
         p.y += dy / d * pad;
       }
-      ctx.fillStyle = `rgba(${rgb}, ${isChased ? 0.12 + chaseBoost * 0.03 : 0.105})`;
-      const strokeA = isChased ? 0.64 + chaseBoost * 0.18 : (z > 1.1 ? 0.54 : 0.42);
+      ctx.fillStyle = `rgba(${rgb}, ${isChased ? 0.105 + chaseBoost * 0.025 : 0.095})`;
+      const strokeA = isChased ? 0.55 + chaseBoost * 0.18 : (z > 1.1 ? 0.45 : 0.32);
       ctx.strokeStyle = `rgba(${rgb}, ${strokeA})`;
       ctx.lineWidth = Math.max(0.7, (isChased ? 1.9 : 1.4) / z);
       ctx.beginPath();
