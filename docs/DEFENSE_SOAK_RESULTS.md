@@ -325,8 +325,12 @@ longer spawn equally rich descendants. Cell births and cluster buds now use
 bounded starter provisioning: a baseline viable endowment plus a modest
 surplus-based boost, capped for newborns. Energetic parents are still favored
 because they can provision slightly better and reproduce again sooner, but
-offspring must earn further reserves in the world.
+offspring must earn further reserves in the world. Ordinary births from named
+clusters are also now treated as cell growth/turnover inside the existing
+organism: they retain the cluster body's organism root/generation, must attach
+to available body bond slots, and are reported as `clusterCellBirths`.
 
 Implication for this file: the six-seed table above remains the best
-pre-provisioning evidence pass. Future defense soaks should establish fresh
-post-provisioning baselines before making direct numeric comparisons.
+pre-provisioning/pre-turnover evidence pass. Future defense soaks should
+establish fresh post-provisioning/post-turnover baselines before making direct
+numeric comparisons.

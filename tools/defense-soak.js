@@ -154,6 +154,7 @@ function summarizeWorld(world) {
     predationEnergy: round(world.totalPredationEnergyGain || 0),
     fieldEnergy: round(world.totalFieldEnergyGain || 0),
     clusterBuds: world.totalClusterBuds || 0,
+    clusterCellBirths: world.totalClusterCellBirths || 0,
     clusters: world._clusters ? world._clusters.length : 0,
     meanSlots: round(slots.reduce((a, b) => a + b, 0) / Math.max(1, slots.length)),
     p90Slots: quantile(slots, 0.9),

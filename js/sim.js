@@ -426,6 +426,7 @@ export class World {
     this.totalWallDeposits = 0;
     this.totalClusterBuds = 0;
     this.totalClusterBudParticles = 0;
+    this.totalClusterCellBirths = 0;
     this.totalFieldFoodEaten = 0;
     this.totalFieldEnergyGain = 0;
     this.totalPredationEvents = 0;
@@ -632,6 +633,7 @@ export class World {
       combatFailedCost: +(this.totalCombatFailedCost || 0).toFixed(3),
       clusterBuds: this.totalClusterBuds || 0,
       clusterBudParticles: this.totalClusterBudParticles || 0,
+      clusterCellBirths: this.totalClusterCellBirths || 0,
       clusterBudReserve: this.maxParticles - this._cellBirthLimit(),
       activeSound,
       gpuEnabled: !!this._gpuEnabled,
@@ -882,6 +884,7 @@ export class World {
     this.totalWallDeposits = 0;
     this.totalClusterBuds = 0;
     this.totalClusterBudParticles = 0;
+    this.totalClusterCellBirths = 0;
     this.totalFieldFoodEaten = 0;
     this.totalFieldEnergyGain = 0;
     this.totalPredationEvents = 0;
@@ -2238,6 +2241,8 @@ export class World {
           const boost = 1 + Math.min(2, mut[fIdx] * 0.8);
           let childGenome = crossoverGenome(g, partner.genome);
           childGenome = mutate(childGenome, Math.random, boost);
+          const identity = this._cellBirthIdentity(p, partner);
+          if (identity.clustered && !this._canAttachCellBirth(identity)) continue;
           const combinedEnergy = p.energy + partner.energy;
           const meanParentEnergy = combinedEnergy * 0.5;
           const meanRepro = ((g.repro_thresh || 0) + (partner.genome?.repro_thresh || 0)) * 0.5;
@@ -2265,8 +2270,8 @@ export class World {
             age: 0,
             lineage: p.lineage,
             cladeId: parentClade,
-            organismRootId: p.organismRootId || p.id,
-            organismGeneration: p.organismGeneration || 1,
+            organismRootId: identity.rootId,
+            organismGeneration: identity.generation,
             signalR: 0, signalG: 0, signalB: 0,
             predationGain: 0,
             predationEvents: 0,
@@ -2295,6 +2300,7 @@ export class World {
             bonds: [],
             dead: false,
           };
+          this._attachCellBirthToOrganism(child, identity);
           this.births.push(child);
           this.totalBorn++;
           this._brainsDirty = true;
@@ -2305,6 +2311,8 @@ export class World {
       // Asexual fallback
       if (!didSex && !reproVeto && p.energy > g.repro_thresh && Math.random() < REPRO_PROB) {
         if (this.particles.length + this.births.length < cellBirthLimit) {
+          const identity = this._cellBirthIdentity(p);
+          if (identity.clustered && !this._canAttachCellBirth(identity)) continue;
           const boost = 1 + Math.min(2, mut[fIdx] * 0.8);
           const childGenome = mutate(g, Math.random, boost);
           const childE = offspringEndowmentForEnergy(p.energy, g.repro_thresh, OFFSPRING_MAX_ENERGY);
@@ -2324,8 +2332,8 @@ export class World {
             age: 0,
             lineage: p.lineage,
             cladeId: p.cladeId,
-            organismRootId: p.organismRootId || p.id,
-            organismGeneration: p.organismGeneration || 1,
+            organismRootId: identity.rootId,
+            organismGeneration: identity.generation,
             signalR: 0, signalG: 0, signalB: 0,
             predationGain: 0,
             predationEvents: 0,
@@ -2354,6 +2362,7 @@ export class World {
             bonds: [],
             dead: false,
           };
+          this._attachCellBirthToOrganism(child, identity);
           this.births.push(child);
           this.totalBorn++;
           this._brainsDirty = true;
@@ -2661,6 +2670,77 @@ export class World {
     if (a.bonds.length >= MAX_BONDS || b.bonds.length >= MAX_BONDS) return;
     if (!a.bonds.includes(b.id)) a.bonds.push(b.id);
     if (!b.bonds.includes(a.id)) b.bonds.push(a.id);
+  }
+
+  _validBirthCluster(p) {
+    const c = p && p.cluster;
+    return c && Array.isArray(c.members) && c.members.includes(p) ? c : null;
+  }
+
+  _cellBirthIdentity(primary, secondary = null) {
+    const cluster = this._validBirthCluster(primary) || this._validBirthCluster(secondary);
+    if (cluster) {
+      return {
+        clustered: true,
+        cluster,
+        primary,
+        secondary,
+        rootId: cluster.organismRootId || primary?.organismRootId || primary?.id || secondary?.organismRootId || secondary?.id || 0,
+        generation: Math.max(1, cluster.organismGeneration || primary?.organismGeneration || secondary?.organismGeneration || 1),
+      };
+    }
+    return {
+      clustered: false,
+      cluster: null,
+      primary,
+      secondary,
+      rootId: primary?.organismRootId || primary?.id || secondary?.organismRootId || secondary?.id || 0,
+      generation: Math.max(1, primary?.organismGeneration || secondary?.organismGeneration || 1),
+    };
+  }
+
+  _cellBirthAttachCandidates(identity) {
+    if (!identity || !identity.clustered || !identity.cluster) return [];
+    const out = [];
+    const cluster = identity.cluster;
+    const add = (p) => {
+      if (!p || p.dead || !p.bonds || p.bonds.length >= MAX_BONDS) return;
+      if (!cluster.members || !cluster.members.includes(p)) return;
+      if (out.includes(p)) return;
+      out.push(p);
+    };
+    add(identity.primary);
+    if (identity.secondary && this._validBirthCluster(identity.secondary) === cluster) add(identity.secondary);
+    const x = identity.primary?.x ?? cluster.cx ?? 0;
+    const y = identity.primary?.y ?? cluster.cy ?? 0;
+    const near = [];
+    for (const m of cluster.members || []) {
+      if (!m || m.dead || m === identity.primary || m === identity.secondary) continue;
+      if (!m.bonds || m.bonds.length >= MAX_BONDS) continue;
+      const dx = m.x - x;
+      const dy = m.y - y;
+      near.push({ p: m, d2: dx * dx + dy * dy });
+    }
+    near.sort((a, b) => a.d2 - b.d2);
+    for (let i = 0; i < near.length && out.length < 4; i++) add(near[i].p);
+    return out;
+  }
+
+  _canAttachCellBirth(identity) {
+    return !identity?.clustered || this._cellBirthAttachCandidates(identity).length > 0;
+  }
+
+  _attachCellBirthToOrganism(child, identity) {
+    if (!identity || !identity.clustered || !child) return false;
+    const candidates = this._cellBirthAttachCandidates(identity);
+    const before = child.bonds.length;
+    for (const anchor of candidates) {
+      if (child.bonds.length >= 2) break;
+      this._linkBudChildren(child, anchor);
+    }
+    const attached = child.bonds.length > before;
+    if (attached) this.totalClusterCellBirths = (this.totalClusterCellBirths || 0) + 1;
+    return attached;
   }
 
   _tryClusterBudding({ force = false } = {}) {
@@ -3032,6 +3112,7 @@ export class World {
       wallCarriers: carrying,
       fieldFoodEaten: this.totalFieldFoodEaten || 0,
       fieldEnergyGain: this.totalFieldEnergyGain || 0,
+      clusterCellBirths: this.totalClusterCellBirths || 0,
       predationEvents: this.totalPredationEvents || 0,
       predationDrain: this.totalPredationDrain || 0,
       predationEnergyGain: this.totalPredationEnergyGain || 0,
@@ -3120,6 +3201,7 @@ export class World {
       totalWallDeposits: this.totalWallDeposits,
       totalClusterBuds: this.totalClusterBuds || 0,
       totalClusterBudParticles: this.totalClusterBudParticles || 0,
+      totalClusterCellBirths: this.totalClusterCellBirths || 0,
       totalFieldFoodEaten: this.totalFieldFoodEaten || 0,
       totalFieldEnergyGain: this.totalFieldEnergyGain || 0,
       totalPredationEvents: this.totalPredationEvents || 0,
@@ -3230,6 +3312,7 @@ export class World {
     this.totalWallDeposits = data.totalWallDeposits || 0;
     this.totalClusterBuds = data.totalClusterBuds || 0;
     this.totalClusterBudParticles = data.totalClusterBudParticles || 0;
+    this.totalClusterCellBirths = data.totalClusterCellBirths || 0;
     this.totalFieldFoodEaten = data.totalFieldFoodEaten || 0;
     this.totalFieldEnergyGain = data.totalFieldEnergyGain || 0;
     this.totalPredationEvents = data.totalPredationEvents || 0;

@@ -134,9 +134,14 @@ making the browser unusable.
    parent reserves into equally rich descendants. Fitter, well-fed parents can
    still give offspring a better start and reproduce again sooner, but babies
    enter the world with capped reserves and must earn further energy through
-   foraging, defense, cooperation, or predation. Next tuning target: compare
-   reserve sizes and maybe add a pending-bud queue so organism reproduction
-   remains robust across denser presets.
+   foraging, defense, cooperation, or predation. Ordinary births from named
+   clusters are now treated as organism cell growth/turnover: they keep the
+   parent body's organism root/generation, must attach to available bond slots
+   in that body, and are counted as `clusterCellBirths`. Cluster budding is
+   therefore the only path that advances the visible organism generation
+   (`Jr`, `III`, etc.). Next tuning target: compare reserve sizes and maybe add
+   a pending-bud queue so organism reproduction remains robust across denser
+   presets.
    Ecology pressure status: ambient food has been nudged lower again, predation
    conversion has been raised, and the vitals/bench counters now separate
    field-food energy from meat energy. The immediate follow-up is not "add
@@ -187,10 +192,11 @@ making the browser unusable.
    from snapshots and measure predator distance, retreat vector, cluster
    cohesion, alarms, mud/glass use, and counter/escape behavior before changing
    the selection mechanics again. Note that the ecosystem now also uses bounded
-   newborn energy, so future post-provisioning defense soaks should be compared
-   to fresh baselines rather than the pre-provisioning six-seed table. If
-   behavior evidence remains shallow, the most promising structural target is
-   stronger cluster-level selection.
+   newborn energy and cluster-cell turnover semantics, so future
+   post-provisioning/post-turnover defense soaks should be compared to fresh
+   baselines rather than the pre-provisioning six-seed table. If behavior
+   evidence remains shallow, the most promising structural target is stronger
+   cluster-level selection.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and

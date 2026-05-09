@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Bound offspring energy provisioning`
+  current `main` HEAD after this pass: `Attach cluster cell births to organisms`
 
 Recent useful commits:
 
-- current `main` HEAD - Bound offspring energy provisioning
+- current `main` HEAD - Attach cluster cell births to organisms
+- `3f21607` - Bound offspring energy provisioning
 - `9e76516` - Tighten defense evidence harness
 - `40521ad` - Record calibrated defense soaks
 - `600368c` - Calibrate defense challenge harness
@@ -126,6 +127,8 @@ Core systems:
 - cluster-level budding reproduction for stable, energy-rich bonded organisms
 - bounded birth provisioning: children get viable starter reserves plus a
   modest surplus-based boost, not an equal split of rich parent energy
+- cluster cell turnover: ordinary births from named clusters attach back into
+  the same organism and do not advance the daughter/granddaughter generation
 - wall digging/depositing with carried wall material
 - wall metadata: builder particle, builder cluster, clade, deposited tick
 - import/export for particles, species/clades, clusters, and sterile worlds
@@ -189,6 +192,10 @@ Inspection and UI:
 - ordinary cell births and cluster buds now use bounded starter provisioning:
   fitter parents can provision slightly better and reproduce again sooner, but
   babies must earn further energy rather than inheriting parent-level reserves
+- ordinary births from named clusters are organism cell growth/turnover:
+  newborns keep the cluster body's organism root/generation and must attach to
+  available body bond slots; `clusterCellBirths` tracks these events separately
+  from true daughter-cluster buds
 - daughter/granddaughter organism labels append generation suffixes:
   founder clusters have no suffix, daughters show `Jr`, then `III`, `IV`, etc.
 
@@ -510,6 +517,14 @@ Predation and food pressure:
   and slightly better provisioning, not through fully funded clone offspring.
   Future defense soaks should use fresh post-provisioning baselines before
   comparing to the pre-provisioning six-seed table.
+- Cluster-cell turnover update:
+  ordinary births from particles already in a named cluster are no longer
+  loose would-be organism offspring. They inherit the cluster body's
+  organismRootId/organismGeneration, must attach to available body bond slots,
+  and increment `totalClusterCellBirths`. If a cluster has no available bond
+  capacity, that ordinary cell birth waits instead of spawning a detached
+  cluster-born particle. True generation advancement remains reserved for
+  cluster budding (`Jr`, `III`, `IV`, etc.).
 
 Obstacle navigation:
 
@@ -758,6 +773,17 @@ Latest verification in the cluster-budding pass:
   - Compact defense replay passed:
     `node tools\defense-soak.js --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 120 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --challengeRepeats 2 --challengeJitter 1 --json`.
     At tick 1200: population 881, births 1656, deaths 775, cluster buds 2, mean slots 4.083, max slots 7, mean energy 15.523. Replay survival was predator 0.641 -> 0.547 -> 0.750, mud-refuge 0.766 -> 0.594 -> 0.719, glass-gap 0.766 -> 0.750 -> 0.797.
+- Cluster-cell turnover verification:
+  - `node --check js\sim.js` passed.
+  - `node --check tools\bench-cpu.js` and `node --check tools\defense-soak.js` passed.
+  - `npm test -- reproduction-provisioning.test.js cluster-budding.test.js` passed.
+  - `node tools\bench-cpu.js --preset soup --ticks 500 --cap 600 --seed 0x51A11 --combat event` passed: end population 588, births 840, deaths 252, `clusterCellBirths=18`, 12.015 ms/tick in that run.
+  - `npm test` passed all 18 test files in about 191 seconds.
+  - Compact defense replay passed with the same 1200-tick calibrated command
+    above. At tick 1200: population 882, births 1682, deaths 800, cluster buds
+    3, `clusterCellBirths=186`, mean slots 4.102, max slots 6, mean energy
+    17.290. Replay survival was predator 0.641 -> 0.813 -> 0.797,
+    mud-refuge 0.766 -> 0.781 -> 0.829, glass-gap 0.766 -> 0.922 -> 0.906.
 
 Core:
 

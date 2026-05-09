@@ -30,6 +30,27 @@ function matingGenome(species = 0) {
   return g;
 }
 
+function makeNamedCluster(world, energy = 40) {
+  const ps = [];
+  const cx = 42 * CELL;
+  const cy = 42 * CELL;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const p = world.addParticle(cx + Math.cos(a) * 7, cy + Math.sin(a) * 7, quietGenome(i % 2), energy);
+    p.vx = 0;
+    p.vy = 0;
+    ps.push(p);
+  }
+  for (let i = 0; i < ps.length; i++) {
+    const a = ps[i];
+    const b = ps[(i + 1) % ps.length];
+    a.bonds.push(b.id);
+    b.bonds.push(a.id);
+  }
+  world.updateClusters();
+  return ps;
+}
+
 await runTest('reproduction provisioning: surplus helps but child reserves are capped', () => {
   const barelyReady = offspringEndowmentForEnergy(8, 7);
   const rich = offspringEndowmentForEnergy(80, 7);
@@ -86,4 +107,53 @@ await runTest('reproduction provisioning: sexual births use bounded shared reser
     'at least one parent remains richer than the newborns',
     Math.max(a.energy, b.energy) > children[0].energy,
   );
+});
+
+await runTest('reproduction provisioning: clustered cell births attach to the organism', async () => {
+  const world = new World({ maxParticles: 24 });
+  const parents = makeNamedCluster(world, 40);
+  const cluster = world._clusters[0];
+  const rootId = cluster.organismRootId;
+  const generation = cluster.organismGeneration;
+
+  const prevRandom = Math.random;
+  Math.random = () => 0;
+  try {
+    await world.step();
+  } finally {
+    Math.random = prevRandom;
+  }
+
+  const children = world.particles.filter(p => !parents.includes(p) && !p.dead);
+  assert('clustered parents produce somatic children', children.length > 0);
+  assert('cluster cell births are counted', world.totalClusterCellBirths === children.length);
+  assert('somatic children keep the organism root', children.every(p => p.organismRootId === rootId));
+  assert('somatic children keep the organism generation', children.every(p => p.organismGeneration === generation));
+  assert('somatic children are born bonded into the body', children.every(p => p.bonds.length > 0));
+});
+
+await runTest('reproduction provisioning: clustered cell births wait for bond capacity', async () => {
+  const world = new World({ maxParticles: 24 });
+  const parents = makeNamedCluster(world, 40);
+  for (let i = 0; i < parents.length; i++) {
+    const a = parents[i];
+    const b = parents[(i + 2) % parents.length];
+    const c = parents[(i + parents.length - 2) % parents.length];
+    if (!a.bonds.includes(b.id)) a.bonds.push(b.id);
+    if (!b.bonds.includes(a.id)) b.bonds.push(a.id);
+    if (!a.bonds.includes(c.id)) a.bonds.push(c.id);
+    if (!c.bonds.includes(a.id)) c.bonds.push(a.id);
+  }
+  assert('all parent bond slots are full', parents.every(p => p.bonds.length >= 4));
+
+  const prevRandom = Math.random;
+  Math.random = () => 0;
+  try {
+    await world.step();
+  } finally {
+    Math.random = prevRandom;
+  }
+
+  const children = world.particles.filter(p => !parents.includes(p) && !p.dead);
+  assert('no loose somatic children are spawned when the body has no bond capacity', children.length === 0);
 });

@@ -88,6 +88,7 @@ console.log(JSON.stringify({
   wallDigs: world.totalWallDigs || 0,
   wallDeposits: world.totalWallDeposits || 0,
   wallCarriers,
+  clusterCellBirths: world.totalClusterCellBirths || 0,
   fieldFoodEaten: Number((world.totalFieldFoodEaten || 0).toFixed(3)),
   fieldEnergyGain: Number((world.totalFieldEnergyGain || 0).toFixed(3)),
   predationEvents: world.totalPredationEvents || 0,
