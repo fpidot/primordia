@@ -427,6 +427,7 @@ export class World {
     this.totalClusterBuds = 0;
     this.totalClusterBudParticles = 0;
     this.totalClusterCellBirths = 0;
+    this.lastClusterBudInfo = null;
     this.totalFieldFoodEaten = 0;
     this.totalFieldEnergyGain = 0;
     this.totalPredationEvents = 0;
@@ -635,6 +636,7 @@ export class World {
       clusterBudParticles: this.totalClusterBudParticles || 0,
       clusterCellBirths: this.totalClusterCellBirths || 0,
       clusterBudReserve: this.maxParticles - this._cellBirthLimit(),
+      ...this._organismLineageStats(),
       activeSound,
       gpuEnabled: !!this._gpuEnabled,
       gpuUsed: this._gpuTicksUsed || 0,
@@ -885,6 +887,7 @@ export class World {
     this.totalClusterBuds = 0;
     this.totalClusterBudParticles = 0;
     this.totalClusterCellBirths = 0;
+    this.lastClusterBudInfo = null;
     this.totalFieldFoodEaten = 0;
     this.totalFieldEnergyGain = 0;
     this.totalPredationEvents = 0;
@@ -2743,6 +2746,28 @@ export class World {
     return attached;
   }
 
+  _organismLineageStats() {
+    const clusters = this._clusters || [];
+    let descendantClusters = 0;
+    let descendantParticles = 0;
+    let maxOrganismGeneration = 1;
+    for (const c of clusters) {
+      if (!c) continue;
+      const generation = Math.max(1, c.organismGeneration || 1);
+      if (generation > maxOrganismGeneration) maxOrganismGeneration = generation;
+      if (generation > 1) {
+        descendantClusters++;
+        descendantParticles += c.count || (c.members ? c.members.length : 0) || 0;
+      }
+    }
+    return {
+      descendantClusters,
+      descendantParticles,
+      maxOrganismGeneration,
+      lastClusterBud: this.lastClusterBudInfo || null,
+    };
+  }
+
   _tryClusterBudding({ force = false } = {}) {
     if (!force && !this.clusterBudding) return 0;
     if (!force && this.tick % CLUSTER_BUD_INTERVAL !== 0) return 0;
@@ -2889,6 +2914,21 @@ export class World {
       }
     }
     this._clusterBudLastTick.set(key, this.tick);
+    const genLabel = organismGenerationSuffix(childGeneration).trim() || `gen ${childGeneration}`;
+    const parentName = cluster.name || 'cluster';
+    this.lastClusterBudInfo = {
+      tick: this.tick,
+      parentName,
+      generation: childGeneration,
+      generationLabel: genLabel,
+      size: children.length,
+      rootId: childRootId,
+    };
+    if (this.clades) {
+      this.clades.pushEvent(this.tick, 'organism',
+        `${genLabel} organism budded from ${parentName} - ${children.length} cells`,
+        '#a78bfa');
+    }
     return children.length;
   }
 
@@ -3112,7 +3152,11 @@ export class World {
       wallCarriers: carrying,
       fieldFoodEaten: this.totalFieldFoodEaten || 0,
       fieldEnergyGain: this.totalFieldEnergyGain || 0,
+      clusterBuds: this.totalClusterBuds || 0,
+      clusterBudParticles: this.totalClusterBudParticles || 0,
       clusterCellBirths: this.totalClusterCellBirths || 0,
+      clusterBudReserve: this.maxParticles - this._cellBirthLimit(),
+      ...this._organismLineageStats(),
       predationEvents: this.totalPredationEvents || 0,
       predationDrain: this.totalPredationDrain || 0,
       predationEnergyGain: this.totalPredationEnergyGain || 0,
@@ -3202,6 +3246,7 @@ export class World {
       totalClusterBuds: this.totalClusterBuds || 0,
       totalClusterBudParticles: this.totalClusterBudParticles || 0,
       totalClusterCellBirths: this.totalClusterCellBirths || 0,
+      lastClusterBudInfo: this.lastClusterBudInfo || null,
       totalFieldFoodEaten: this.totalFieldFoodEaten || 0,
       totalFieldEnergyGain: this.totalFieldEnergyGain || 0,
       totalPredationEvents: this.totalPredationEvents || 0,
@@ -3313,6 +3358,7 @@ export class World {
     this.totalClusterBuds = data.totalClusterBuds || 0;
     this.totalClusterBudParticles = data.totalClusterBudParticles || 0;
     this.totalClusterCellBirths = data.totalClusterCellBirths || 0;
+    this.lastClusterBudInfo = data.lastClusterBudInfo || null;
     this.totalFieldFoodEaten = data.totalFieldFoodEaten || 0;
     this.totalFieldEnergyGain = data.totalFieldEnergyGain || 0;
     this.totalPredationEvents = data.totalPredationEvents || 0;

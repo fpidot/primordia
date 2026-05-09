@@ -69,6 +69,7 @@ const elapsed = performance.now() - t0;
 const mspt = elapsed / ticks;
 const actions = (world.totalWallDigs || 0) + (world.totalWallDeposits || 0);
 const wallCarriers = world.particles.reduce((n, p) => n + (!p.dead && (p.wallCarry || 0) > 0 ? 1 : 0), 0);
+const vitals = typeof world.vitals === 'function' ? world.vitals() : {};
 
 console.log(JSON.stringify({
   preset: presetName,
@@ -88,7 +89,14 @@ console.log(JSON.stringify({
   wallDigs: world.totalWallDigs || 0,
   wallDeposits: world.totalWallDeposits || 0,
   wallCarriers,
+  clusterBuds: world.totalClusterBuds || 0,
+  clusterBudParticles: world.totalClusterBudParticles || 0,
   clusterCellBirths: world.totalClusterCellBirths || 0,
+  clusterBudReserve: vitals.clusterBudReserve || 0,
+  descendantClusters: vitals.descendantClusters || 0,
+  descendantParticles: vitals.descendantParticles || 0,
+  maxOrganismGeneration: vitals.maxOrganismGeneration || 1,
+  lastClusterBud: vitals.lastClusterBud || null,
   fieldFoodEaten: Number((world.totalFieldFoodEaten || 0).toFixed(3)),
   fieldEnergyGain: Number((world.totalFieldEnergyGain || 0).toFixed(3)),
   predationEvents: world.totalPredationEvents || 0,

@@ -528,6 +528,7 @@ button[data-preset] {
 .events .ev.speciation { border-left-color: var(--accent); }
 .events .ev.extinction { border-left-color: var(--warn); }
 .events .ev.dominance  { border-left-color: var(--accent-2); }
+.events .ev.organism   { border-left-color: #a78bfa; background: rgba(167, 139, 250, 0.07); }
 .events .ev.crash       { border-left-color: #ff8a3c; }
 .events .ev.epoch       {
   border-left-color: #ffd166;

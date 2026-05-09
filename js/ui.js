@@ -939,6 +939,13 @@ export class UI {
     html += `<div class="row-stat"><span></span><span>shelter</span><span class="num">${v.meanShelter.toFixed(3)} · ${shelteredPct}%</span></div>`;
     html += `<div class="row-stat"><span></span><span>meat / field E</span><span class="num">${v.predationEnergyGain.toFixed(1)} / ${v.fieldEnergyGain.toFixed(1)}</span></div>`;
     html += `<div class="row-stat"><span></span><span>hunt hits</span><span class="num">${v.predationEvents} · deaths ${v.predationDeaths}</span></div>`;
+    html += `<div class="row-stat"><span></span><span>buds / cells</span><span class="num">${v.clusterBuds || 0}/${v.clusterBudParticles || 0} · soma ${v.clusterCellBirths || 0}</span></div>`;
+    html += `<div class="row-stat"><span></span><span>descendants</span><span class="num">${v.descendantClusters || 0} cl · ${v.descendantParticles || 0} cells · ${formatGenerationLabel(v.maxOrganismGeneration)}</span></div>`;
+    html += `<div class="row-stat"><span></span><span>bud reserve</span><span class="num">${v.clusterBudReserve || 0}</span></div>`;
+    if (v.lastClusterBud) {
+      const b = v.lastClusterBud;
+      html += `<div class="row-stat"><span></span><span>last bud</span><span class="num">t${b.tick || 0} · ${escapeHtml(b.generationLabel || formatGenerationLabel(b.generation))} · ${b.size || 0}</span></div>`;
+    }
     html += `<div class="row-stat"><span></span><span>births/s</span><span class="num">${(this._birthRate || 0).toFixed(1)}</span></div>`;
     html += `<div class="row-stat"><span></span><span>deaths/s</span><span class="num">${(this._deathRate || 0).toFixed(1)}</span></div>`;
     html += `<div class="row-stat"><span></span><span>dig/build/s</span><span class="num">${(this._digRate || 0).toFixed(1)}/${(this._buildRate || 0).toFixed(1)}</span></div>`;
@@ -1975,6 +1982,27 @@ function escapeHtml(s) {
 
 function escapeAttr(s) {
   return escapeHtml(s).replace(/"/g, '&quot;');
+}
+
+function formatGenerationLabel(generation) {
+  const g = Math.max(1, Number(generation) || 1);
+  if (g <= 1) return 'founder';
+  if (g === 2) return 'Jr';
+  return romanNumeral(g);
+}
+
+function romanNumeral(n) {
+  const vals = [
+    [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+    [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+    [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+  ];
+  let x = Math.min(3999, Math.floor(Math.max(1, Number(n) || 1)));
+  let out = '';
+  for (const [v, s] of vals) {
+    while (x >= v) { out += s; x -= v; }
+  }
+  return out || String(n);
 }
 
 function rowActionMenu(actions) {

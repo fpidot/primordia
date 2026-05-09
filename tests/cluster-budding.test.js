@@ -48,10 +48,15 @@ await runTest('cluster-budding: stable clusters can reproduce as organisms', asy
   const children = world.particles.slice(parents.length).filter(p => !p.dead);
   const afterEnergy = parents.reduce((sum, p) => sum + p.energy, 0);
   const childBondRefs = children.reduce((sum, p) => sum + p.bonds.length, 0);
+  const vitals = world.vitals();
 
   assert('bud creates named-cluster-sized daughter', born >= 8 && children.length >= 8);
   assert('cluster bud counter advances', world.totalClusterBuds === 1);
   assert('cluster bud particle counter advances', world.totalClusterBudParticles === children.length);
+  assert('lineage vitals report daughter clusters', vitals.descendantClusters >= 1);
+  assert('lineage vitals report max generation', vitals.maxOrganismGeneration >= 2);
+  assert('lineage vitals remember latest bud', vitals.lastClusterBud && vitals.lastClusterBud.generation === 2);
+  assert('organism bud event is logged', world.clades.events.some(e => e.type === 'organism' && e.msg.includes('Jr organism budded')));
   assert('parents pay energy into bud', afterEnergy < beforeEnergy);
   assert('daughter starts internally bonded', childBondRefs >= children.length * 2);
   assert('parent and daughter clusters are both detectable', world._clusters.length >= 2);

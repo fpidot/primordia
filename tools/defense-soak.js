@@ -139,6 +139,7 @@ function summarizeWorld(world) {
   const slotHist = {};
   for (const n of slots) slotHist[n] = (slotHist[n] || 0) + 1;
   const energy = ps.map(p => p.energy || 0);
+  const vitals = typeof world.vitals === 'function' ? world.vitals() : {};
   return {
     tick: world.tick,
     population: ps.length,
@@ -154,7 +155,11 @@ function summarizeWorld(world) {
     predationEnergy: round(world.totalPredationEnergyGain || 0),
     fieldEnergy: round(world.totalFieldEnergyGain || 0),
     clusterBuds: world.totalClusterBuds || 0,
+    clusterBudParticles: world.totalClusterBudParticles || 0,
     clusterCellBirths: world.totalClusterCellBirths || 0,
+    descendantClusters: vitals.descendantClusters || 0,
+    descendantParticles: vitals.descendantParticles || 0,
+    maxOrganismGeneration: vitals.maxOrganismGeneration || 1,
     clusters: world._clusters ? world._clusters.length : 0,
     meanSlots: round(slots.reduce((a, b) => a + b, 0) / Math.max(1, slots.length)),
     p90Slots: quantile(slots, 0.9),

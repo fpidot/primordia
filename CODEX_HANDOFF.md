@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Tune membrane fill opacity`
+  current `main` HEAD after this pass: `Expose organism bud telemetry`
 
 Recent useful commits:
 
-- current `main` HEAD - Tune membrane fill opacity
+- current `main` HEAD - Expose organism bud telemetry
+- `5ab5318` - Tune membrane fill opacity
 - `2834862` - Panel action menus and stronger membranes
 - `eb47c55` - Attach cluster cell births to organisms
 - `3f21607` - Bound offspring energy provisioning
@@ -328,8 +329,12 @@ Performance reality:
 
 Next performance target:
 
-- Prioritize a worker/snapshot architecture so UI/render FPS can stay
-  responsive while sim ticks run as fast as the budget allows.
+- Priority order from the latest compute discussion:
+  1. Worker/snapshot architecture so UI/render FPS can stay responsive while sim
+     ticks run as fast as the budget allows.
+  2. User-facing population/work budgets for dense long soaks.
+  3. Further GPU work only after a targeted plan reduces map-wait/cooldown and
+     readback pressure.
 - Continue pair-only GPU benchmarking only if a targeted change addresses
   map-wait/cooldown behavior; the first smaller-readback pass is not enough by
   itself.
@@ -630,6 +635,14 @@ Organism-level reproduction:
   - final population held around 1176 with a 24-slot reserve, so this is an
     intentional soft cap for cell births, not a loss of the hard performance
     cap.
+- Visibility/diagnostics update:
+  - organism buds now add explicit `organism` events to the event log
+  - the vitals panel reports total buds, budded particles, somatic cluster-cell
+    births, bud reserve, live descendant clusters/cells, max generation, and
+    last bud tick/generation/size
+  - CPU bench and defense-soak JSON include the same lineage telemetry, so
+    future soak output can prove whether `Jr`/`III` organisms appeared even if
+    the user did not visually spot a label in real time
 - Next tuning options:
   - compare reserve sizes across maze/soup presets
   - add a pending-bud queue if dense presets still miss the timing window
@@ -793,6 +806,12 @@ Latest verification in the cluster-budding pass:
     visible after browser refresh, not hot-reloaded automatically.
   - `node --check js\ui.js` and `node --check js\render.js` passed.
   - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9231` passed with no page errors.
+- Organism bud telemetry verification:
+  - `node --check js\sim.js`, `node --check js\ui.js`, `node --check tools\bench-cpu.js`, and `node --check tools\defense-soak.js` passed.
+  - `node tests\cluster-budding.test.js` passed, including assertions that a
+    forced daughter bud creates lineage vitals and an `organism` event.
+  - `node tools\bench-cpu.js --preset soup --ticks 300 --cap 600 --seed 0x51A11 --combat event` passed and reported the new telemetry fields; the short run had `clusterBuds=0`, `clusterCellBirths=8`, `clusterBudReserve=12`.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9232` passed with no page errors.
 
 Core:
 

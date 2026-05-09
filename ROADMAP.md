@@ -141,9 +141,13 @@ making the browser unusable.
    parent body's organism root/generation, must attach to available bond slots
    in that body, and are counted as `clusterCellBirths`. Cluster budding is
    therefore the only path that advances the visible organism generation
-   (`Jr`, `III`, etc.). Next tuning target: compare reserve sizes and maybe add
-   a pending-bud queue so organism reproduction remains robust across denser
-   presets.
+   (`Jr`, `III`, etc.). Current visibility update: organism buds now emit
+   explicit event-log entries, the vitals panel reports bud count, budded
+   particles, somatic cluster-cell births, bud reserve, descendant clusters,
+   descendant cells, max generation, and the last bud tick/generation/size; CPU
+   bench and defense-soak JSON now include the same lineage telemetry. Next
+   tuning target: compare reserve sizes and maybe add a pending-bud queue so
+   organism reproduction remains robust across denser presets.
    Ecology pressure status: ambient food has been nudged lower again, predation
    conversion has been raised, and the vitals/bench counters now separate
    field-food energy from meat energy. The immediate follow-up is not "add
@@ -275,10 +279,11 @@ making the browser unusable.
    readback dropping to ~7 ms with `--gpuPairOnly`, but longer dense-maze runs
    were not a reliable win on the Intel sample because map waits/cooldowns and
    ecological divergence still dominate late windows. It is therefore available
-   for measurement but not the default user-facing GPU mode. Next meaningful
-   moves are a worker/snapshot architecture that decouples render responsiveness
-   from sim ticks, or explicit user-facing population/work budgets for very
-   dense long soaks.
+   for measurement but not the default user-facing GPU mode. Current priority:
+   worker/snapshot architecture first, explicit user-facing population/work
+   budgets second, broader GPU compute third. Faster hardware helps, but the
+   durable fix is to decouple render responsiveness from sim ticks and make the
+   sim budget visible/tunable.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful
