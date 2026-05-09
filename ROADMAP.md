@@ -129,8 +129,14 @@ making the browser unusable.
    when cluster budding is enabled, reserving a small slot band for organism
    reproduction. A seeded 6000-tick soup soak at cap 1200/start 300 produced
    15 bud events, 133 budded particles, multiple live `Jr` clusters, and one
-   live `III` cluster. Next tuning target: compare reserve sizes and maybe add
-   a pending-bud queue so the mechanism remains robust across denser presets.
+   live `III` cluster. Current life-history update: ordinary cell births and
+   cluster buds now use bounded starter provisioning instead of splitting rich
+   parent reserves into equally rich descendants. Fitter, well-fed parents can
+   still give offspring a better start and reproduce again sooner, but babies
+   enter the world with capped reserves and must earn further energy through
+   foraging, defense, cooperation, or predation. Next tuning target: compare
+   reserve sizes and maybe add a pending-bud queue so organism reproduction
+   remains robust across denser presets.
    Ecology pressure status: ambient food has been nudged lower again, predation
    conversion has been raised, and the vitals/bench counters now separate
    field-food energy from meat energy. The immediate follow-up is not "add
@@ -180,8 +186,11 @@ making the browser unusable.
    replay realism and behavior evidence: preserve sampled cohorts/top clusters
    from snapshots and measure predator distance, retreat vector, cluster
    cohesion, alarms, mud/glass use, and counter/escape behavior before changing
-   the selection mechanics again. If behavior evidence remains shallow, the
-   most promising structural target is stronger cluster-level selection.
+   the selection mechanics again. Note that the ecosystem now also uses bounded
+   newborn energy, so future post-provisioning defense soaks should be compared
+   to fresh baselines rather than the pre-provisioning six-seed table. If
+   behavior evidence remains shallow, the most promising structural target is
+   stronger cluster-level selection.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and

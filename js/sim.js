@@ -86,6 +86,11 @@ const SOUND_DECAY = 0.08;      // ...and now fades much slower than before
 const REPRO_TAX = 0.15;        // energy lost on splitting
 const REPRO_PROB = 0.05;       // chance per tick once threshold met (smoothing)
 const REPRO_PROB_SEX = 0.12;   // sexual reproduction is favoured a bit
+export const OFFSPRING_BASE_ENERGY = 2.4;
+export const OFFSPRING_SURPLUS_FRAC = 0.16;
+export const OFFSPRING_MAX_ENERGY = 5.6;
+export const OFFSPRING_SEX_MAX_ENERGY = 6.0;
+const OFFSPRING_PARENT_FLOOR = 2.0;
 const CLUSTER_BUD_INTERVAL = 48;
 const CLUSTER_BUD_COOLDOWN = 720;
 const CLUSTER_BUD_PROB = 0.035;
@@ -96,8 +101,7 @@ const CLUSTER_BUD_MIN_MEAN_AGE = 180;
 const CLUSTER_BUD_MIN_MEAN_ENERGY = 8.0;
 const CLUSTER_BUD_MIN_MEAN_BONDS = 1.9;
 const CLUSTER_BUD_PARENT_FLOOR = 3.0;
-const CLUSTER_BUD_GIFT_FRAC = 0.22;
-const CLUSTER_BUD_MIN_GIFT = 1.4;
+export const CLUSTER_BUD_CHILD_MAX_ENERGY = 5.8;
 const CLUSTER_BUD_TAX = 0.08;
 const CLUSTER_BUD_MUTATION_BOOST = 0.55;
 const CLUSTER_BUD_RESERVE_FRAC = 0.02;
@@ -291,6 +295,32 @@ export const WALL_OPEN     = 0;
 export const WALL_SOLID    = 1;
 export const WALL_MEMBRANE = 2;
 export const WALL_POROUS   = 3;
+
+// Birth provisioning is bounded: fitter parents can give a better start and
+// reproduce again sooner, but offspring still have to forage/defend for wealth.
+export function offspringEndowmentForEnergy(parentEnergy, threshold = 8, maxEnergy = OFFSPRING_MAX_ENERGY) {
+  const energy = Math.max(0, Number(parentEnergy) || 0);
+  const gate = Math.max(0, Number(threshold) || 0);
+  const cap = Math.max(OFFSPRING_BASE_ENERGY, Number(maxEnergy) || OFFSPRING_MAX_ENERGY);
+  const surplus = Math.max(0, energy - gate);
+  return clamp(OFFSPRING_BASE_ENERGY + surplus * OFFSPRING_SURPLUS_FRAC, OFFSPRING_BASE_ENERGY, cap);
+}
+
+function offspringCostForEndowment(childEnergy, tax = REPRO_TAX) {
+  return Math.max(0, childEnergy) / Math.max(0.01, 1 - tax);
+}
+
+function clusterBudChildEnergy(parent, fallbackThreshold) {
+  return offspringEndowmentForEnergy(
+    parent?.energy || 0,
+    parent?.genome?.repro_thresh ?? fallbackThreshold,
+    CLUSTER_BUD_CHILD_MAX_ENERGY,
+  );
+}
+
+function clusterBudEnergyCost(parent, fallbackThreshold) {
+  return offspringCostForEndowment(clusterBudChildEnergy(parent, fallbackThreshold), CLUSTER_BUD_TAX);
+}
 
 // Bond barrier — bonded clusters act as one-way "moving walls" against
 // outsider particles. Outsider = not bonded to either endpoint of the segment.
@@ -2208,13 +2238,21 @@ export class World {
           const boost = 1 + Math.min(2, mut[fIdx] * 0.8);
           let childGenome = crossoverGenome(g, partner.genome);
           childGenome = mutate(childGenome, Math.random, boost);
-          // Energy: each parent pays a tax; child gets the surplus
-          const pool = (p.energy + partner.energy) * (1 - REPRO_TAX);
-          p.energy = pool * 0.4;
-          partner.energy = pool * 0.4;
-          const childE = pool * 0.2;
-          // Inherit cladeId from "richer" parent, with chance to fork later
+          const combinedEnergy = p.energy + partner.energy;
+          const meanParentEnergy = combinedEnergy * 0.5;
+          const meanRepro = ((g.repro_thresh || 0) + (partner.genome?.repro_thresh || 0)) * 0.5;
+          const childE = offspringEndowmentForEnergy(meanParentEnergy, meanRepro, OFFSPRING_SEX_MAX_ENERGY);
+          const childCost = offspringCostForEndowment(childE, REPRO_TAX);
+          const pAvail = Math.max(0, p.energy - OFFSPRING_PARENT_FLOOR);
+          const partnerAvail = Math.max(0, partner.energy - OFFSPRING_PARENT_FLOOR);
+          const available = pAvail + partnerAvail;
+          if (available < childCost) continue;
+          const pCost = childCost * (pAvail / available);
+          const partnerCost = childCost - pCost;
+          // Inherit cladeId from the richer parent before provisioning costs.
           const parentClade = p.energy >= partner.energy ? p.cladeId : partner.cladeId;
+          p.energy -= pCost;
+          partner.energy -= partnerCost;
           const child = {
             id: ++_id,
             x: clamp((p.x + partner.x) * 0.5 + (Math.random() - 0.5) * 4, 1, W - 1),
@@ -2269,8 +2307,10 @@ export class World {
         if (this.particles.length + this.births.length < cellBirthLimit) {
           const boost = 1 + Math.min(2, mut[fIdx] * 0.8);
           const childGenome = mutate(g, Math.random, boost);
-          const e = p.energy * (1 - REPRO_TAX) * 0.5;
-          p.energy = e;
+          const childE = offspringEndowmentForEnergy(p.energy, g.repro_thresh, OFFSPRING_MAX_ENERGY);
+          const childCost = offspringCostForEndowment(childE, REPRO_TAX);
+          if (p.energy - childCost < OFFSPRING_PARENT_FLOOR) continue;
+          p.energy -= childCost;
           const jitter = 4;
           const child = {
             id: ++_id,
@@ -2280,7 +2320,7 @@ export class World {
             vy: -p.vy * 0.5 + (Math.random() - 0.5) * 0.5,
             genome: childGenome,
             species: childGenome.species,
-            energy: e,
+            energy: childE,
             age: 0,
             lineage: p.lineage,
             cladeId: p.cladeId,
@@ -2689,7 +2729,7 @@ export class World {
     }
 
     const donors = members
-      .filter(p => (p.energy || 0) > CLUSTER_BUD_PARENT_FLOOR + CLUSTER_BUD_MIN_GIFT)
+      .filter(p => (p.energy || 0) - clusterBudEnergyCost(p, meanRepro) >= CLUSTER_BUD_PARENT_FLOOR)
       .sort((a, b) => Math.atan2(a.y - cluster.cy, a.x - cluster.cx) -
                       Math.atan2(b.y - cluster.cy, b.x - cluster.cx));
     const slots = this.maxParticles - this.particles.length;
@@ -2732,11 +2772,9 @@ export class World {
     const budCy = clamp(cluster.cy + dirY * (cluster.radius + 22 + Math.random() * 10), 1, H - 1);
     const children = [];
     for (const parent of selected) {
-      const gift = Math.min(
-        parent.energy - CLUSTER_BUD_PARENT_FLOOR,
-        Math.max(CLUSTER_BUD_MIN_GIFT, parent.energy * CLUSTER_BUD_GIFT_FRAC),
-      );
-      if (gift < CLUSTER_BUD_MIN_GIFT) continue;
+      const childEnergy = clusterBudChildEnergy(parent, meanRepro);
+      const giftCost = offspringCostForEndowment(childEnergy, CLUSTER_BUD_TAX);
+      if (parent.energy - giftCost < CLUSTER_BUD_PARENT_FLOOR) continue;
       const relX = (parent.x - cluster.cx) * 0.7;
       const relY = (parent.y - cluster.cy) * 0.7;
       const [x, y] = this._findBudPosition(
@@ -2746,9 +2784,9 @@ export class World {
       );
       const clade = this.clades.clades.get(parent.cladeId) || null;
       const childGenome = mutate(parent.genome, Math.random, CLUSTER_BUD_MUTATION_BOOST);
-      const child = this.addParticle(x, y, childGenome, gift * (1 - CLUSTER_BUD_TAX), clade);
+      const child = this.addParticle(x, y, childGenome, childEnergy, clade);
       if (!child) continue;
-      parent.energy -= gift;
+      parent.energy -= giftCost;
       child.lineage = parent.lineage;
       child.organismRootId = childRootId;
       child.organismGeneration = childGeneration;

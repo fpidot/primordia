@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Tighten defense evidence harness`
+  current `main` HEAD after this pass: `Bound offspring energy provisioning`
 
 Recent useful commits:
 
-- current `main` HEAD - Tighten defense evidence harness
+- current `main` HEAD - Bound offspring energy provisioning
+- `9e76516` - Tighten defense evidence harness
 - `40521ad` - Record calibrated defense soaks
 - `600368c` - Calibrate defense challenge harness
 - `e894d15` - Add event combat pressure
@@ -123,6 +124,8 @@ Core systems:
 - bond messages and named clusters
 - cluster alarm broadcast
 - cluster-level budding reproduction for stable, energy-rich bonded organisms
+- bounded birth provisioning: children get viable starter reserves plus a
+  modest surplus-based boost, not an equal split of rich parent energy
 - wall digging/depositing with carried wall material
 - wall metadata: builder particle, builder cluster, clade, deposited tick
 - import/export for particles, species/clades, clusters, and sterile worlds
@@ -183,6 +186,9 @@ Inspection and UI:
 - stable, energy-rich bonded clusters can occasionally bud a daughter cluster:
   the daughter inherits mutated member genomes, starts internally bonded, and
   costs the parent cluster real energy
+- ordinary cell births and cluster buds now use bounded starter provisioning:
+  fitter parents can provision slightly better and reproduce again sooner, but
+  babies must earn further energy rather than inheriting parent-level reserves
 - daughter/granddaughter organism labels append generation suffixes:
   founder clusters have no suffix, daughters show `Jr`, then `III`, `IV`, etc.
 
@@ -493,6 +499,17 @@ Predation and food pressure:
   proof of sophisticated defensive behavior. Next step should be replay
   realism and behavior metrics, then stronger cluster-level selection if the
   behavior still looks shallow.
+- Birth-provisioning update:
+  the fixed-energy replay control exposed a useful design point, not just a
+  diagnostic nuisance. The ecosystem now also prevents rich parents from
+  spawning equally rich children. Asexual, sexual, and cluster-bud births use
+  a bounded endowment curve: baseline viable starter energy plus a modest
+  surplus-based boost, capped at 5.6 for cell births and 5.8 for cluster-bud
+  cells. Parents pay the child endowment plus tax from their reserves, so
+  energetic organisms are favored through repeated reproductive opportunity
+  and slightly better provisioning, not through fully funded clone offspring.
+  Future defense soaks should use fresh post-provisioning baselines before
+  comparing to the pre-provisioning six-seed table.
 
 Obstacle navigation:
 
@@ -733,6 +750,14 @@ Latest verification in the cluster-budding pass:
   - The same six seeds passed again with fixed replay cohort energy 5.
   - `npm test -- event-combat.test.js terrain-sensors.test.js` passed.
   - `git diff --check` passed with only the repo's usual CRLF warnings.
+- Offspring provisioning verification:
+  - `node --check js\sim.js` passed.
+  - `npm test -- reproduction-provisioning.test.js cluster-budding.test.js event-combat.test.js` passed.
+  - `node tools\bench-cpu.js --preset soup --ticks 600 --cap 600 --seed 0x51A11 --combat event` passed: end population 588, births 859, deaths 271, 10.095 ms/tick.
+  - `npm test` passed all 18 test files in about 160 seconds.
+  - Compact defense replay passed:
+    `node tools\defense-soak.js --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 120 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --challengeRepeats 2 --challengeJitter 1 --json`.
+    At tick 1200: population 881, births 1656, deaths 775, cluster buds 2, mean slots 4.083, max slots 7, mean energy 15.523. Replay survival was predator 0.641 -> 0.547 -> 0.750, mud-refuge 0.766 -> 0.594 -> 0.719, glass-gap 0.766 -> 0.750 -> 0.797.
 
 Core:
 

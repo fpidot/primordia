@@ -8,10 +8,10 @@ import { seedGlobalRandom, assert, runTest } from './harness.js';
 
 seedGlobalRandom(0xB00D1E);
 
-const { World, CELL } = await import('../js/sim.js');
+const { World, CELL, CLUSTER_BUD_CHILD_MAX_ENERGY } = await import('../js/sim.js');
 const { makeGenome } = await import('../js/genome.js');
 
-function makeStableCluster(world) {
+function makeStableCluster(world, energy = 14) {
   const ps = [];
   const cx = 40 * CELL;
   const cy = 40 * CELL;
@@ -20,7 +20,7 @@ function makeStableCluster(world) {
     const g = makeGenome(i % 2);
     g.repro_thresh = 5;
     g.mut_rate = 0.02;
-    const p = world.addParticle(cx + Math.cos(a) * 8, cy + Math.sin(a) * 8, g, 14);
+    const p = world.addParticle(cx + Math.cos(a) * 8, cy + Math.sin(a) * 8, g, energy);
     p.age = 260;
     p.vx = 0;
     p.vy = 0;
@@ -67,4 +67,21 @@ await runTest('cluster-budding: cell births reserve headroom for organism buds',
 
   const plain = new World({ maxParticles: 1200, clusterBudding: false });
   assert('reserve disables with cluster budding off', plain._cellBirthLimit() === plain.maxParticles);
+});
+
+await runTest('cluster-budding: rich organisms bud bounded starter daughters', async () => {
+  const world = new World({ maxParticles: 64 });
+  world.tick = 480;
+  const parents = makeStableCluster(world, 50);
+
+  world.updateClusters();
+  const born = world._tryClusterBudding({ force: true });
+  const children = world.particles.slice(parents.length).filter(p => !p.dead);
+
+  assert('rich cluster still buds', born >= 8 && children.length >= 8);
+  assert(
+    'daughter cells get capped starter reserves',
+    children.every(p => p.energy <= CLUSTER_BUD_CHILD_MAX_ENERGY + 1e-6),
+  );
+  assert('parent donors retain more reserve than daughter cells', parents.some(p => p.energy > 30));
 });

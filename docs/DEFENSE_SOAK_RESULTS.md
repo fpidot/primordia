@@ -317,3 +317,16 @@ Interpretation:
   clusters from snapshots, then add behavior metrics such as predator distance,
   retreat vector, cluster cohesion under attack, alarm activity, mud/glass use,
   and counter/escape rates.
+
+## 2026-05-09 - offspring provisioning note
+
+After the six-seed evidence pass, reproduction was changed so rich parents no
+longer spawn equally rich descendants. Cell births and cluster buds now use
+bounded starter provisioning: a baseline viable endowment plus a modest
+surplus-based boost, capped for newborns. Energetic parents are still favored
+because they can provision slightly better and reproduce again sooner, but
+offspring must earn further reserves in the world.
+
+Implication for this file: the six-seed table above remains the best
+pre-provisioning evidence pass. Future defense soaks should establish fresh
+post-provisioning baselines before making direct numeric comparisons.
