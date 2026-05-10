@@ -8,6 +8,7 @@
     "test:maze": "node tests/baseline-maze.test.js",
     "bench:cpu": "node tools/bench-cpu.js",
     "bench:browser": "node tools/bench-browser.js",
-    "soak:defense": "node tools/defense-soak.js"
+    "soak:defense": "node tools/defense-soak.js",
+    "assay:detour": "node tools/detour-assay.js"
   }
 }

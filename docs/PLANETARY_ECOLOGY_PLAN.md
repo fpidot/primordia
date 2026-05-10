@@ -29,8 +29,9 @@ What is still holding back interesting behavior:
   particle-level reproduction remains a dominant background process.
 - Navigation has raw scaffolding but not yet enough measured proof. Particles
   can sense food gradients, terrain, damage direction, motion slip, signals,
-  sound, and bond messages, but detour planning and obstacle use need sharper
-  assays.
+  sound, and bond messages. The first detour assay now exists, but founder
+  smokes do not yet show reliable crossing, so evolved-cohort and niche-pressure
+  comparisons are still needed.
 - Communication has costs and some payoffs, but not enough situation-specific
   pressure to prove dynamic useful messaging.
 - Brain capacity should rise only when the world gives extra cognition a real
@@ -231,7 +232,9 @@ Goal: raise neural capacity only when there is a reason.
 
 Near steps:
 
-- Add detour-navigation microtests: food/prey behind glass with a gap.
+- Use `tools/detour-assay.js` for repeated food-behind-obstacle comparisons:
+  founder controls, evolved soup/maze/planet cohorts, and eventually intact vs
+  disassembled clusters.
 - Add more behavior metrics to defense replay: retreat vector, predator-distance
   delta, alarm timing, cohesion under attack, mud/glass use. First pass now
   reports cohort-owned feeding, predation, attacks, kills, counters, escapes,
@@ -305,6 +308,7 @@ Other scale steps:
 4. Add behavior metrics to defense replay. Shipped first cohort-owned behavior
    counters; next add retreat/alarm/cohesion timing.
 5. Attack flash. Shipped as a small red droplet.
-6. Add detour-navigation assay.
+6. Detour-navigation assay. Shipped first controlled barrier/food-goal tool;
+   next run longer evolved-cohort comparisons.
 7. Decide whether torus topology or a small bounded fishbowl prototype is the
    better next topology/physics experiment.

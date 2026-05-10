@@ -54,8 +54,9 @@ not a prettier maze; it is persistent niche pressure that can make navigation,
 construction, predation defense, communication, cluster reproduction, and brain
 capacity matter at the same time. Current validation now includes regional
 occupancy, movement, clade-turnover, survival/death/escape telemetry, and
-behavior deltas for feeding, wall work, predation, and event combat. Next
-validation target: longer soup/maze/planet contrasts. First short
+behavior deltas for feeding, wall work, predation, event combat, plus a
+repeatable detour-navigation assay. Next validation target: longer
+soup/maze/planet contrasts and evolved-cohort detour comparisons. First short
 validation on seed `0xC1A0C0` created 4733 solid, 2789 glass, 6749 mud, 3085
 rich-food, 2460 decay, and 789 mutagen cells. Planet's first-click default is
 720 particles, while the population slider can still push it higher. A 600-tick
@@ -111,11 +112,14 @@ machine; heavier Planet starts are still a deliberate stress test.
    progress, and previous motor slip. These do not tell particles "glass" or
    "edge" as a special case; they report that intended thrust failed to become
    motion, giving evolution generic feedback for glass, solid, world-edge,
-   crowding, mud, and other impediments. Next validation target:
-   detour-navigation microtests that put food/prey behind glass with a nearby
-   opening and verify whether random/evolved brains have enough sensory,
-   bodily-feedback, and recurrent scaffolding to learn "go around, then turn
-   back toward the goal."
+   crowding, mud, and other impediments. Current validation tool:
+   `tools/detour-assay.js` now creates a repeatable glass/solid/mud barrier
+   arena with two gaps and a food goal behind the obstacle, then reports
+   crossing, goal approach, survival, field/meat energy gains, motor slip, and
+   stuck samples. Short founder smokes run cleanly but do not yet show reliable
+   crossing; the next question is whether longer evolved cohorts, Planet
+   niches, or stronger target/detour pressure produce "go around, then turn
+   back toward the goal" behavior.
    Transmission rule is now explicit for direct particle/signal perception:
    solid blocks line-of-sight interactions, while glass and mud transmit them.
    GPU parity is maintained by packing a solid-wall visibility grid into the

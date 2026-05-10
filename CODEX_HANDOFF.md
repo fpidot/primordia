@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Track regional behavior outcomes`
+  current `main` HEAD after this pass: `Add detour navigation assay`
 
 Recent useful commits:
 
-- current `main` HEAD - Track regional behavior outcomes
+- current `main` HEAD - Add detour navigation assay
+- `e1b460f` - Track regional behavior outcomes
 - `e8c25b5` - Track habitat survival telemetry
 - `30a135d` - Track habitat lineage turnover
 - `f6b4455` - Track habitat region movement
@@ -153,6 +154,7 @@ Core systems:
   occupancy, energy, material, species-entropy, movement, and clade turnover
   telemetry, plus profile-window survival/death/escape and behavior
   comparisons by region
+- repeatable detour-navigation assay for food-behind-obstacle experiments
 - import/export for particles, species/clades, clusters, and sterile worlds
 - CPU simulation path
 - WebGPU pair-force/brain path with CPU fallback
@@ -620,10 +622,19 @@ Obstacle navigation:
     "glass is blocked" or "edge ahead." A particle that pushes into glass,
     solid, a world edge, crowding, or any future physics impediment receives
     the same kind of bodily mismatch signal.
+- Detour assay now exists:
+  - `tools/detour-assay.js` builds a repeatable glass/solid/mud barrier arena
+    with two gaps and food behind the obstacle.
+  - It tracks crossing, goal reach, survival, mean closest approach to the
+    goal, field/meat energy gain, motor slip near the barrier, and stuck
+    samples.
+  - Short founder smokes run cleanly but do not yet show reliable crossing, so
+    treat this as an evidence tool, not a solved behavior.
 - Next validation:
-  - microtests/soaks with food or prey behind glass and a nearby opening
+  - run longer evolved-cohort comparisons across soup, maze, and Planet
   - distinguish "can sense target" from "can learn detour"
-  - measure whether clusters distribute sensing/planning/locomotion roles
+  - measure whether intact clusters distribute sensing/planning/locomotion
+    roles better than disassembled members
 
 Communication:
 
@@ -1002,6 +1013,16 @@ Latest verification in the cluster-budding pass:
     each).
   - `node tools\defense-soak.js --ticks 120 --samples 0,120 --sampleSize 12 --challengeTicks 40 --challenges predator --replay particles --combat event --json`
     passed and emitted cohort-owned behavior counters in challenge results.
+- Detour-navigation assay verification:
+  - `node --check tools\detour-assay.js` and
+    `node --check tests\detour-navigation.test.js` passed.
+  - `npm test -- detour-navigation.test.js` passed.
+  - `npm test` passed all 21 test files after the detour assay pass.
+  - `npm run assay:detour -- --ticks 80 --cap 180 --start 112 --seed 0xD370A --barrier glass --combat event`
+    and the equivalent direct `node tools\detour-assay.js ...` command both
+    produced the same smoke result: 112 tracked, 88 alive, 0 crossed, 0 reached
+    goal, survival rate 0.786, mean closest goal distance 956.828, and field/meat
+    gains 2.461/0.584 among survivors.
 
 Core:
 
@@ -1087,8 +1108,9 @@ git log --oneline -5
 - agency: run repeated post-topology `--replay both` evidence with the new
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use
-- agency: add detour-navigation microtests for food/prey behind glass with a
-  nearby opening
+- agency: run longer detour-navigation comparisons for founder controls,
+  evolved soup/maze/planet cohorts, and eventually intact vs disassembled
+  clusters
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization
 
