@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Track habitat lineage turnover`
+  current `main` HEAD after this pass: `Track habitat survival telemetry`
 
 Recent useful commits:
 
-- current `main` HEAD - Track habitat lineage turnover
+- current `main` HEAD - Track habitat survival telemetry
+- `30a135d` - Track habitat lineage turnover
 - `f6b4455` - Track habitat region movement
 - `7df3dfb` - Add habitat region telemetry
 - `91b04ca` - Show event combat attack flashes
@@ -149,7 +150,7 @@ Core systems:
   pockets, and local mutagen cracks
 - habitat-region metadata plus `js/region_metrics.js` for basin/niche
   occupancy, energy, material, species-entropy, movement, and clade turnover
-  telemetry
+  telemetry, plus profile-window survival/death/escape comparisons by region
 - import/export for particles, species/clades, clusters, and sterile worlds
 - CPU simulation path
 - WebGPU pair-force/brain path with CPU fallback
@@ -967,6 +968,17 @@ Latest verification in the cluster-budding pass:
     passed and emitted `regionLineageTurnover`. Final window: 28 clade
     colonizations, 7 local clade extinctions, mean turnover 0.211, with
     `central crossing` and `outside` flagged as high-turnover regions.
+- Habitat-region survival verification:
+  - `node --check js\region_metrics.js` and `node --check tools\bench-cpu.js`
+    passed.
+  - `npm test -- planet-preset.test.js` passed with assertions that survival
+    baselines map live particles and detect deaths by origin region.
+  - `npm test` passed all 20 test files after the survival telemetry pass.
+  - `node tools\bench-cpu.js --preset planet --ticks 180 --cap 900 --seed 0xC1A0C0 --combat event --profileEvery 90`
+    passed and emitted `regionSurvival`. Final window: survival 0.882, death
+    rate 0.118, move-out rate 0.141. Highest death regions were `glass basin`
+    at 0.168 and `dawn basin` at 0.160; `central crossing` had the highest
+    move-out rate at 0.439.
 
 Core:
 
@@ -1043,8 +1055,8 @@ git log --oneline -5
 
 3. Choose one narrow pass:
 
-- planet ecology: extend region/niche telemetry with region-to-region survival
-  comparisons and behavior outcomes
+- planet ecology: extend region/niche telemetry with explicit behavior outcomes
+  by region
 - planet ecology: run longer multi-seed Planet soaks and compare against
   soup/maze for daughter buds, topology, wall work, attacks, and brain slots
 - visuals: tune the small red blood-drop attack flash if it reads too loud or

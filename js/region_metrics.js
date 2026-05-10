@@ -416,3 +416,146 @@ export function computeRegionLineageTurnover(world, previous = new Map(), opts =
     },
   };
 }
+
+function regionInfoForSurvival(world, includeOutside) {
+  const regions = normaliseRegions(world);
+  const info = new Map();
+  for (const r of regions) info.set(r.id, { id: r.id, name: r.name, type: r.type });
+  if (includeOutside) info.set('outside', { id: 'outside', name: 'outside', type: 'outside' });
+  return { regions, info };
+}
+
+function particleSurvivalRecord(world, p, regions, includeOutside, lineageMode) {
+  const regionId = assignRegionId(world, p, regions, { includeOutside });
+  if (regionId == null) return null;
+  return {
+    regionId,
+    energy: Number(p.energy) || 0,
+    lineageId: particleLineageKey(p, lineageMode),
+  };
+}
+
+export function computeRegionSurvival(world, previous = new Map(), opts = {}) {
+  if (!world) return { current: new Map(), summary: null };
+  const includeOutside = opts.includeOutside !== false;
+  const lineageMode = opts.lineageMode || 'clade';
+  const { regions, info } = regionInfoForSurvival(world, includeOutside);
+  if (!regions.length) return { current: new Map(), summary: null };
+
+  const current = new Map();
+  for (const p of world.particles || []) {
+    if (!p || p.dead) continue;
+    const rec = particleSurvivalRecord(world, p, regions, includeOutside, lineageMode);
+    if (rec) current.set(p.id, rec);
+  }
+
+  const prevState = previous instanceof Map ? previous : new Map();
+  if (!prevState.size) return { current, summary: null };
+
+  const rows = new Map();
+  const ensure = (id) => {
+    if (!rows.has(id)) {
+      const meta = info.get(id) || { id, name: id, type: 'region' };
+      rows.set(id, {
+        id,
+        name: meta.name,
+        type: meta.type,
+        startParticles: 0,
+        survived: 0,
+        died: 0,
+        stayed: 0,
+        movedOut: 0,
+        newParticles: 0,
+        energyDeltaSum: 0,
+        destinations: new Map(),
+      });
+    }
+    return rows.get(id);
+  };
+  for (const id of info.keys()) ensure(id);
+
+  let startParticles = 0;
+  let survived = 0;
+  let died = 0;
+  let movedOut = 0;
+  let newParticles = 0;
+
+  for (const [id, prev] of prevState) {
+    const row = ensure(prev.regionId);
+    row.startParticles++;
+    startParticles++;
+    const cur = current.get(id);
+    if (!cur) {
+      row.died++;
+      died++;
+      continue;
+    }
+    row.survived++;
+    survived++;
+    row.energyDeltaSum += cur.energy - (prev.energy || 0);
+    if (cur.regionId === prev.regionId) {
+      row.stayed++;
+    } else {
+      row.movedOut++;
+      movedOut++;
+      increment(row.destinations, cur.regionId);
+    }
+  }
+
+  for (const [id, cur] of current) {
+    if (prevState.has(id)) continue;
+    ensure(cur.regionId).newParticles++;
+    newParticles++;
+  }
+
+  const regionsOut = [...rows.values()].map(row => {
+    const destinations = [...row.destinations.entries()]
+      .map(([to, count]) => ({ to, count }))
+      .sort((a, b) => b.count - a.count || a.to.localeCompare(b.to))
+      .slice(0, 5);
+    const survivalRate = row.startParticles ? row.survived / row.startParticles : 0;
+    const deathRate = row.startParticles ? row.died / row.startParticles : 0;
+    const moveOutRate = row.startParticles ? row.movedOut / row.startParticles : 0;
+    return {
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      startParticles: row.startParticles,
+      survived: row.survived,
+      died: row.died,
+      stayed: row.stayed,
+      movedOut: row.movedOut,
+      newParticles: row.newParticles,
+      survivalRate: round(survivalRate, 3),
+      deathRate: round(deathRate, 3),
+      moveOutRate: round(moveOutRate, 3),
+      meanEnergyDelta: row.survived ? round(row.energyDeltaSum / row.survived, 3) : 0,
+      destinations,
+    };
+  }).sort((a, b) => b.startParticles - a.startParticles || a.id.localeCompare(b.id));
+
+  return {
+    current,
+    summary: {
+      regions: regionsOut,
+      startParticles,
+      survived,
+      died,
+      movedOut,
+      newParticles,
+      survivalRate: startParticles ? round(survived / startParticles, 3) : 0,
+      deathRate: startParticles ? round(died / startParticles, 3) : 0,
+      moveOutRate: startParticles ? round(movedOut / startParticles, 3) : 0,
+      highDeathRegions: regionsOut
+        .filter(r => r.startParticles >= 8 && r.deathRate >= 0.08)
+        .sort((a, b) => b.deathRate - a.deathRate || b.startParticles - a.startParticles)
+        .map(r => ({ id: r.id, name: r.name, deathRate: r.deathRate, died: r.died }))
+        .slice(0, 5),
+      highEscapeRegions: regionsOut
+        .filter(r => r.startParticles >= 8 && r.moveOutRate >= 0.25)
+        .sort((a, b) => b.moveOutRate - a.moveOutRate || b.startParticles - a.startParticles)
+        .map(r => ({ id: r.id, name: r.name, moveOutRate: r.moveOutRate, movedOut: r.movedOut }))
+        .slice(0, 5),
+    },
+  };
+}

@@ -37,8 +37,9 @@ windows and line-of-sight counters (`losHashSkips`, `losWalks`, etc.) for
 degradation checks. Habitat presets such as Planet also emit region metrics:
 basin occupancy, mean energy, mud/glass use, food/decay/mutagen mass, species
 entropy, profile-window movement between regions, and clade turnover/local
-extinction by region. Use `--combat nibble` or `--combat event` to compare the
-legacy
+extinction by region. Profile windows also compare regional survival, deaths,
+escapes, new particles, and mean energy change. Use `--combat nibble` or
+`--combat event` to compare the legacy
 contact-predation model against the event-style attack/counter/escape model
 used by the browser app.
 

@@ -84,12 +84,15 @@ First validation:
   material, species entropy, dominant species, and local food/decay/mutagen
   mass. Profile windows also report movement between regions, clade
   colonization, local clade extinction, turnover score, dominant clade, and the
-  top gaining/declining clades per region. In a 300-tick `0xC1A0C0` probe,
-  `root basin` held 177 particles at mean energy 9.927 while `glass basin`
-  held 119 particles at mean energy 3.162 and 96 mud occupants; 425 particles
-  remained outside named regions. A later 180-tick profiled probe showed the
-  central crossing and outside pool turning over faster than the protected
-  basins.
+  top gaining/declining clades per region. They also compare regional
+  survival, death rate, escape rate, new particles, and mean energy change. In
+  a 300-tick `0xC1A0C0` probe, `root basin` held 177 particles at mean energy
+  9.927 while `glass basin` held 119 particles at mean energy 3.162 and 96 mud
+  occupants; 425 particles remained outside named regions. A later 180-tick
+  profiled probe showed the central crossing and outside pool turning over
+  faster than the protected basins; the final 90-tick survival window flagged
+  `glass basin` and `dawn basin` as the highest-death basins, while `central
+  crossing` mostly acted as an escape corridor.
 
 Near validation:
 
@@ -107,8 +110,7 @@ Next habitat improvements:
 
 - Add a sterile world generator mode that lets saved habitats be reused with
   different imported populations.
-- Extend basin/corridor metrics with region-to-region survival comparisons and
-  behavior outcomes.
+- Extend basin/corridor metrics with explicit behavior outcomes by region.
 - Add visible biome overlay or optional low-cost terrain labels.
 
 ## Phase 2: Resource Ecology
@@ -292,8 +294,8 @@ Other scale steps:
 
 1. Ship `Planet` preset and tests.
 2. Run planet short/medium CPU soaks.
-3. Region/niche telemetry to bench output. Shipped occupancy, movement, and
-   clade turnover/local extinction; next add region survival comparisons.
+3. Region/niche telemetry to bench output. Shipped occupancy, movement, clade
+   turnover/local extinction, and survival; next add behavior outcomes.
 4. Add behavior metrics to defense replay.
 5. Attack flash. Shipped as a small red droplet.
 6. Add detour-navigation assay.

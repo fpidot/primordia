@@ -9,6 +9,7 @@ const { PRESETS } = await import('../js/presets.js');
 const {
   computeRegionLineageTurnover,
   computeRegionMetrics,
+  computeRegionSurvival,
   computeRegionTransitions,
 } = await import('../js/region_metrics.js');
 
@@ -76,6 +77,18 @@ await runTest('planet preset: creates multiple persistent niche pressures', asyn
   assert('region lineage turnover detects local colonization',
     changedRegion && changedRegion.colonizations >= 1,
     `colonizations=${changedRegion?.colonizations || 0}`);
+
+  const initialSurvival = computeRegionSurvival(world, new Map(), { includeOutside: true });
+  assert('region survival baseline maps live particles',
+    initialSurvival.current.size === world.particles.length,
+    `mapped=${initialSurvival.current.size} particles=${world.particles.length}`);
+  const originRegion = initialSurvival.current.get(moved.id).regionId;
+  moved.dead = true;
+  const afterSurvival = computeRegionSurvival(world, initialSurvival.current, { includeOutside: true });
+  const survivalRegion = afterSurvival.summary.regions.find(r => r.id === originRegion);
+  assert('region survival detects deaths by origin region',
+    survivalRegion && survivalRegion.died >= 1,
+    `died=${survivalRegion?.died || 0}`);
 });
 
 await runTest('planet preset: short soak remains viable under constraints', async () => {

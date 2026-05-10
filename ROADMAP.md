@@ -53,8 +53,8 @@ quarries, decay pockets, sparse global food, and mutagen cracks. The goal is
 not a prettier maze; it is persistent niche pressure that can make navigation,
 construction, predation defense, communication, cluster reproduction, and brain
 capacity matter at the same time. Current validation now includes regional
-occupancy, movement, and clade-turnover telemetry; next validation target:
-region survival comparisons and soup/maze contrasts. First short
+occupancy, movement, clade-turnover, and survival/death/escape telemetry; next
+validation target: behavior-outcome comparisons and soup/maze contrasts. First short
 validation on seed `0xC1A0C0` created 4733 solid, 2789 glass, 6749 mud, 3085
 rich-food, 2460 decay, and 789 mutagen cells. Planet's first-click default is
 720 particles, while the population slider can still push it higher. A 600-tick
@@ -790,14 +790,17 @@ reports region/niche telemetry for them. Each region reports occupancy, mean
 energy, low-energy count, mud/glass occupancy, wall carriers, species entropy,
 dominant species/share, terrain/material cell counts, and food/decay/mutagen
 mass. Bench profile windows also report particle movement, clade colonizations,
-local clade extinctions, turnover score, dominant clade, and top gaining or
-declining clades by region. A 300-tick `0xC1A0C0` Planet probe showed strong
-niche differences: `root basin` had 177 particles at mean energy 9.927, `glass
-basin` had 119 particles at mean energy 3.162 with 96 mud occupants, and 425
-particles remained outside named regions. A later 180-tick profiled probe
-showed higher clade turnover in `central crossing` and `outside` than in the
-named basins. Next telemetry target: region-to-region survival comparisons and
-behavior outcomes, not only occupancy/movement/turnover.
+local clade extinctions, turnover score, dominant clade, top gaining or
+declining clades, and survival/death/escape/energy-change outcomes by region.
+A 300-tick `0xC1A0C0` Planet probe showed strong niche differences: `root
+basin` had 177 particles at mean energy 9.927, `glass basin` had 119 particles
+at mean energy 3.162 with 96 mud occupants, and 425 particles remained outside
+named regions. A later 180-tick profiled probe showed higher clade turnover in
+`central crossing` and `outside` than in the named basins; the final 90-tick
+window also flagged `glass basin` and `dawn basin` as the highest-death basins,
+while `central crossing` mostly acted as an escape corridor. Next telemetry
+target: explicit behavior outcomes by region, beyond the current occupancy,
+movement, turnover, and survival readouts.
 
 ---
 

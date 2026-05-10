@@ -11,6 +11,7 @@ import { PRESETS, PRESET_COUNTS } from '../js/presets.js';
 import {
   computeRegionLineageTurnover,
   computeRegionMetrics,
+  computeRegionSurvival,
   computeRegionTransitions,
 } from '../js/region_metrics.js';
 
@@ -51,6 +52,8 @@ let regionAssignments = computeRegionTransitions(world, new Map(), { includeOuts
 let lastRegionTransitions = null;
 let regionLineages = computeRegionLineageTurnover(world, new Map(), { includeOutside: true }).current;
 let lastRegionLineageTurnover = null;
+let regionSurvival = computeRegionSurvival(world, new Map(), { includeOutside: true }).current;
+let lastRegionSurvival = null;
 const t0 = performance.now();
 let lastWindowTick = 0;
 let lastWindowTime = t0;
@@ -76,6 +79,10 @@ for (let i = 0; i < ticks; i++) {
     regionLineages = lineageSnap.current;
     lastRegionLineageTurnover = lineageSnap.summary;
     if (lineageSnap.summary) snap.regionLineageTurnover = lineageSnap.summary;
+    const survivalSnap = computeRegionSurvival(world, regionSurvival, { includeOutside: true });
+    regionSurvival = survivalSnap.current;
+    lastRegionSurvival = survivalSnap.summary;
+    if (survivalSnap.summary) snap.regionSurvival = survivalSnap.summary;
     snap.elapsedMs = Number((now - t0).toFixed(1));
     snap.windowTicks = windowTicks;
     snap.windowMsPerTick = Number((windowMs / Math.max(1, windowTicks)).toFixed(3));
@@ -133,6 +140,7 @@ console.log(JSON.stringify({
   regions: regions.length ? regions : undefined,
   regionTransitions: lastRegionTransitions || undefined,
   regionLineageTurnover: lastRegionLineageTurnover || undefined,
+  regionSurvival: lastRegionSurvival || undefined,
   profile: profile && typeof world.profileSummary === 'function' ? world.profileSummary() : undefined,
   profileTrend: profileTrend.length ? profileTrend : undefined,
 }, null, 2));
