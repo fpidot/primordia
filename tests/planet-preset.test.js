@@ -6,7 +6,11 @@ seedGlobalRandom(0xC1A0C0);
 
 const { World, WALL_SOLID, WALL_MEMBRANE, WALL_POROUS } = await import('../js/sim.js');
 const { PRESETS } = await import('../js/presets.js');
-const { computeRegionMetrics, computeRegionTransitions } = await import('../js/region_metrics.js');
+const {
+  computeRegionLineageTurnover,
+  computeRegionMetrics,
+  computeRegionTransitions,
+} = await import('../js/region_metrics.js');
 
 function countTerrain(world) {
   let solid = 0, glass = 0, mud = 0, richFood = 0, decay = 0, mutagen = 0;
@@ -58,6 +62,20 @@ await runTest('planet preset: creates multiple persistent niche pressures', asyn
   const afterMove = computeRegionTransitions(world, initialMoves.current, { includeOutside: true });
   assert('region transitions detect moved particles', afterMove.summary.moved >= 1,
     `moved=${afterMove.summary.moved}`);
+
+  const initialLineages = computeRegionLineageTurnover(world, new Map(), { includeOutside: true });
+  let lineageTotal = 0;
+  for (const counts of initialLineages.current.values()) {
+    for (const count of counts.values()) lineageTotal += count;
+  }
+  assert('region lineage baseline counts live particles', lineageTotal === world.particles.length,
+    `lineageTotal=${lineageTotal} particles=${world.particles.length}`);
+  moved.cladeId = 999999;
+  const afterLineages = computeRegionLineageTurnover(world, initialLineages.current, { includeOutside: true });
+  const changedRegion = afterLineages.summary.regions.find(r => r.id === targetRegion);
+  assert('region lineage turnover detects local colonization',
+    changedRegion && changedRegion.colonizations >= 1,
+    `colonizations=${changedRegion?.colonizations || 0}`);
 });
 
 await runTest('planet preset: short soak remains viable under constraints', async () => {

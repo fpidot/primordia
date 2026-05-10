@@ -8,7 +8,11 @@ import { performance } from 'node:perf_hooks';
 import { mulberry32 } from '../tests/harness.js';
 import { World } from '../js/sim.js';
 import { PRESETS, PRESET_COUNTS } from '../js/presets.js';
-import { computeRegionMetrics, computeRegionTransitions } from '../js/region_metrics.js';
+import {
+  computeRegionLineageTurnover,
+  computeRegionMetrics,
+  computeRegionTransitions,
+} from '../js/region_metrics.js';
 
 function readArg(name, fallback) {
   const flag = `--${name}`;
@@ -45,6 +49,8 @@ const startN = world.particles.length;
 const profileTrend = [];
 let regionAssignments = computeRegionTransitions(world, new Map(), { includeOutside: true }).current;
 let lastRegionTransitions = null;
+let regionLineages = computeRegionLineageTurnover(world, new Map(), { includeOutside: true }).current;
+let lastRegionLineageTurnover = null;
 const t0 = performance.now();
 let lastWindowTick = 0;
 let lastWindowTime = t0;
@@ -66,6 +72,10 @@ for (let i = 0; i < ticks; i++) {
     regionAssignments = transitionSnap.current;
     lastRegionTransitions = transitionSnap.summary;
     if (transitionSnap.summary) snap.regionTransitions = transitionSnap.summary;
+    const lineageSnap = computeRegionLineageTurnover(world, regionLineages, { includeOutside: true });
+    regionLineages = lineageSnap.current;
+    lastRegionLineageTurnover = lineageSnap.summary;
+    if (lineageSnap.summary) snap.regionLineageTurnover = lineageSnap.summary;
     snap.elapsedMs = Number((now - t0).toFixed(1));
     snap.windowTicks = windowTicks;
     snap.windowMsPerTick = Number((windowMs / Math.max(1, windowTicks)).toFixed(3));
@@ -122,6 +132,7 @@ console.log(JSON.stringify({
   combatFailedCost: Number((world.totalCombatFailedCost || 0).toFixed(3)),
   regions: regions.length ? regions : undefined,
   regionTransitions: lastRegionTransitions || undefined,
+  regionLineageTurnover: lastRegionLineageTurnover || undefined,
   profile: profile && typeof world.profileSummary === 'function' ? world.profileSummary() : undefined,
   profileTrend: profileTrend.length ? profileTrend : undefined,
 }, null, 2));

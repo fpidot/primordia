@@ -52,8 +52,9 @@ food oases, mud rings, glass arcs, thick diggable ridges, migration gaps,
 quarries, decay pockets, sparse global food, and mutagen cracks. The goal is
 not a prettier maze; it is persistent niche pressure that can make navigation,
 construction, predation defense, communication, cluster reproduction, and brain
-capacity matter at the same time. Next validation target: planet soaks with
-regional/niche telemetry and comparisons against soup/maze. First short
+capacity matter at the same time. Current validation now includes regional
+occupancy, movement, and clade-turnover telemetry; next validation target:
+region survival comparisons and soup/maze contrasts. First short
 validation on seed `0xC1A0C0` created 4733 solid, 2789 glass, 6749 mud, 3085
 rich-food, 2460 decay, and 789 mutagen cells. Planet's first-click default is
 720 particles, while the population slider can still push it higher. A 600-tick
@@ -788,12 +789,15 @@ Current implementation: Planet registers named habitat regions and CPU bench
 reports region/niche telemetry for them. Each region reports occupancy, mean
 energy, low-energy count, mud/glass occupancy, wall carriers, species entropy,
 dominant species/share, terrain/material cell counts, and food/decay/mutagen
-mass. Bench profile windows also report particle movement between regions. A
-300-tick `0xC1A0C0` Planet probe showed strong niche differences: `root basin`
-had 177 particles at mean energy 9.927, `glass basin` had 119 particles at mean
-energy 3.162 with 96 mud occupants, and 425 particles remained outside named
-regions. Next telemetry target: lineage turnover and local extinction between
-regions, not only per-window occupancy/movement.
+mass. Bench profile windows also report particle movement, clade colonizations,
+local clade extinctions, turnover score, dominant clade, and top gaining or
+declining clades by region. A 300-tick `0xC1A0C0` Planet probe showed strong
+niche differences: `root basin` had 177 particles at mean energy 9.927, `glass
+basin` had 119 particles at mean energy 3.162 with 96 mud occupants, and 425
+particles remained outside named regions. A later 180-tick profiled probe
+showed higher clade turnover in `central crossing` and `outside` than in the
+named basins. Next telemetry target: region-to-region survival comparisons and
+behavior outcomes, not only occupancy/movement/turnover.
 
 ---
 

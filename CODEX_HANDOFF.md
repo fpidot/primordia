@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Track habitat region movement`
+  current `main` HEAD after this pass: `Track habitat lineage turnover`
 
 Recent useful commits:
 
-- current `main` HEAD - Track habitat region movement
+- current `main` HEAD - Track habitat lineage turnover
+- `f6b4455` - Track habitat region movement
 - `7df3dfb` - Add habitat region telemetry
 - `91b04ca` - Show event combat attack flashes
 - `ca91cfc` - Add planetary ecology scaffold
@@ -147,7 +148,8 @@ Core systems:
   rings, glass arcs, thick diggable ridges, migration gaps, quarries, decay
   pockets, and local mutagen cracks
 - habitat-region metadata plus `js/region_metrics.js` for basin/niche
-  occupancy, energy, material, species-entropy, and movement telemetry
+  occupancy, energy, material, species-entropy, movement, and clade turnover
+  telemetry
 - import/export for particles, species/clades, clusters, and sterile worlds
 - CPU simulation path
 - WebGPU pair-force/brain path with CPU fallback
@@ -954,6 +956,17 @@ Latest verification in the cluster-budding pass:
     passed with no page errors at 24.8 FPS/ticks-per-second.
   - CPU bench profile windows now include `regionTransitions`, with counts for
     stayed, moved, entered, exited, transition pairs, and exits.
+- Habitat-region lineage-turnover verification:
+  - `node --check js\region_metrics.js` and `node --check tools\bench-cpu.js`
+    passed.
+  - `npm test -- planet-preset.test.js` passed with assertions that region
+    lineage baselines count live particles and detect a forced local
+    colonization.
+  - `npm test` passed all 20 test files after the lineage-turnover pass.
+  - `node tools\bench-cpu.js --preset planet --ticks 180 --cap 900 --seed 0xC1A0C0 --combat event --profileEvery 90`
+    passed and emitted `regionLineageTurnover`. Final window: 28 clade
+    colonizations, 7 local clade extinctions, mean turnover 0.211, with
+    `central crossing` and `outside` flagged as high-turnover regions.
 
 Core:
 
@@ -1030,8 +1043,8 @@ git log --oneline -5
 
 3. Choose one narrow pass:
 
-- planet ecology: extend region/niche telemetry with lineage turnover, local
-  extinction, and region-to-region survival comparisons
+- planet ecology: extend region/niche telemetry with region-to-region survival
+  comparisons and behavior outcomes
 - planet ecology: run longer multi-seed Planet soaks and compare against
   soup/maze for daughter buds, topology, wall work, attacks, and brain slots
 - visuals: tune the small red blood-drop attack flash if it reads too loud or
