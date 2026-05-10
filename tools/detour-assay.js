@@ -78,6 +78,7 @@ export function buildDetourArena(world, opts = {}) {
   let barrierCells = 0;
   let openGapCells = 0;
 
+  if (opts.clearFields !== false) world.clearField?.();
   world.walls.fill(0);
   world.wallOwnerId?.fill?.(0);
   world.wallOwnerClusterId?.fill?.(0);
@@ -155,9 +156,43 @@ function initPreset(world, presetName, startCount) {
   PRESETS[presetName](world, startCount);
 }
 
-function focusCohortNearStart(world, startCount, arena, opts = {}) {
-  const ps = world.particles.filter(p => !p.dead);
-  const targetN = Math.min(ps.length, Math.max(1, Number(startCount) || ps.length));
+function cohortScore(p) {
+  const brainSlots = p.genome?.brain?.enabledCount?.() || 0;
+  const clusterSize = p.cluster?.size || 0;
+  return (p.energy || 0) + brainSlots * 0.4 + clusterSize * 0.08 + (p.age || 0) * 0.002;
+}
+
+function selectCohort(world, startCount, mode = 'mixed') {
+  const live = world.particles.filter(p => p && !p.dead);
+  const targetN = Math.min(live.length, Math.max(1, Number(startCount) || live.length));
+  const m = String(mode || 'mixed').toLowerCase();
+  if (m === 'all') return live;
+  if (m === 'random') {
+    const shuffled = live.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled.slice(0, targetN);
+  }
+  if (m === 'elite') {
+    return live.slice().sort((a, b) => cohortScore(b) - cohortScore(a)).slice(0, targetN);
+  }
+  const ranked = live.slice().sort((a, b) => cohortScore(b) - cohortScore(a));
+  const eliteN = Math.min(ranked.length, Math.max(1, Math.floor(targetN * 0.5)));
+  const picked = ranked.slice(0, eliteN);
+  const pickedIds = new Set(picked.map(p => p.id));
+  const rest = live.filter(p => !pickedIds.has(p.id));
+  while (picked.length < targetN && rest.length > 0) {
+    const i = (Math.random() * rest.length) | 0;
+    picked.push(rest.splice(i, 1)[0]);
+  }
+  return picked;
+}
+
+function focusCohortNearStart(world, cohort, arena, opts = {}) {
+  const ps = cohort && cohort.length ? cohort : world.particles.filter(p => !p.dead);
+  const targetN = ps.length;
   const cx = Number(opts.startX) || W * 0.28;
   const cy = Number(opts.startY) || H * 0.5;
   for (let i = 0; i < targetN; i++) {
@@ -171,10 +206,11 @@ function focusCohortNearStart(world, startCount, arena, opts = {}) {
   }
 }
 
-function initTrackers(world, arena) {
+function initTrackers(world, arena, selectedIds = null) {
   const tracked = new Map();
   for (const p of world.particles) {
     if (!p || p.dead || p.x >= arena.barrierX) continue;
+    if (selectedIds && !selectedIds.has(p.id)) continue;
     tracked.set(p.id, {
       id: p.id,
       startX: p.x,
@@ -219,17 +255,22 @@ export async function runDetourAssay(opts = {}) {
   const defaultStart = presetName === 'soup' ? 320 : (PRESET_COUNTS[presetName] || cap);
   const start = Math.min(cap, Math.max(1, Number(opts.start) || defaultStart));
   const ticks = Math.max(1, Number(opts.ticks) || 600);
+  const evolveTicks = Math.max(0, Number(opts.evolveTicks) || 0);
   const sampleEvery = Math.max(1, Number(opts.sampleEvery) || 6);
   const combatMode = opts.combatMode === 'event' ? 'event' : 'nibble';
+  const cohortMode = opts.cohort || 'mixed';
 
   const prevRandom = Math.random;
   Math.random = mulberry32(seed >>> 0);
   try {
     const world = new World({ maxParticles: cap, combatMode });
     initPreset(world, presetName, start);
+    for (let t = 0; t < evolveTicks; t++) await world.step();
+    const cohort = selectCohort(world, start, cohortMode);
     const arena = buildDetourArena(world, opts);
-    if (opts.focusStart !== false) focusCohortNearStart(world, start, arena, opts);
-    const tracked = initTrackers(world, arena);
+    const selectedIds = opts.focusStart !== false ? new Set(cohort.map(p => p.id)) : null;
+    if (opts.focusStart !== false) focusCohortNearStart(world, cohort, arena, opts);
+    const tracked = initTrackers(world, arena, selectedIds);
 
     for (let t = 0; t < ticks; t++) {
       await world.step();
@@ -269,9 +310,11 @@ export async function runDetourAssay(opts = {}) {
       preset: presetName,
       seed: opts.seed ?? '0xD370A',
       ticks,
+      evolveTicks,
       cap,
       start,
       combatMode,
+      cohortMode,
       arena,
       tracked: records.length,
       alive: alive.length,
@@ -301,6 +344,8 @@ async function main() {
     seed: readArgOrPos('seed', '0xD370A', 3),
     combatMode: readArgOrPos('combat', 'nibble', 5),
     barrier: readArgOrPos('barrier', 'glass', 4),
+    evolveTicks: Number(readArgOrPos('evolveTicks', 0, 6)),
+    cohort: readArgOrPos('cohort', 'mixed', 7),
     gapCells: Number(readArg('gapCells', 8)),
     thickness: Number(readArg('thickness', 2)),
     focusStart: !hasFlag('scatter'),

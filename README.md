@@ -68,6 +68,7 @@ made from the same cluster member cells.
 ```sh
 npm run assay:detour -- --ticks 600 --cap 600 --start 320 --seed 0xD370A --barrier glass --combat event
 node tools/detour-assay.js --ticks 600 --cap 600 --start 320 --seed 0xD370A --barrier glass --combat event
+node tools/detour-assay.js --evolveTicks 1200 --ticks 600 --cap 900 --start 320 --seed 0x51A11 --barrier glass --combat event --cohort elite
 ```
 
 The detour assay creates a controlled vertical obstacle with two gaps, places a
@@ -75,7 +76,9 @@ food patch behind it, and tracks whether the near-side cohort crosses, reaches
 the goal, survives, gets stuck/slips near the barrier, and gains field or meat
 energy. It is an evidence generator, not a pass/fail proof of planning; use it
 before and after longer evolved-cohort runs to test whether obstacle navigation
-is becoming more than random wandering.
+is becoming more than random wandering. `--evolveTicks` soaks the source
+population before the controlled arena is built; `--cohort mixed|elite|random|all`
+chooses which live particles enter the replay.
 
 ## Browser timing probe
 

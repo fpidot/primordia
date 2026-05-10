@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add detour navigation assay`
+  current `main` HEAD after this pass: `Extend detour assay to evolved cohorts`
 
 Recent useful commits:
 
-- current `main` HEAD - Add detour navigation assay
+- current `main` HEAD - Extend detour assay to evolved cohorts
+- `d10a01c` - Add detour navigation assay
 - `e1b460f` - Track regional behavior outcomes
 - `e8c25b5` - Track habitat survival telemetry
 - `30a135d` - Track habitat lineage turnover
@@ -625,6 +626,9 @@ Obstacle navigation:
 - Detour assay now exists:
   - `tools/detour-assay.js` builds a repeatable glass/solid/mud barrier arena
     with two gaps and food behind the obstacle.
+  - `--evolveTicks` lets a source population soak before the arena is reset into
+    the controlled detour challenge, and `--cohort mixed|elite|random|all`
+    controls which live particles are replayed.
   - It tracks crossing, goal reach, survival, mean closest approach to the
     goal, field/meat energy gain, motor slip near the barrier, and stuck
     samples.
@@ -1017,6 +1021,10 @@ Latest verification in the cluster-budding pass:
   - `node --check tools\detour-assay.js` and
     `node --check tests\detour-navigation.test.js` passed.
   - `npm test -- detour-navigation.test.js` passed.
+  - Evolved-cohort smoke passed:
+    `node tools\detour-assay.js --evolveTicks 80 --ticks 80 --cap 180 --start 96 --seed 0xD370B --barrier glass --combat event --cohort elite`;
+    result: 96 tracked, 77 alive, 0 crossed, 0 reached goal, survival rate
+    0.802, mean closest goal distance 957.81, field/meat gains 2.891/0.568.
   - `npm test` passed all 21 test files after the detour assay pass.
   - `npm run assay:detour -- --ticks 80 --cap 180 --start 112 --seed 0xD370A --barrier glass --combat event`
     and the equivalent direct `node tools\detour-assay.js ...` command both

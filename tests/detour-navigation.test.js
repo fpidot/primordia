@@ -59,3 +59,25 @@ await runTest('detour-navigation: assay returns finite behavior metrics', async 
   assert('max x is finite', Number.isFinite(result.meanMaxX),
     `meanMaxX=${result.meanMaxX}`);
 });
+
+await runTest('detour-navigation: assay can replay an evolved cohort', async () => {
+  const result = await runDetourAssay({
+    preset: 'soup',
+    evolveTicks: 12,
+    ticks: 12,
+    cap: 96,
+    start: 48,
+    seed: 0xD370B,
+    barrier: 'glass',
+    combatMode: 'event',
+    cohort: 'elite',
+  });
+
+  assert('evolved tick count is reported', result.evolveTicks === 12,
+    `evolveTicks=${result.evolveTicks}`);
+  assert('elite cohort was tracked', result.tracked > 0,
+    `tracked=${result.tracked}`);
+  assertInRange('evolved survivalRate', result.survivalRate, 0, 1);
+  assert('arena was reset to controlled goal food', result.arena.barrierCells > 0,
+    `barrierCells=${result.arena.barrierCells}`);
+});

@@ -114,12 +114,14 @@ machine; heavier Planet starts are still a deliberate stress test.
    motion, giving evolution generic feedback for glass, solid, world-edge,
    crowding, mud, and other impediments. Current validation tool:
    `tools/detour-assay.js` now creates a repeatable glass/solid/mud barrier
-   arena with two gaps and a food goal behind the obstacle, then reports
-   crossing, goal approach, survival, field/meat energy gains, motor slip, and
-   stuck samples. Short founder smokes run cleanly but do not yet show reliable
-   crossing; the next question is whether longer evolved cohorts, Planet
-   niches, or stronger target/detour pressure produce "go around, then turn
-   back toward the goal" behavior.
+   arena with two gaps and a food goal behind the obstacle, can optionally soak
+   the source population first via `--evolveTicks`, can choose
+   `mixed|elite|random|all` cohorts, and reports crossing, goal approach,
+   survival, field/meat energy gains, motor slip, and stuck samples. Short
+   founder/evolved smokes run cleanly but do not yet show reliable crossing;
+   the next question is whether longer evolved cohorts, Planet niches, intact
+   cluster replay, or stronger target/detour pressure produce "go around, then
+   turn back toward the goal" behavior.
    Transmission rule is now explicit for direct particle/signal perception:
    solid blocks line-of-sight interactions, while glass and mud transmit them.
    GPU parity is maintained by packing a solid-wall visibility grid into the

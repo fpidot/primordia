@@ -233,7 +233,8 @@ Goal: raise neural capacity only when there is a reason.
 Near steps:
 
 - Use `tools/detour-assay.js` for repeated food-behind-obstacle comparisons:
-  founder controls, evolved soup/maze/planet cohorts, and eventually intact vs
+  founder controls, `--evolveTicks` soup/maze/planet cohorts,
+  `mixed|elite|random|all` cohort choices, and eventually intact vs
   disassembled clusters.
 - Add more behavior metrics to defense replay: retreat vector, predator-distance
   delta, alarm timing, cohesion under attack, mud/glass use. First pass now
@@ -308,7 +309,7 @@ Other scale steps:
 4. Add behavior metrics to defense replay. Shipped first cohort-owned behavior
    counters; next add retreat/alarm/cohesion timing.
 5. Attack flash. Shipped as a small red droplet.
-6. Detour-navigation assay. Shipped first controlled barrier/food-goal tool;
-   next run longer evolved-cohort comparisons.
+6. Detour-navigation assay. Shipped controlled barrier/food-goal tool plus
+   evolved-cohort replay; next run longer evolved-cohort comparisons.
 7. Decide whether torus topology or a small bounded fishbowl prototype is the
    better next topology/physics experiment.
