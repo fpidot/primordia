@@ -19,12 +19,14 @@ npm test
 
 - [A naturalist's note on the particles](docs/PARTICLES_NATURALIST_NOTE.md)
 - [Quick start for first-time visitors](docs/QUICK_START.md)
+- [Planetary ecology upgrade plan](docs/PLANETARY_ECOLOGY_PLAN.md)
 
 ## CPU timing probe
 
 ```sh
 npm run bench:cpu -- maze 1200 1500 0xC0FFEE
 node tools/bench-cpu.js --preset maze --ticks 500 --cap 1200 --seed 0xC0FFEE --profile --profileEvery 100
+node tools/bench-cpu.js --preset planet --ticks 600 --cap 900 --seed 0xC1A0C0 --combat event --profileEvery 300
 ```
 
 The CPU probe reports timing plus construction diagnostics (`wallDigs`,
@@ -78,6 +80,12 @@ costs and low-zoom LOD behavior.
 The Presets panel includes an initial-population slider. Presets scale their
 starting population to that value, including zero-particle starts for terrain
 inspection or manual seeding.
+
+Available terrain-heavy starts now include Maze and Planet. Maze is a tighter
+constraint course; Planet is a niche-rich habitat with protected food oases,
+mud rings, glass arcs, thick diggable ridges, quarries, decay pockets, and
+mutagen cracks. Planet defaults to 720 particles; raise the initial-population
+slider when you want a heavier stress ecology.
 
 ## Architecture
 

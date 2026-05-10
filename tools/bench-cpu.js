@@ -7,7 +7,7 @@
 import { performance } from 'node:perf_hooks';
 import { mulberry32 } from '../tests/harness.js';
 import { World } from '../js/sim.js';
-import { PRESETS } from '../js/presets.js';
+import { PRESETS, PRESET_COUNTS } from '../js/presets.js';
 
 function readArg(name, fallback) {
   const flag = `--${name}`;
@@ -36,8 +36,8 @@ if (!PRESETS[presetName]) {
 Math.random = mulberry32(seed);
 
 const world = new World({ maxParticles: cap, combatMode });
-if (presetName === 'soup') PRESETS.soup(world, Math.min(800, cap));
-else PRESETS[presetName](world);
+const defaultStart = presetName === 'soup' ? 800 : (PRESET_COUNTS[presetName] || cap);
+PRESETS[presetName](world, Math.min(defaultStart, cap));
 if ((profile || profileEvery) && typeof world.setProfiling === 'function') world.setProfiling(true);
 
 const startN = world.particles.length;

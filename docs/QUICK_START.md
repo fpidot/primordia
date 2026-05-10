@@ -71,6 +71,8 @@ Use this when you want to control time and starting conditions.
   - Predator-Prey: stronger interspecies pressure.
   - Symbiotic Web: more mutualistic starting structure.
   - Maze: terrain constraints with solid walls, glass, and mud.
+  - Planet: a richer habitat with protected oases, thick ridges, glass arcs,
+    mud basins, quarries, decay pockets, and mutagen cracks.
 - Initial population controls how many particles a preset starts with. Set it
   to zero if you want a sterile terrain start.
 - Camera tools fit, zoom, and reset the view.

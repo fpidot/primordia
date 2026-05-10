@@ -5,7 +5,7 @@ import { W, H, GW, GH, CELL, WALL_SOLID, WALL_MEMBRANE, WALL_POROUS } from './si
 import { NUM_SPECIES, makeGenome, randomMatrixRow } from './genome.js';
 
 export const PRESETS = {
-  soup, predprey, symbiotic, maze,
+  soup, predprey, symbiotic, maze, planet,
 };
 
 // Particle counts seeded by each preset. Kept here next to the preset bodies
@@ -15,6 +15,7 @@ export const PRESET_COUNTS = {
   predprey: 240 + 1400,
   symbiotic: NUM_SPECIES * 110,
   maze: NUM_SPECIES * 80,
+  planet: NUM_SPECIES * 45,
 };
 
 // Fresh Soup — random genomes, even species mix, scattered food.
@@ -243,6 +244,208 @@ function maze(world, count = PRESET_COUNTS.maze) {
 }
 
 // ─────────────────────────────────────────────────────────────── helpers
+
+// Planet Garden - niche-rich 2D planet prototype. This is the low-risk
+// stepping stone before toroidal/globe topology: protected oases, mud costs,
+// glass refuges, thick diggable ridges, sparse corridors, quarries, decay
+// pockets, and mutagenic cracks inside the existing performant world.
+function planet(world, count = PRESET_COUNTS.planet) {
+  world.reset();
+
+  const setWall = (gx, gy, type) => {
+    if (gx < 0 || gx >= GW || gy < 0 || gy >= GH) return;
+    const idx = gy * GW + gx;
+    if (!world.walls[idx]) world._wallCount++;
+    world.walls[idx] = type;
+  };
+  const clearWall = (gx, gy) => {
+    if (gx < 0 || gx >= GW || gy < 0 || gy >= GH) return;
+    const idx = gy * GW + gx;
+    if (world.walls[idx]) world._wallCount = Math.max(0, world._wallCount - 1);
+    world.walls[idx] = 0;
+  };
+  const addField = (gx, gy, food = 0, decay = 0, mutagen = 0) => {
+    if (gx < 0 || gx >= GW || gy < 0 || gy >= GH) return;
+    const idx = gy * GW + gx;
+    if (food) world.field[0][idx] = Math.min(6, world.field[0][idx] + food);
+    if (decay) {
+      world.field[1][idx] = Math.min(10, world.field[1][idx] + decay);
+      world._decayActive = true;
+    }
+    if (mutagen) {
+      world.mutagen[idx] = Math.min(4, world.mutagen[idx] + mutagen);
+      world._mutagenActive = true;
+    }
+  };
+  const paintDisc = (cx, cy, radius, type, rough = 0.18) => {
+    const r = Math.max(1, radius | 0);
+    for (let dy = -r - 1; dy <= r + 1; dy++) {
+      for (let dx = -r - 1; dx <= r + 1; dx++) {
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const edge = radius * (1 + (Math.random() - 0.5) * rough);
+        if (d <= edge) setWall(cx + dx, cy + dy, type);
+      }
+    }
+  };
+  const paintRing = (cx, cy, radius, width, type, gapAngle = null, gapWidth = 0) => {
+    const outer = radius + width;
+    const inner = Math.max(1, radius - width);
+    for (let dy = -outer - 1; dy <= outer + 1; dy++) {
+      for (let dx = -outer - 1; dx <= outer + 1; dx++) {
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < inner || d > outer) continue;
+        if (gapAngle != null && gapWidth > 0) {
+          const a = Math.atan2(dy, dx);
+          let da = Math.abs(a - gapAngle);
+          if (da > Math.PI) da = Math.PI * 2 - da;
+          if (da < gapWidth) continue;
+        }
+        setWall(cx + dx, cy + dy, type);
+      }
+    }
+  };
+  const paintArc = (cx, cy, radius, width, type, start, end) => {
+    const outer = radius + width;
+    const inner = Math.max(1, radius - width);
+    for (let dy = -outer - 1; dy <= outer + 1; dy++) {
+      for (let dx = -outer - 1; dx <= outer + 1; dx++) {
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < inner || d > outer) continue;
+        let a = Math.atan2(dy, dx);
+        if (a < 0) a += Math.PI * 2;
+        const s = start < 0 ? start + Math.PI * 2 : start;
+        const e = end < 0 ? end + Math.PI * 2 : end;
+        const inside = s <= e ? (a >= s && a <= e) : (a >= s || a <= e);
+        if (inside) setWall(cx + dx, cy + dy, type);
+      }
+    }
+  };
+  const stampField = (cx, cy, radius, food, decay = 0, mutagen = 0) => {
+    const r = Math.max(1, radius | 0);
+    const r2 = r * r;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const d2 = dx * dx + dy * dy;
+        if (d2 > r2) continue;
+        const fall = 1 - d2 / r2;
+        addField(cx + dx, cy + dy, food * fall, decay * fall, mutagen * fall);
+      }
+    }
+  };
+  const paintLineH = (gy, x0, x1, type, thick, gaps = []) => {
+    for (let x = x0; x <= x1; x++) {
+      let open = false;
+      for (const [g0, g1] of gaps) {
+        if (x >= g0 && x <= g1) { open = true; break; }
+      }
+      if (open) continue;
+      for (let dy = 0; dy < thick; dy++) setWall(x, gy + dy, type);
+    }
+  };
+  const paintLineV = (gx, y0, y1, type, thick, gaps = []) => {
+    for (let y = y0; y <= y1; y++) {
+      let open = false;
+      for (const [g0, g1] of gaps) {
+        if (y >= g0 && y <= g1) { open = true; break; }
+      }
+      if (open) continue;
+      for (let dx = 0; dx < thick; dx++) setWall(gx + dx, y, type);
+    }
+  };
+
+  paintLineH((GH * 0.30) | 0, 20, GW - 32, WALL_SOLID, 5, [
+    [(GW * 0.20) | 0, (GW * 0.25) | 0],
+    [(GW * 0.58) | 0, (GW * 0.64) | 0],
+  ]);
+  paintLineH((GH * 0.70) | 0, 28, GW - 24, WALL_SOLID, 6, [
+    [(GW * 0.36) | 0, (GW * 0.43) | 0],
+    [(GW * 0.76) | 0, (GW * 0.82) | 0],
+  ]);
+  paintLineV((GW * 0.48) | 0, 16, GH - 18, WALL_MEMBRANE, 4, [
+    [(GH * 0.18) | 0, (GH * 0.27) | 0],
+    [(GH * 0.52) | 0, (GH * 0.60) | 0],
+    [(GH * 0.80) | 0, (GH * 0.88) | 0],
+  ]);
+
+  const basins = [
+    { x: 0.18, y: 0.22, r: 17, food: 3.5, mud: 24, glass: [0.65, 1.75] },
+    { x: 0.80, y: 0.27, r: 21, food: 3.0, mud: 29, glass: [3.15, 4.65] },
+    { x: 0.30, y: 0.78, r: 20, food: 3.8, mud: 28, glass: [5.10, 0.35] },
+    { x: 0.70, y: 0.74, r: 16, food: 2.8, mud: 23, glass: [2.10, 3.05] },
+  ];
+  for (const b of basins) {
+    const cx = (b.x * GW) | 0;
+    const cy = (b.y * GH) | 0;
+    paintRing(cx, cy, b.mud, 4, WALL_POROUS, Math.random() * Math.PI * 2, 0.28);
+    paintArc(cx, cy, b.mud + 7, 3, WALL_MEMBRANE, b.glass[0], b.glass[1]);
+    stampField(cx, cy, b.r, b.food, 0.20, 0);
+    stampField(cx + ((Math.random() - 0.5) * 12 | 0), cy + ((Math.random() - 0.5) * 12 | 0),
+      Math.max(6, b.r - 8), b.food * 0.7, 0, 0);
+  }
+
+  for (let i = 0; i < 8; i++) {
+    const cx = (24 + Math.random() * (GW - 48)) | 0;
+    const cy = (18 + Math.random() * (GH - 36)) | 0;
+    stampField(cx, cy, 7 + ((Math.random() * 7) | 0), 0.10, 1.0 + Math.random() * 1.6, 0);
+  }
+  for (let i = 0; i < 7; i++) {
+    const cx = (20 + Math.random() * (GW - 40)) | 0;
+    const cy = (18 + Math.random() * (GH - 36)) | 0;
+    paintDisc(cx, cy, 7 + ((Math.random() * 9) | 0), WALL_SOLID, 0.35);
+  }
+  for (let i = 0; i < 5; i++) {
+    const cx = (28 + Math.random() * (GW - 56)) | 0;
+    const cy = (24 + Math.random() * (GH - 48)) | 0;
+    paintArc(cx, cy, 12 + ((Math.random() * 12) | 0), 2 + ((Math.random() * 3) | 0),
+      WALL_MEMBRANE, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2);
+  }
+  for (let i = 0; i < 9; i++) {
+    const cx = (20 + Math.random() * (GW - 40)) | 0;
+    const cy = (18 + Math.random() * (GH - 36)) | 0;
+    paintDisc(cx, cy, 5 + ((Math.random() * 8) | 0), WALL_POROUS, 0.5);
+  }
+  for (let i = 0; i < 5; i++) {
+    const cx = (30 + Math.random() * (GW - 60)) | 0;
+    const cy = (18 + Math.random() * (GH - 36)) | 0;
+    stampField(cx, cy, 5 + ((Math.random() * 5) | 0), 0, 0, 1.1 + Math.random() * 1.2);
+  }
+
+  for (let i = 0; i < 14; i++) {
+    const cx = (12 + Math.random() * (GW - 24)) | 0;
+    const cy = (12 + Math.random() * (GH - 24)) | 0;
+    const r = 2 + ((Math.random() * 3) | 0);
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dy * dy <= r * r) clearWall(cx + dx, cy + dy);
+      }
+    }
+  }
+
+  world._wallsVersion++;
+  scatterFood(world, 0.22, 0.12);
+
+  const centers = basins.map(b => ({ x: b.x * W, y: b.y * H }));
+  centers.push({ x: W * 0.50, y: H * 0.50 });
+  centers.push({ x: W * 0.88, y: H * 0.52 });
+  const founders = [];
+  for (let s = 0; s < NUM_SPECIES; s++) founders.push(world.beginClade(makeGenome(s)));
+  for (let i = 0; i < count; i++) {
+    const sp = i % NUM_SPECIES;
+    const c = centers[(sp + ((i / NUM_SPECIES) | 0)) % centers.length];
+    let x = c.x, y = c.y;
+    for (let tries = 0; tries < 24; tries++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 20 + Math.random() * 120;
+      x = clamp(c.x + Math.cos(a) * r, 8, W - 8);
+      y = clamp(c.y + Math.sin(a) * r, 8, H - 8);
+      const gx = clamp((x / CELL) | 0, 0, GW - 1);
+      const gy = clamp((y / CELL) | 0, 0, GH - 1);
+      const wt = world.walls[gy * GW + gx];
+      if (wt !== WALL_SOLID && wt !== WALL_MEMBRANE) break;
+    }
+    world.addParticle(x, y, makeGenome(sp), 4 + Math.random() * 2, founders[sp]);
+  }
+}
 
 function makeSeedGenome(species, overrides) {
   const g = makeGenome(species);

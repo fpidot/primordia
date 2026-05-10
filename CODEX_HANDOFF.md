@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Strengthen cluster topology coordination`
+  current `main` HEAD after this pass: `Add planetary ecology scaffold`
 
 Recent useful commits:
 
-- current `main` HEAD - Strengthen cluster topology coordination
+- current `main` HEAD - Add planetary ecology scaffold
+- `118493c` - Strengthen cluster topology coordination
 - `a57c68d` - Add cluster-preserving defense replay
 - `b58d767` - Expose organism bud telemetry
 - `5ab5318` - Tune membrane fill opacity
@@ -139,6 +140,9 @@ Core systems:
   the same organism and do not advance the daughter/granddaughter generation
 - wall digging/depositing with carried wall material
 - wall metadata: builder particle, builder cluster, clade, deposited tick
+- `Planet` habitat preset for niche-rich ecology: protected food oases, mud
+  rings, glass arcs, thick diggable ridges, migration gaps, quarries, decay
+  pockets, and local mutagen cracks
 - import/export for particles, species/clades, clusters, and sterile worlds
 - CPU simulation path
 - WebGPU pair-force/brain path with CPU fallback
@@ -223,9 +227,14 @@ Environment:
 
 - preset initial population is user-selectable
 - empty preset button was removed; use zero population instead
-- maze/world generation includes richer material constraints, but still needs
-  more tuning for thicker walls, isolation, protection, raw materials, mud
-  zones, food oases, and reusable challenge worlds
+- Maze remains the tighter constraint course.
+- Planet is the new richer habitat preset for persistent niches, thicker
+  terrain, oases, mud basins, glass arcs, quarries, decay pockets, and mutagen
+  cracks. Its default start is 720 particles; the slider can still raise it for
+  stress tests.
+- Future world generation still needs editable sterile-world tools, thicker
+  walls, isolation/protection motifs, raw materials, reusable challenge worlds,
+  and region/niche telemetry.
 
 Audio:
 
@@ -732,6 +741,8 @@ Visuals:
   - two soft concentric rings
   - about half-second offset
   - inner ring roughly two-thirds outer radius
+- full attack events should flash a small red indicator so predation/violence
+  is visible without overwhelming normal signals
 
 World/building tools:
 
@@ -752,8 +763,21 @@ World/building tools:
 Longer-term:
 
 - larger grid when performance allows
+- finite but unbounded world path:
+  - bounded Planet first
+  - optional torus
+  - chunked torus
+  - globe/sphere only after ecology and performance justify the geometry cost
+- bounded 3D fishbowl alternative:
+  - may be more behaviorally interesting than 2D wraparound because vertical
+    refuge, occlusion, fluid/gravity/friction, and pursuit/escape geometry
+    become real problems
+  - likely costs more than torus because neighbor search, fields, terrain,
+    sensing, and rendering all become volumetric
+  - compare behavior-per-compute after Planet region telemetry and worker
+    architecture exist
 - more ages/epoch tags beyond pack stage
-- 3D expansion
+- 3D expansion/fishbowl prototype
 - physics/gravity/friction requiring real locomotion/navigation
 - projectiles: particles/clusters can throw wall/material instead of only
   depositing adjacent walls
@@ -879,6 +903,17 @@ Latest verification in the cluster-budding pass:
     intact-vs-disassembled predator survival delta moved from about `-0.018`
     before explicit topology payoff to about `+0.049` after it.
   - `npm test` passed all 19 test files in about 134 seconds.
+- Planetary ecology scaffold verification:
+  - `node --check js\presets.js` passed.
+  - `node --check tools\bench-cpu.js` passed.
+  - `npm test -- planet-preset.test.js` passed. The preset generated 4733
+    solid, 2789 glass, 6749 mud, 3085 rich-food, 2460 decay, and 789 mutagen
+    cells on seed `0xC1A0C0`; the 300-tick short soak stayed viable at 857
+    particles with 13 clusters.
+  - `node tools\bench-cpu.js --preset planet --ticks 600 --cap 900 --seed 0xC1A0C0 --combat event --profileEvery 300` passed: start population 720, end population 865, 11 clusters, 673 digs, 500 deposits, 59 wall carriers, 506 attacks, 290 `clusterCellBirths`, no daughter buds yet, 43.383 ms/tick for the full sample.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset planet --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9236` passed: 19.5 FPS/ticks-per-second, population 800 after 40 ticks, no page errors.
+  - `npm test` passed all 20 test files after the Planet default was lowered
+    to 720 particles.
 
 Core:
 
@@ -893,6 +928,7 @@ node tests\run-all.js signal-transmission.test.js terrain-sensors.test.js
 node tests\run-all.js food-chemotaxis.test.js mud-terrain.test.js
 node tests\run-all.js predation-economy.test.js event-combat.test.js
 node tests\run-all.js baseline-soup.test.js baseline-maze.test.js
+node tests\run-all.js planet-preset.test.js
 ```
 
 CPU bench:
@@ -900,6 +936,7 @@ CPU bench:
 ```powershell
 npm run bench:cpu -- --preset maze --ticks 500 --cap 1200 --seed 0xC0FFEE --profile
 node tools\bench-cpu.js --preset maze --ticks 500 --cap 1200 --seed 0xC0FFEE --profile --profileEvery 100
+node tools\bench-cpu.js --preset planet --ticks 600 --cap 900 --seed 0xC1A0C0 --combat event --profileEvery 300
 ```
 
 Browser/GPU smoke:
@@ -953,8 +990,14 @@ git log --oneline -5
 
 3. Choose one narrow pass:
 
-- performance: pair-force-only GPU assist/readback reduction
-- performance: lower-write CPU pair-loop redesign if GPU readback remains limiting
+- planet ecology: add region/niche telemetry for basin occupancy, energy,
+  clade/species divergence, migration, mud/glass use, and local extinction
+- planet ecology: run longer multi-seed Planet soaks and compare against
+  soup/maze for daughter buds, topology, wall work, attacks, and brain slots
+- visuals: add the small red full-attack flash and keep it distinct from
+  ordinary visual signaling
+- performance: keep profiling Planet and Maze long runs; the next structural
+  target remains worker/snapshot architecture if sim-step cost keeps dominating
 - agency: run repeated post-topology `--replay both` evidence with behavior
   metrics for cohesion under attack, alarm use, predator-distance change,
   retreat vector, and mud/glass use

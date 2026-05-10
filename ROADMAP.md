@@ -44,6 +44,25 @@ making the browser unusable.
 
 ### Near-term execution plan
 
+Current planetary ecology scaffold: `docs/PLANETARY_ECOLOGY_PLAN.md` now lays
+out the path from bounded 2D habitat work to torus/chunked torus, with a
+bounded 3D fishbowl tracked as a serious alternate branch and globe/sphere mode
+held for later. The first shipped step is a new `Planet` preset: protected
+food oases, mud rings, glass arcs, thick diggable ridges, migration gaps,
+quarries, decay pockets, sparse global food, and mutagen cracks. The goal is
+not a prettier maze; it is persistent niche pressure that can make navigation,
+construction, predation defense, communication, cluster reproduction, and brain
+capacity matter at the same time. Next validation target: planet soaks with
+regional/niche telemetry and comparisons against soup/maze. First short
+validation on seed `0xC1A0C0` created 4733 solid, 2789 glass, 6749 mud, 3085
+rich-food, 2460 decay, and 789 mutagen cells. Planet's first-click default is
+720 particles, while the population slider can still push it higher. A 600-tick
+cap-900 event-combat CPU probe stayed viable at 865 particles, produced 11
+clusters, 673 digs, 500 deposits, 59 wall carriers, 506 attacks, and 290
+somatic cluster-cell births, but no daughter buds yet. A two-second browser
+smoke at the 720-body default reached 19.5 FPS with no page errors on this
+machine; heavier Planet starts are still a deliberate stress test.
+
 0. **Keep the experience inspectable and legible.**
    Improve cluster and wall rendering in zoom-aware vector passes: organic
    cluster membranes/hulls, clearer chased groups, and wall edges that reveal
@@ -348,8 +367,10 @@ making the browser unusable.
   raw-material deposits, then import different populations into the same world
   repeatedly without mutating the template
 - richer maze/environment generator focused on constraints, shelter, isolation,
-  raw materials, corridors, glass barriers, mud flats, and ecological niches rather than
-  maze-likeness for its own sake
+  raw materials, corridors, glass barriers, mud flats, and ecological niches
+  rather than maze-likeness for its own sake. Current status: `Planet` is the
+  first habitat branch beyond Maze, with persistent basins, oases, ridges,
+  quarries, decay pockets, and mutagen cracks.
 - UI cleanup: consolidate crowded sidebar sections into clearer panels/tabs,
   reduce tiny text pressure, and make export/inspection actions feel
   consistent now that the control surface has grown. Current status: first
@@ -365,7 +386,15 @@ making the browser unusable.
 - consider higher-level "ages" beyond epoch tags: construction age,
   communication age, organism age, projectile age, and higher-order tool-use
   or social-coordination ages once the metrics are trustworthy
-- eventual 3D/physics/projectile branches after 2D agency is robust
+- finite but unbounded worlds: bounded Planet first, then optional torus, then
+  chunked torus, then globe/sphere only after ecology and performance justify
+  the geometry cost
+- bounded 3D fishbowl branch: potentially more behaviorally rich than a 2D
+  wraparound surface because vertical refuges, fluid/gravity/friction, occlusion,
+  and pursuit/escape geometry become evolutionary problems; likely much heavier
+  than torus because neighbor search, fields, terrain, sensors, and rendering
+  become volumetric
+- eventual physics/projectile branches after the 2D agency loop is robust
 
 ---
 
@@ -417,6 +446,9 @@ Current implementation:
 - Visual signal flashes should feel more like radiating waves: two soft
   concentric rings, roughly half a second apart, with the earlier inner ring
   about two-thirds the radius of the later outer ring.
+- Full attack events should get a small red flash indicator, separate from
+  normal signals, so predation/violence is visible without turning the canvas
+  into a warning-light show.
 
 ### Wall visuals
 
