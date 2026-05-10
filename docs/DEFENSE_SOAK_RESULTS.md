@@ -334,3 +334,85 @@ Implication for this file: the six-seed table above remains the best
 pre-provisioning/pre-turnover evidence pass. Future defense soaks should
 establish fresh post-provisioning/post-turnover baselines before making direct
 numeric comparisons.
+
+## 2026-05-10 - organism-preserving replay and cluster-selection pass
+
+This pass addressed a measurement flaw: prior replay sampled individual
+particles, so it destroyed the very cluster topology we wanted to test. The
+defense harness now supports:
+
+- `--replay particles`: old mixed elite/random particle replay.
+- `--replay clusters`: intact top-cluster replay plus disassembled controls.
+- `--replay both`: all three replay modes.
+
+Cluster replay exports top named clusters with member genomes, relative
+positions, organism generation, and live internal bonds. The challenge then
+compares:
+
+- `clusters-intact`: the sampled organism is reconstructed with source bonds.
+- `clusters-disassembled`: the same member cells are replayed without source
+  bonds.
+
+New challenge metrics include cluster survival, member survival, source-bond
+retention, dispersion ratio, predator distance, and bond-message activity.
+
+The ecosystem also received conservative cluster-selection support:
+
+- ordinary birth headroom for organism buds was widened from 2.0%/48 slots to
+  3.5%/72 slots;
+- eligible clusters now accumulate a bounded readiness credit when they pass
+  deterministic gates but miss the probability roll;
+- bud diagnostics report interval checks, eligibility, and blocking gates such
+  as energy, cooldown, chance, donors, and slots;
+- daughter buds now inherit source bond topology among selected parent members,
+  then add the existing stabilizing internal ring.
+
+### Three-seed gate/replay check before topology inheritance
+
+Command shape:
+
+```powershell
+node tools\defense-soak.js --preset soup --ticks 3000 --cap 900 --start 500 --seed <seed> --samples 0,1500,3000 --sampleSize 32 --clusterBudget 64 --clusterMaxClusters 3 --replay both --challenges predator --challengeTicks 90 --challengeRepeats <1-2> --challengeJitter 1 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --cohortEnergy 5 --json
+```
+
+| seed | tick | buds | bud cells | soma births | live descendants | max gen | eligible / chance / energy blocks | particle survival | intact survival | disassembled survival | intact bond retention |
+|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|
+| `0x51A11` | 3000 | 15 | 148 | 655 | 4 / 72 cells | 2 | 179 / 164 / 384 | 0.719 | 0.922 | 0.896 | 0.853 |
+| `0xC0FEE` | 3000 | 29 | 251 | 510 | 14 / 135 cells | 4 | 233 / 204 / 388 | 0.875 | 0.896 | 0.938 | 0.802 |
+| `0xBADA55` | 3000 | 30 | 286 | 692 | 9 / 99 cells | 3 | 231 / 201 / 325 | 0.625 | 0.971 | 0.971 | 0.917 |
+
+Interpretation:
+
+- The immediate cluster-level bottleneck is no longer "buds never happen."
+  These seeds produced many organism buds and sustained live descendant
+  clusters, including generation `III`/`IV` lineages.
+- Energy and chance gates still dominate; that is desirable as selection
+  pressure, but they are now measurable rather than invisible.
+- Intact topology was usually at least competitive with disassembled controls,
+  but not yet uniformly superior. This means cluster-level reproduction is
+  working, while topology-specific adaptation still needs more evidence.
+
+### Post-topology-inheritance smoke
+
+After daughter buds began inheriting selected parent bond topology, one compact
+post-change soak was run:
+
+```powershell
+node tools\defense-soak.js --preset soup --ticks 2000 --cap 900 --start 500 --seed 0x51A11 --samples 0,1000,2000 --sampleSize 32 --clusterBudget 64 --clusterMaxClusters 3 --replay both --challenges predator --challengeTicks 75 --challengeRepeats 1 --challengeJitter 1 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --cohortEnergy 5 --json
+```
+
+| tick | buds | bud cells | soma births | live descendants | max gen | particle survival | intact survival | disassembled survival | intact bond retention | intact / disassembled dispersion |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 1000 | 5 | 47 | 136 | 2 / 41 cells | 2 | 0.844 | 0.861 | 0.833 | 0.707 | 1.358 / 1.615 |
+| 2000 | 17 | 158 | 471 | 8 / 155 cells | 3 | 0.781 | 0.842 | 0.772 | 0.645 | 1.770 / 1.391 |
+
+Current conclusion:
+
+- Cluster-level selection mechanics are now plausibly strong enough to produce
+  daughter organisms at useful rates.
+- The replay harness can now test the organism as the unit of selection instead
+  of accidentally dismantling it.
+- The next evidence pass should be a multi-seed post-topology run with
+  `--replay both`; if intact clusters still do not reliably beat
+  disassembled controls, the next structural target is not "more buds" but
+  better topology-level payoffs and coordination scaffolding.

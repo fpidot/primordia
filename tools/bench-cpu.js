@@ -97,6 +97,7 @@ console.log(JSON.stringify({
   descendantParticles: vitals.descendantParticles || 0,
   maxOrganismGeneration: vitals.maxOrganismGeneration || 1,
   lastClusterBud: vitals.lastClusterBud || null,
+  clusterBudDiagnostics: vitals.clusterBudDiagnostics || undefined,
   fieldFoodEaten: Number((world.totalFieldFoodEaten || 0).toFixed(3)),
   fieldEnergyGain: Number((world.totalFieldEnergyGain || 0).toFixed(3)),
   predationEvents: world.totalPredationEvents || 0,

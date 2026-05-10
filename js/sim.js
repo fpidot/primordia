@@ -94,6 +94,8 @@ const OFFSPRING_PARENT_FLOOR = 2.0;
 const CLUSTER_BUD_INTERVAL = 48;
 const CLUSTER_BUD_COOLDOWN = 720;
 const CLUSTER_BUD_PROB = 0.035;
+const CLUSTER_BUD_PROB_MAX = 0.16;
+const CLUSTER_BUD_READINESS_MAX = 10;
 const CLUSTER_BUD_MIN_SIZE = 8;
 const CLUSTER_BUD_MIN_CHILDREN = 8;
 const CLUSTER_BUD_MAX_CHILDREN = 14;
@@ -104,8 +106,8 @@ const CLUSTER_BUD_PARENT_FLOOR = 3.0;
 export const CLUSTER_BUD_CHILD_MAX_ENERGY = 5.8;
 const CLUSTER_BUD_TAX = 0.08;
 const CLUSTER_BUD_MUTATION_BOOST = 0.55;
-const CLUSTER_BUD_RESERVE_FRAC = 0.02;
-const CLUSTER_BUD_RESERVE_MAX = 48;
+const CLUSTER_BUD_RESERVE_FRAC = 0.035;
+const CLUSTER_BUD_RESERVE_MAX = 72;
 const DEATH_DEPOSIT = 1.4;     // decay packet released on death
 const EAT_MAX = 0.18;          // max food a particle can eat per tick
 const PREDATION_BASE_RATE = 0.20;
@@ -322,6 +324,23 @@ function clusterBudEnergyCost(parent, fallbackThreshold) {
   return offspringCostForEndowment(clusterBudChildEnergy(parent, fallbackThreshold), CLUSTER_BUD_TAX);
 }
 
+function newClusterBudDiagnostics() {
+  return {
+    intervals: 0,
+    checked: 0,
+    tooSmall: 0,
+    cooldown: 0,
+    age: 0,
+    bonds: 0,
+    energy: 0,
+    chance: 0,
+    donors: 0,
+    slots: 0,
+    eligible: 0,
+    budded: 0,
+  };
+}
+
 // Bond barrier — bonded clusters act as one-way "moving walls" against
 // outsider particles. Outsider = not bonded to either endpoint of the segment.
 // Gated on cluster membership so a single bonded pair doesn't form a barrier;
@@ -483,6 +502,8 @@ export class World {
     this._clustersTick = -10000;
     this._clusterIdCounter = 0;
     this._clusterBudLastTick = new Map();
+    this._clusterBudReadiness = new Map();
+    this.clusterBudDiagnostics = newClusterBudDiagnostics();
     this.clusterBudding = opts.clusterBudding ?? true;
     this._clusterNames = new Map();   // member-set fingerprint → stable name
     // Map from particle.id → cluster object, rebuilt each detection. Lets the
@@ -636,6 +657,7 @@ export class World {
       clusterBudParticles: this.totalClusterBudParticles || 0,
       clusterCellBirths: this.totalClusterCellBirths || 0,
       clusterBudReserve: this.maxParticles - this._cellBirthLimit(),
+      clusterBudDiagnostics: { ...(this.clusterBudDiagnostics || newClusterBudDiagnostics()) },
       ...this._organismLineageStats(),
       activeSound,
       gpuEnabled: !!this._gpuEnabled,
@@ -927,6 +949,8 @@ export class World {
     this._particleToCluster.clear();
     this._clusterNames.clear();
     this._clusterBudLastTick.clear();
+    this._clusterBudReadiness.clear();
+    this.clusterBudDiagnostics = newClusterBudDiagnostics();
   }
 
   clearField() {
@@ -2644,7 +2668,10 @@ export class World {
   // only every CLUSTER_INTERVAL ticks. Clusters with ≥ MIN_NAMED_CLUSTER
   // members get a generated name and centroid for the renderer's flag labels.
   _clusterBudKey(cluster) {
-    return cluster ? (cluster.anchorId || cluster.root || cluster.name || 0) : 0;
+    if (!cluster) return 0;
+    const root = cluster.organismRootId || cluster.anchorId || cluster.root || 0;
+    const generation = Math.max(1, cluster.organismGeneration || 1);
+    return `${root}:${generation}`;
   }
 
   _isOpenForBud(x, y) {
@@ -2771,8 +2798,12 @@ export class World {
   _tryClusterBudding({ force = false } = {}) {
     if (!force && !this.clusterBudding) return 0;
     if (!force && this.tick % CLUSTER_BUD_INTERVAL !== 0) return 0;
+    if (!force && this.clusterBudDiagnostics) this.clusterBudDiagnostics.intervals++;
     if (!this._clusters || this._clusters.length === 0) return 0;
-    if (this.particles.length + CLUSTER_BUD_MIN_CHILDREN > this.maxParticles) return 0;
+    if (this.particles.length + CLUSTER_BUD_MIN_CHILDREN > this.maxParticles) {
+      if (!force && this.clusterBudDiagnostics) this.clusterBudDiagnostics.slots++;
+      return 0;
+    }
 
     let bornTotal = 0;
     let budTotal = 0;
@@ -2782,6 +2813,7 @@ export class World {
       if (born > 0) {
         bornTotal += born;
         budTotal++;
+        if (!force && this.clusterBudDiagnostics) this.clusterBudDiagnostics.budded++;
         if (!force) break; // one daughter organism per interval keeps growth bounded
       }
     }
@@ -2799,20 +2831,30 @@ export class World {
   }
 
   _budCluster(cluster, force = false) {
+    const diag = !force ? this.clusterBudDiagnostics : null;
+    const block = (reason) => {
+      if (diag && reason) diag[reason] = (diag[reason] || 0) + 1;
+      return 0;
+    };
     const members = (cluster.members || []).filter(p => p && !p.dead);
-    if (members.length < CLUSTER_BUD_MIN_SIZE) return 0;
+    if (members.length < CLUSTER_BUD_MIN_SIZE) return block('tooSmall');
 
     const memberIds = new Set(members.map(p => p.id));
     let energySum = 0;
     let ageSum = 0;
     let reproSum = 0;
     let bondSum = 0;
+    let recentDamageSum = 0;
     for (const p of members) {
       energySum += p.energy || 0;
       ageSum += p.age || 0;
       reproSum += p.genome?.repro_thresh || 0;
       if (p.bonds) {
         for (const id of p.bonds) if (memberIds.has(id)) bondSum++;
+      }
+      const damageAge = this.tick - (p.lastDamageTick || -9999);
+      if (damageAge >= 0 && damageAge < 40) {
+        recentDamageSum += (p.recentDamage || 0) * Math.pow(DAMAGE_SENSOR_DECAY, damageAge);
       }
     }
     const n = members.length;
@@ -2823,14 +2865,31 @@ export class World {
     const key = this._clusterBudKey(cluster);
     const lastBud = this._clusterBudLastTick.get(key) ?? -999999;
     const childGeneration = Math.max(1, cluster.organismGeneration || 1) + 1;
-    const childRootId = cluster.organismRootId || key || cluster.anchorId;
+    const childRootId = cluster.organismRootId || cluster.anchorId || cluster.root || 0;
 
     if (!force) {
-      if (this.tick - lastBud < CLUSTER_BUD_COOLDOWN) return 0;
-      if (meanAge < CLUSTER_BUD_MIN_MEAN_AGE) return 0;
-      if (meanBonds < CLUSTER_BUD_MIN_MEAN_BONDS) return 0;
-      if (meanEnergy < Math.max(CLUSTER_BUD_MIN_MEAN_ENERGY, meanRepro * 1.15)) return 0;
-      if (Math.random() >= CLUSTER_BUD_PROB) return 0;
+      if (diag) diag.checked++;
+      if (this.tick - lastBud < CLUSTER_BUD_COOLDOWN) return block('cooldown');
+      if (meanAge < CLUSTER_BUD_MIN_MEAN_AGE) return block('age');
+      if (meanBonds < CLUSTER_BUD_MIN_MEAN_BONDS) return block('bonds');
+      const energyGate = Math.max(CLUSTER_BUD_MIN_MEAN_ENERGY, meanRepro * 1.15);
+      if (meanEnergy < energyGate) return block('energy');
+      if (diag) diag.eligible++;
+
+      const readiness = Math.min(CLUSTER_BUD_READINESS_MAX, this._clusterBudReadiness.get(key) || 0);
+      const cohesionBonus = clamp((meanBonds - CLUSTER_BUD_MIN_MEAN_BONDS) / 1.6, 0, 1);
+      const ageBonus = clamp((meanAge - CLUSTER_BUD_MIN_MEAN_AGE) / 720, 0, 1);
+      const energyBonus = clamp((meanEnergy - energyGate) / Math.max(1, energyGate), 0, 1);
+      const damagePenalty = clamp((recentDamageSum / n) / 2.5, 0, 0.65);
+      const chance = Math.min(
+        CLUSTER_BUD_PROB_MAX,
+        CLUSTER_BUD_PROB * (1 + readiness * 0.55 + cohesionBonus * 0.75 + ageBonus * 0.45 + energyBonus * 0.55) *
+          (1 - damagePenalty),
+      );
+      if (Math.random() >= chance) {
+        this._clusterBudReadiness.set(key, Math.min(CLUSTER_BUD_READINESS_MAX, readiness + 1));
+        return block('chance');
+      }
     }
 
     const donors = members
@@ -2844,7 +2903,7 @@ export class World {
       CLUSTER_BUD_MAX_CHILDREN,
       Math.max(CLUSTER_BUD_MIN_CHILDREN, Math.round(n * 0.45)),
     );
-    if (targetCount < CLUSTER_BUD_MIN_CHILDREN) return 0;
+    if (targetCount < CLUSTER_BUD_MIN_CHILDREN) return block(slots < CLUSTER_BUD_MIN_CHILDREN ? 'slots' : 'donors');
 
     const selected = [];
     const used = new Set();
@@ -2856,7 +2915,7 @@ export class World {
       selected.push(donor);
       used.add(donor.id);
     }
-    if (selected.length < CLUSTER_BUD_MIN_CHILDREN) return 0;
+    if (selected.length < CLUSTER_BUD_MIN_CHILDREN) return block('donors');
 
     let dirX = 0, dirY = 0;
     for (const p of selected) {
@@ -2876,6 +2935,7 @@ export class World {
     const budCx = clamp(cluster.cx + dirX * (cluster.radius + 22 + Math.random() * 10), 1, W - 1);
     const budCy = clamp(cluster.cy + dirY * (cluster.radius + 22 + Math.random() * 10), 1, H - 1);
     const children = [];
+    const parentToChild = new Map();
     for (const parent of selected) {
       const childEnergy = clusterBudChildEnergy(parent, meanRepro);
       const giftCost = offspringCostForEndowment(childEnergy, CLUSTER_BUD_TAX);
@@ -2898,13 +2958,26 @@ export class World {
       child.vx = parent.vx * 0.25 + dirX * 0.35 + (Math.random() - 0.5) * 0.18;
       child.vy = parent.vy * 0.25 + dirY * 0.35 + (Math.random() - 0.5) * 0.18;
       children.push(child);
+      parentToChild.set(parent.id, child);
     }
 
     if (children.length < CLUSTER_BUD_MIN_CHILDREN) {
       for (const child of children) child.dead = true;
-      return 0;
+      return block('donors');
     }
 
+    let inheritedLinks = 0;
+    for (const parent of selected) {
+      const child = parentToChild.get(parent.id);
+      if (!child) continue;
+      for (const partnerId of parent.bonds || []) {
+        const partnerChild = parentToChild.get(partnerId);
+        if (!partnerChild || partnerChild.id <= child.id) continue;
+        const before = child.bonds.length + partnerChild.bonds.length;
+        this._linkBudChildren(child, partnerChild);
+        if (child.bonds.length + partnerChild.bonds.length > before) inheritedLinks++;
+      }
+    }
     for (let i = 0; i < children.length; i++) {
       this._linkBudChildren(children[i], children[(i + 1) % children.length]);
     }
@@ -2914,6 +2987,7 @@ export class World {
       }
     }
     this._clusterBudLastTick.set(key, this.tick);
+    this._clusterBudReadiness.delete(key);
     const genLabel = organismGenerationSuffix(childGeneration).trim() || `gen ${childGeneration}`;
     const parentName = cluster.name || 'cluster';
     this.lastClusterBudInfo = {
@@ -2923,6 +2997,7 @@ export class World {
       generationLabel: genLabel,
       size: children.length,
       rootId: childRootId,
+      inheritedLinks,
     };
     if (this.clades) {
       this.clades.pushEvent(this.tick, 'organism',
@@ -3156,6 +3231,7 @@ export class World {
       clusterBudParticles: this.totalClusterBudParticles || 0,
       clusterCellBirths: this.totalClusterCellBirths || 0,
       clusterBudReserve: this.maxParticles - this._cellBirthLimit(),
+      clusterBudDiagnostics: { ...(this.clusterBudDiagnostics || newClusterBudDiagnostics()) },
       ...this._organismLineageStats(),
       predationEvents: this.totalPredationEvents || 0,
       predationDrain: this.totalPredationDrain || 0,
@@ -3247,6 +3323,7 @@ export class World {
       totalClusterBudParticles: this.totalClusterBudParticles || 0,
       totalClusterCellBirths: this.totalClusterCellBirths || 0,
       lastClusterBudInfo: this.lastClusterBudInfo || null,
+      clusterBudDiagnostics: { ...(this.clusterBudDiagnostics || newClusterBudDiagnostics()) },
       totalFieldFoodEaten: this.totalFieldFoodEaten || 0,
       totalFieldEnergyGain: this.totalFieldEnergyGain || 0,
       totalPredationEvents: this.totalPredationEvents || 0,
@@ -3359,6 +3436,7 @@ export class World {
     this.totalClusterBudParticles = data.totalClusterBudParticles || 0;
     this.totalClusterCellBirths = data.totalClusterCellBirths || 0;
     this.lastClusterBudInfo = data.lastClusterBudInfo || null;
+    this.clusterBudDiagnostics = { ...newClusterBudDiagnostics(), ...(data.clusterBudDiagnostics || {}) };
     this.totalFieldFoodEaten = data.totalFieldFoodEaten || 0;
     this.totalFieldEnergyGain = data.totalFieldEnergyGain || 0;
     this.totalPredationEvents = data.totalPredationEvents || 0;

@@ -49,6 +49,9 @@ from becoming too lethal to interpret. `--challengeRepeats` and
 `--challengeJitter` reduce dependence on one exact placement. Add
 `--cohortEnergy 5` when you want founder and descendant cohorts to enter replay
 with identical starting energy.
+Add `--replay both --clusterBudget 64 --clusterMaxClusters 3` to compare the
+old particle cohort, intact top-cluster organisms, and disassembled controls
+made from the same cluster member cells.
 
 ## Browser timing probe
 

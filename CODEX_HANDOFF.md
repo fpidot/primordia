@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Expose organism bud telemetry`
+  current `main` HEAD after this pass: `Cluster-preserving defense replay`
 
 Recent useful commits:
 
-- current `main` HEAD - Expose organism bud telemetry
+- current `main` HEAD - Cluster-preserving defense replay
+- `b58d767` - Expose organism bud telemetry
 - `5ab5318` - Tune membrane fill opacity
 - `2834862` - Panel action menus and stronger membranes
 - `eb47c55` - Attach cluster cell births to organisms
@@ -127,7 +128,8 @@ Core systems:
 - visual RGB signal channels
 - bond messages and named clusters
 - cluster alarm broadcast
-- cluster-level budding reproduction for stable, energy-rich bonded organisms
+- cluster-level budding reproduction for stable, energy-rich bonded organisms,
+  including inherited daughter bond topology
 - bounded birth provisioning: children get viable starter reserves plus a
   modest surplus-based boost, not an equal split of rich parent energy
 - cluster cell turnover: ordinary births from named clusters attach back into
@@ -190,8 +192,9 @@ Inspection and UI:
 - wall segments are inspectable and preserve builder/cluster metadata
 - current best/top panels can copy/export/view/chase, though polish remains open
 - stable, energy-rich bonded clusters can occasionally bud a daughter cluster:
-  the daughter inherits mutated member genomes, starts internally bonded, and
-  costs the parent cluster real energy
+  the daughter inherits mutated member genomes, rough parent-relative positions,
+  selected parent bond topology, and starts internally bonded; the parent
+  cluster pays real energy
 - ordinary cell births and cluster buds now use bounded starter provisioning:
   fitter parents can provision slightly better and reproduce again sooner, but
   babies must earn further energy rather than inheriting parent-level reserves
@@ -391,13 +394,18 @@ Predation and food pressure:
   It runs an evolution soak, snapshots populations at requested ticks, clones
   a mixed elite/random sample, freezes reproduction by default for challenge
   fairness, and replays those clones in standardized danger arenas:
-  `predator`, `mud-refuge`, and `glass-gap`. It now supports repeated replay
+  `predator`, `mud-refuge`, and `glass-gap`. It supports repeated replay
   trials with seeded placement jitter (`--challengeRepeats`,
   `--challengeJitter`) and fixed replay cohort energy (`--cohortEnergy`) to
-  check whether survival gains are just energy differences.
+  check whether survival gains are just energy differences. It now also has
+  `--replay particles|clusters|both`: cluster replay samples top named
+  organisms, reconstructs them intact with source bonds, and compares against
+  disassembled controls using the same member cells without bonds.
 - Useful command:
   `node tools\defense-soak.js --preset soup --ticks 6000 --cap 900 --start 500 --seed 0x51A11 --samples "0,3000,6000" --sampleSize 40 --challengeTicks 180 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --challengeRepeats 3 --challengeJitter 1 --json`
   Add `--cohortEnergy 5` for the fixed-energy control.
+  Add `--replay both --clusterBudget 64 --clusterMaxClusters 3` for organism
+  replay with intact-vs-disassembled cluster controls.
 - The local `npm run`/PowerShell route may strip flag names; the tool has a
   positional fallback and this also works:
   `npm run soak:defense -- --ticks 10 --samples "0,10" --cap 80 --start 40 --sampleSize 8 --challengeTicks 8 --challenges predator --seed 0x51A11`
@@ -532,6 +540,23 @@ Predation and food pressure:
   capacity, that ordinary cell birth waits instead of spawning a detached
   cluster-born particle. True generation advancement remains reserved for
   cluster budding (`Jr`, `III`, `IV`, etc.).
+- Organism-preserving replay and cluster-selection update:
+  `tools/defense-soak.js --replay both` now compares particle replay,
+  `clusters-intact`, and `clusters-disassembled`. Metrics include source-bond
+  retention, member survival, cluster survival, dispersion ratio, predator
+  distance, and bond-message activity. Cluster budding now has wider reserved
+  headroom, a bounded readiness credit for eligible clusters that miss the
+  chance gate, explicit bud gate diagnostics, and inherited daughter bond
+  topology among selected parent members.
+- Latest cluster-selection evidence:
+  before topology inheritance, three 3000-tick soup seeds at cap 900/start 500
+  produced 15, 29, and 30 organism buds, with live descendant clusters and
+  max generations II-IV. Intact cluster replay was usually competitive with or
+  better than disassembled controls, but one seed still favored disassembled at
+  tick 3000. After topology inheritance, a compact `0x51A11` 2000-tick pass
+  produced 17 buds, 158 budded cells, 471 somatic cluster-cell births, 8 live
+  descendant clusters, max generation III, and intact predator replay beat
+  disassembled at ticks 1000 and 2000.
 
 Obstacle navigation:
 
@@ -595,8 +620,9 @@ Organism-level reproduction:
   - sufficient internal bond density
   - rare interval/probability gate plus per-cluster cooldown
 - A bud samples member genomes around the parent cluster, mutates them lightly,
-  places daughter members nearby in open/mud terrain, creates internal bonds,
-  and drains real energy from the contributing parent members.
+  places daughter members nearby in open/mud terrain, recreates source bond
+  topology among selected parent members where possible, adds stabilizing
+  internal bonds, and drains real energy from the contributing parent members.
 - Budded particles carry `organismRootId` and `organismGeneration`; current
   cluster labels infer the dominant generation from bonded members and append
   `Jr`, `III`, `IV`, etc. for easy lineage tracking.
@@ -606,11 +632,12 @@ Organism-level reproduction:
   multicellular/body-plan unit to preserve, vary, and kill.
 - Regression coverage: `tests/cluster-budding.test.js` verifies that a stable
   ring-like cluster can produce a detectable daughter cluster with inherited
-  clades, internal bonds, parent energy cost, daughter generation markers, and
-  a visible `Jr` label.
-- Next validation: compare long soaks with/without `world.clusterBudding` to
-  see whether cluster topology, coordinated construction, obstacle response,
-  and survival improve without runaway population churn.
+  clades, inherited source bond topology, internal bonds, parent energy cost,
+  daughter generation markers, and a visible `Jr` label.
+- Next validation: run multi-seed post-topology `--replay both` soaks and
+  compare intact clusters against disassembled controls to see whether cluster
+  topology, coordinated construction, obstacle response, and survival improve
+  without runaway population churn.
 - Latest validation result: natural cluster offspring did **not** appear in
   long seeded CPU soaks. The blocker looks structural, not sensory:
   - 4 runs at 6000 ticks, cap 1200, maze/soup seeds `0xC0FFEE` and `0xB00D1E`:
@@ -643,9 +670,18 @@ Organism-level reproduction:
   - CPU bench and defense-soak JSON include the same lineage telemetry, so
     future soak output can prove whether `Jr`/`III` organisms appeared even if
     the user did not visually spot a label in real time
-- Next tuning options:
-  - compare reserve sizes across maze/soup presets
-  - add a pending-bud queue if dense presets still miss the timing window
+- Latest cluster-selection tuning:
+  - ordinary birth reserve is now 3.5% of cap, capped at 72 slots
+  - eligible clusters build a bounded readiness credit after missed probability
+    rolls, acting like a lightweight pending-bud queue without removing chance
+  - `clusterBudDiagnostics` tracks intervals, checked clusters, eligibility,
+    chance misses, energy blocks, cooldowns, donor/slot blocks, and bud count
+  - daughter buds report `inheritedLinks` for source topology copied into the
+    new organism
+- Remaining tuning options:
+  - compare reserve/readiness behavior across maze/soup presets
+  - if topology replay remains mixed, add topology-level payoffs or
+    communication bandwidth nudges rather than simply increasing bud frequency
   - allow adaptive smaller buds only if they can still become named clusters
 
 Construction:
@@ -812,6 +848,20 @@ Latest verification in the cluster-budding pass:
     forced daughter bud creates lineage vitals and an `organism` event.
   - `node tools\bench-cpu.js --preset soup --ticks 300 --cap 600 --seed 0x51A11 --combat event` passed and reported the new telemetry fields; the short run had `clusterBuds=0`, `clusterCellBirths=8`, `clusterBudReserve=12`.
   - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9232` passed with no page errors.
+- Cluster-preserving replay verification:
+  - `node --check js\sim.js` and `node --check tools\defense-soak.js` passed.
+  - `npm test -- cluster-budding.test.js cluster-replay-harness.test.js` passed.
+  - Short `--replay both` smoke passed at 600 ticks and produced live intact
+    cluster replay rows once named clusters appeared.
+  - Pre-topology-inheritance 3000-tick evidence seeds:
+    `0x51A11`, `0xC0FEE`, and `0xBADA55` produced 15/29/30 organism buds,
+    live descendants, and max generation II-IV.
+  - Post-topology-inheritance compact soak:
+    `0x51A11`, 2000 ticks, cap 900/start 500, `--replay both`,
+    `--cohortEnergy 5`: tick 2000 had 17 buds, 158 budded cells,
+    `clusterCellBirths=471`, 8 live descendant clusters, max generation III;
+    predator replay survival was particles 0.781, intact clusters 0.842,
+    disassembled clusters 0.772.
 
 Core:
 
@@ -888,9 +938,9 @@ git log --oneline -5
 
 - performance: pair-force-only GPU assist/readback reduction
 - performance: lower-write CPU pair-loop redesign if GPU readback remains limiting
-- agency: add replay realism and behavior metrics for sampled cohorts/top
-  clusters, then pursue stronger cluster-level selection if the behavior still
-  looks shallow
+- agency: run a multi-seed post-topology `--replay both` evidence pass; if
+  intact clusters still fail to beat disassembled controls, pursue
+  topology-level payoff/coordination mechanics
 - agency: add detour-navigation microtests for food/prey behind glass with a
   nearby opening
 - UI: Best/top panel view/chase/card polish

@@ -56,6 +56,7 @@ await runTest('cluster-budding: stable clusters can reproduce as organisms', asy
   assert('lineage vitals report daughter clusters', vitals.descendantClusters >= 1);
   assert('lineage vitals report max generation', vitals.maxOrganismGeneration >= 2);
   assert('lineage vitals remember latest bud', vitals.lastClusterBud && vitals.lastClusterBud.generation === 2);
+  assert('daughter inherits source bond topology', vitals.lastClusterBud.inheritedLinks >= 8);
   assert('organism bud event is logged', world.clades.events.some(e => e.type === 'organism' && e.msg.includes('Jr organism budded')));
   assert('parents pay energy into bud', afterEnergy < beforeEnergy);
   assert('daughter starts internally bonded', childBondRefs >= children.length * 2);

@@ -113,7 +113,8 @@ making the browser unusable.
    Cluster-level reproduction is now a first-pass mechanic: stable,
    energy-rich, sufficiently bonded named clusters can occasionally bud a
    daughter cluster that inherits a representative sample of member genomes,
-   pays energy from the parent organism, and starts with internal bonds. This
+   rough parent-relative positions, and selected parent bond topology, pays
+   energy from the parent organism, and starts with internal bonds. This
    is meant to move some selection pressure from the cell/particle level to
    the organism/body-plan level without scripting a specific strategy. Next
    validation target: long soaks should measure whether budded daughter
@@ -145,9 +146,17 @@ making the browser unusable.
    explicit event-log entries, the vitals panel reports bud count, budded
    particles, somatic cluster-cell births, bud reserve, descendant clusters,
    descendant cells, max generation, and the last bud tick/generation/size; CPU
-   bench and defense-soak JSON now include the same lineage telemetry. Next
-   tuning target: compare reserve sizes and maybe add a pending-bud queue so
-   organism reproduction remains robust across denser presets.
+   bench and defense-soak JSON now include the same lineage telemetry. Current
+   cluster-selection update: organism bud headroom is wider, eligible clusters
+   accumulate a bounded readiness credit when they miss the probability roll,
+   bud gate diagnostics are reported, and daughter buds inherit the selected
+   parent bond topology before adding the stabilizing internal ring. A compact
+   post-change `0x51A11` soak reached 17 buds, 158 budded cells, 471 somatic
+   cluster-cell births, 8 live descendant clusters, and generation `III` by
+   tick 2000; intact-cluster predator replay beat disassembled replay at ticks
+   1000 and 2000. Next validation target: multi-seed post-topology `--replay
+   both` soaks to see whether intact organism topology reliably beats the same
+   cells with bonds removed.
    Ecology pressure status: ambient food has been nudged lower again, predation
    conversion has been raised, and the vitals/bench counters now separate
    field-food energy from meat energy. The immediate follow-up is not "add
@@ -193,16 +202,19 @@ making the browser unusable.
    energy control. Current read: event combat, damage sensing, and the existing
    cluster/organism machinery now produce measurable replay-survival selection
    under calibrated predators. This still does not prove sophisticated defense
-   such as coordinated retreat, rescue, or path planning. The next best move is
-   replay realism and behavior evidence: preserve sampled cohorts/top clusters
-   from snapshots and measure predator distance, retreat vector, cluster
-   cohesion, alarms, mud/glass use, and counter/escape behavior before changing
-   the selection mechanics again. Note that the ecosystem now also uses bounded
-   newborn energy and cluster-cell turnover semantics, so future
-   post-provisioning/post-turnover defense soaks should be compared to fresh
-   baselines rather than the pre-provisioning six-seed table. If behavior
-   evidence remains shallow, the most promising structural target is stronger
-   cluster-level selection.
+   such as coordinated retreat, rescue, or path planning. Replay realism is now
+   implemented: `--replay both` compares particle replay, intact top-cluster
+   replay, and disassembled top-cluster controls while reporting source-bond
+   retention, member survival, cluster survival, dispersion ratio, predator
+   distance, and bond-message activity. Initial post-provisioning results show
+   many more live descendants and promising intact-vs-disassembled survival,
+   but not enough seeds yet to call topology-specific defense solved. Note that
+   the ecosystem now also uses bounded newborn energy, cluster-cell turnover,
+   wider bud headroom, readiness credit, and inherited daughter bond topology,
+   so future defense soaks should be compared to fresh baselines rather than
+   the pre-provisioning six-seed table. If intact replay remains mixed, the
+   next structural target is topology-level payoff/coordination rather than
+   simply making buds more frequent.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable
    from random founders. Expand wall sensors, construction actions, and

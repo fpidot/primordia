@@ -8,6 +8,7 @@
 //   node tools/defense-soak.js --ticks 900 --samples 0,300,900 --sampleSize 32 --challengeTicks 180
 
 import { performance } from 'node:perf_hooks';
+import { pathToFileURL } from 'node:url';
 import { mulberry32 } from '../tests/harness.js';
 import {
   World, W, H, GW, GH, CELL,
@@ -74,12 +75,33 @@ function maxOf(values) {
   return values.length ? Math.max(...values) : 0;
 }
 
-function aggregateChallengeTrials(kind, trials) {
-  if (!trials.length) return { kind, repeats: 0, survival: 0, trials: [] };
+function aggregateChallengeTrials(kind, trials, cohortKind = 'particles') {
+  if (!trials.length) {
+    return {
+      kind,
+      cohortKind,
+      repeats: 0,
+      start: 0,
+      survival: 0,
+      survivalMin: 0,
+      survivalMax: 0,
+      predationDeaths: 0,
+      injuredAliveFrac: 0,
+      mudUsePerTick: 0,
+      safeSidePerTick: 0,
+      meanPredatorDistance: 0,
+      bondMsgPerCellTick: 0,
+      cohortClusters: 0,
+      meanBondRetention: 0,
+      meanDispersionRatio: 0,
+      trials: [],
+    };
+  }
   const get = key => trials.map(t => Number(t[key]) || 0);
   const survival = get('survival');
   return {
     kind,
+    cohortKind: trials[0].cohortKind || cohortKind,
     repeats: trials.length,
     start: trials[0].start,
     predatorCount: trials[0].predatorCount,
@@ -107,6 +129,16 @@ function aggregateChallengeTrials(kind, trials) {
     meanSlotsAlive: round(mean(get('meanSlotsAlive'))),
     mudUsePerTick: round(mean(get('mudUsePerTick'))),
     safeSidePerTick: round(mean(get('safeSidePerTick'))),
+    meanPredatorDistance: round(mean(get('meanPredatorDistance'))),
+    bondMsgPerCellTick: round(mean(get('bondMsgPerCellTick'))),
+    cohortClusters: round(mean(get('cohortClusters'))),
+    clustersAliveAny: round(mean(get('clustersAliveAny'))),
+    clusterAnySurvival: round(mean(get('clusterAnySurvival'))),
+    clustersMajorityAlive: round(mean(get('clustersMajorityAlive'))),
+    clusterMajoritySurvival: round(mean(get('clusterMajoritySurvival'))),
+    meanMemberSurvival: round(mean(get('meanMemberSurvival'))),
+    meanBondRetention: round(mean(get('meanBondRetention'))),
+    meanDispersionRatio: round(mean(get('meanDispersionRatio'))),
     trials,
   };
 }
@@ -160,6 +192,7 @@ function summarizeWorld(world) {
     descendantClusters: vitals.descendantClusters || 0,
     descendantParticles: vitals.descendantParticles || 0,
     maxOrganismGeneration: vitals.maxOrganismGeneration || 1,
+    clusterBudDiagnostics: vitals.clusterBudDiagnostics || {},
     clusters: world._clusters ? world._clusters.length : 0,
     meanSlots: round(slots.reduce((a, b) => a + b, 0) / Math.max(1, slots.length)),
     p90Slots: quantile(slots, 0.9),
@@ -210,6 +243,119 @@ function sampleCohort(world, sampleSize, seed) {
   }));
 }
 
+export function sampleClusterCohort(world, particleBudget, seed, opts = {}) {
+  world.updateClusters();
+  const clusters = world._clusters || [];
+  const minSize = Math.max(2, Number(opts.clusterMinSize) || 8);
+  const maxClusters = Math.max(1, Number(opts.clusterMaxClusters) || 4);
+  const budget = Math.max(minSize, Number(particleBudget) || 48);
+  const rng = mulberry32(seed >>> 0);
+
+  const candidates = clusters
+    .map(c => {
+      const members = (c.members || []).filter(p => p && !p.dead);
+      if (members.length < minSize || members.length > budget) return null;
+      const memberIds = new Set(members.map(p => p.id));
+      let energy = 0;
+      let age = 0;
+      let slots = 0;
+      let internalBonds = 0;
+      for (const p of members) {
+        energy += p.energy || 0;
+        age += p.age || 0;
+        slots += p.genome?.brain?.enabledCount?.() || 0;
+        for (const id of p.bonds || []) if (memberIds.has(id)) internalBonds++;
+      }
+      const n = Math.max(1, members.length);
+      const meanEnergy = energy / n;
+      const meanAge = age / n;
+      const meanSlots = slots / n;
+      const meanBonds = internalBonds / n;
+      const compactness = 1 / Math.max(1, c.spread || c.radius || 1);
+      const generation = Math.max(1, c.organismGeneration || 1);
+      return {
+        cluster: c,
+        members,
+        score: meanEnergy + Math.min(10, meanAge / 150) + meanSlots * 0.5 +
+          meanBonds * 0.8 + members.length * 0.35 + compactness * 12 +
+          (generation - 1) * 1.5,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score);
+
+  const selected = [];
+  let usedParticles = 0;
+  const take = item => {
+    if (!item || selected.length >= maxClusters) return false;
+    if (usedParticles + item.members.length > budget) return false;
+    selected.push(item);
+    usedParticles += item.members.length;
+    return true;
+  };
+
+  for (const c of candidates) take(c);
+
+  if (selected.length < maxClusters) {
+    const rest = candidates.filter(c => !selected.includes(c));
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = (rng() * (i + 1)) | 0;
+      [rest[i], rest[j]] = [rest[j], rest[i]];
+    }
+    for (const c of rest) take(c);
+  }
+
+  const exported = selected.map((item, clusterIndex) => {
+    const c = item.cluster;
+    const members = item.members;
+    const sourceToLocal = new Map();
+    const exportedMembers = members.map((p, localId) => {
+      sourceToLocal.set(p.id, localId);
+      return {
+        localId,
+        sourceId: p.id,
+        sourceClusterIndex: clusterIndex,
+        species: p.genome.species,
+        energy: p.energy || 0,
+        age: p.age || 0,
+        slots: p.genome.brain.enabledCount(),
+        bonds: (p.bonds || []).length,
+        dx: p.x - c.cx,
+        dy: p.y - c.cy,
+        genome: cloneGenome(p.genome),
+      };
+    });
+    const bondPairs = [];
+    for (const p of members) {
+      const a = sourceToLocal.get(p.id);
+      for (const partnerId of p.bonds || []) {
+        const b = sourceToLocal.get(partnerId);
+        if (b === undefined || b <= a) continue;
+        bondPairs.push([a, b]);
+      }
+    }
+    return {
+      sourceId: c.anchorId || c.root || clusterIndex,
+      name: c.name || `cluster-${clusterIndex + 1}`,
+      organismRootId: c.organismRootId || c.anchorId || c.root || 0,
+      organismGeneration: Math.max(1, c.organismGeneration || 1),
+      count: exportedMembers.length,
+      radius: c.radius || 0,
+      spread: c.spread || 0,
+      score: round(item.score),
+      members: exportedMembers,
+      bonds: bondPairs,
+    };
+  });
+
+  return {
+    mode: 'clusters',
+    clusters: exported,
+    particleCount: exported.reduce((sum, c) => sum + c.members.length, 0),
+    bondCount: exported.reduce((sum, c) => sum + c.bonds.length, 0),
+  };
+}
+
 function challengeGenomeFromSample(sample, freezeReproduction) {
   const g = cloneGenome(sample.genome);
   if (freezeReproduction) g.repro_thresh = 9999;
@@ -220,6 +366,53 @@ function challengeEnergyFromSample(sample, opts) {
   return Number.isFinite(opts.cohortEnergy)
     ? opts.cohortEnergy
     : Math.max(3, Math.min(10, sample.energy || 4));
+}
+
+function parseReplayModes(raw) {
+  const value = String(raw || 'particles').toLowerCase();
+  if (value === 'both') return ['particles', 'clusters-intact', 'clusters-disassembled'];
+  if (value === 'clusters') return ['clusters-intact', 'clusters-disassembled'];
+  const parts = value.split(',').map(s => s.trim()).filter(Boolean);
+  const out = [];
+  for (const p of parts.length ? parts : ['particles']) {
+    if (p === 'particles' || p === 'particle') out.push('particles');
+    else if (p === 'intact' || p === 'cluster-intact' || p === 'clusters-intact') out.push('clusters-intact');
+    else if (p === 'disassembled' || p === 'cluster-disassembled' || p === 'clusters-disassembled') out.push('clusters-disassembled');
+  }
+  return [...new Set(out.length ? out : ['particles'])];
+}
+
+function cohortParticleCount(cohort, cohortKind) {
+  if (cohortKind === 'particles') return Array.isArray(cohort) ? cohort.length : 0;
+  return cohort?.particleCount || 0;
+}
+
+function clusterCohortMeanSlots(cohort) {
+  const members = cohort?.clusters?.flatMap(c => c.members || []) || [];
+  return round(members.reduce((sum, m) => sum + (m.slots || 0), 0) / Math.max(1, members.length));
+}
+
+function meanDispersion(particles) {
+  const live = particles.filter(p => p && !p.dead);
+  if (live.length <= 1) return 0;
+  let cx = 0;
+  let cy = 0;
+  for (const p of live) { cx += p.x; cy += p.y; }
+  cx /= live.length;
+  cy /= live.length;
+  let sum = 0;
+  for (const p of live) sum += Math.hypot(p.x - cx, p.y - cy);
+  return sum / live.length;
+}
+
+function nearestDistanceToAny(p, others) {
+  let best = Infinity;
+  for (const q of others) {
+    if (!q || q.dead) continue;
+    const d = Math.hypot(p.x - q.x, p.y - q.y);
+    if (d < best) best = d;
+  }
+  return Number.isFinite(best) ? best : NaN;
 }
 
 function makeHunterGenome(opts = {}) {
@@ -291,11 +484,149 @@ function addFoodOasis(world, x, y, radiusCells, amount) {
   }
 }
 
-async function runChallenge(kind, cohort, opts, seed) {
+function placeParticleCohort(world, kind, cohort, opts, centerX, centerY, jitter) {
+  const cohortParticles = [];
+  const cohortPhase = Math.random() * Math.PI * 2;
+  for (let i = 0; i < cohort.length; i++) {
+    const sample = cohort[i];
+    const a = cohortPhase + (i / Math.max(1, cohort.length)) * Math.PI * 2 +
+      (Math.random() - 0.5) * 0.18 * jitter;
+    const r = 8 + (i % 5) * 5 + (Math.random() - 0.5) * 4 * jitter;
+    const p = world.addParticle(
+      centerX + Math.cos(a) * r,
+      centerY + Math.sin(a) * r,
+      challengeGenomeFromSample(sample, opts.freezeReproduction),
+      challengeEnergyFromSample(sample, opts),
+    );
+    if (p) {
+      p.vx = 0;
+      p.vy = 0;
+      cohortParticles.push(p);
+    }
+  }
+  return { cohortParticles, clusterGroups: [] };
+}
+
+function placeClusterCohort(world, kind, cohort, opts, centerX, centerY, jitter, intact) {
+  const cohortParticles = [];
+  const clusterGroups = [];
+  const clusters = cohort?.clusters || [];
+  const phase = Math.random() * Math.PI * 2;
+  const ring = Math.max(10, Math.min(70, Math.sqrt(Math.max(1, cohort?.particleCount || 1)) * 5));
+
+  for (let ci = 0; ci < clusters.length; ci++) {
+    const source = clusters[ci];
+    const a = phase + (ci / Math.max(1, clusters.length)) * Math.PI * 2;
+    const baseX = clampChallenge(centerX + Math.cos(a) * ring, 16, W - 16);
+    const baseY = clampChallenge(centerY + Math.sin(a) * ring, 16, H - 16);
+    const scale = Math.min(1, 54 / Math.max(1, source.radius || source.spread || 1));
+    const local = new Map();
+    const group = {
+      sourceId: source.sourceId,
+      name: source.name,
+      organismGeneration: source.organismGeneration,
+      startCount: 0,
+      startBondCount: intact ? (source.bonds || []).length : 0,
+      members: [],
+      bondPairs: [],
+      initialDispersion: 1,
+    };
+
+    for (const member of source.members || []) {
+      const p = world.addParticle(
+        clampChallenge(baseX + member.dx * scale + (Math.random() - 0.5) * 2 * jitter, 1, W - 1),
+        clampChallenge(baseY + member.dy * scale + (Math.random() - 0.5) * 2 * jitter, 1, H - 1),
+        challengeGenomeFromSample(member, opts.freezeReproduction),
+        challengeEnergyFromSample(member, opts),
+      );
+      if (!p) continue;
+      p.vx = 0;
+      p.vy = 0;
+      p.organismRootId = source.organismRootId || source.sourceId || p.id;
+      p.organismGeneration = Math.max(1, source.organismGeneration || 1);
+      local.set(member.localId, p);
+      cohortParticles.push(p);
+      group.members.push(p);
+    }
+
+    if (intact) {
+      for (const [aId, bId] of source.bonds || []) {
+        const pa = local.get(aId);
+        const pb = local.get(bId);
+        if (!pa || !pb || pa === pb) continue;
+        if (!pa.bonds.includes(pb.id)) pa.bonds.push(pb.id);
+        if (!pb.bonds.includes(pa.id)) pb.bonds.push(pa.id);
+        group.bondPairs.push([pa, pb]);
+      }
+    }
+
+    group.startCount = group.members.length;
+    group.initialDispersion = Math.max(1, meanDispersion(group.members));
+    if (group.startCount > 0) clusterGroups.push(group);
+  }
+
+  world._clustersTick = -10000;
+  world.updateClusters();
+  return { cohortParticles, clusterGroups };
+}
+
+function clampChallenge(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function summarizeClusterGroups(groups) {
+  if (!groups.length) {
+    return {
+      cohortClusters: 0,
+      clustersAliveAny: 0,
+      clusterAnySurvival: 0,
+      clustersMajorityAlive: 0,
+      clusterMajoritySurvival: 0,
+      meanMemberSurvival: 0,
+      meanBondRetention: 0,
+      meanDispersionRatio: 0,
+    };
+  }
+
+  let aliveAny = 0;
+  let majorityAlive = 0;
+  let memberSurvival = 0;
+  let bondRetention = 0;
+  let dispersionRatio = 0;
+  for (const group of groups) {
+    const live = group.members.filter(p => p && !p.dead);
+    const survival = live.length / Math.max(1, group.startCount);
+    memberSurvival += survival;
+    if (live.length > 0) aliveAny++;
+    if (live.length >= Math.ceil(group.startCount * 0.5)) majorityAlive++;
+    if (group.startBondCount > 0) {
+      let retained = 0;
+      for (const [a, b] of group.bondPairs) {
+        if (!a.dead && !b.dead && a.bonds.includes(b.id) && b.bonds.includes(a.id)) retained++;
+      }
+      bondRetention += retained / Math.max(1, group.startBondCount);
+    }
+    dispersionRatio += meanDispersion(live) / Math.max(1, group.initialDispersion);
+  }
+
+  return {
+    cohortClusters: groups.length,
+    clustersAliveAny: aliveAny,
+    clusterAnySurvival: round(aliveAny / groups.length),
+    clustersMajorityAlive: majorityAlive,
+    clusterMajoritySurvival: round(majorityAlive / groups.length),
+    meanMemberSurvival: round(memberSurvival / groups.length),
+    meanBondRetention: round(bondRetention / groups.length),
+    meanDispersionRatio: round(dispersionRatio / groups.length),
+  };
+}
+
+export async function runChallenge(kind, cohort, opts, seed, cohortKind = 'particles') {
   return withSeed(seed, async () => {
-    const predatorCount = Math.max(1, Math.round(cohort.length * opts.predatorRatio));
+    const startCount = cohortParticleCount(cohort, cohortKind);
+    const predatorCount = Math.max(1, Math.round(startCount * opts.predatorRatio));
     const world = new World({
-      maxParticles: cohort.length + predatorCount + 16,
+      maxParticles: startCount + predatorCount + 16,
       clusterBudding: false,
       combatMode: opts.combatMode,
     });
@@ -303,32 +634,19 @@ async function runChallenge(kind, cohort, opts, seed) {
     if (kind === 'glass-gap') addGlassGap(world);
     if (kind === 'mud-refuge') addMudRefuge(world);
 
-    const cohortParticles = [];
     const centerX = kind === 'glass-gap' ? W * 0.36 : W * 0.5;
     const centerY = H * 0.5;
     const jitter = Math.max(0, opts.challengeJitter || 0);
-    const cohortPhase = Math.random() * Math.PI * 2;
-    for (let i = 0; i < cohort.length; i++) {
-      const sample = cohort[i];
-      const a = cohortPhase + (i / Math.max(1, cohort.length)) * Math.PI * 2 +
-        (Math.random() - 0.5) * 0.18 * jitter;
-      const r = 8 + (i % 5) * 5 + (Math.random() - 0.5) * 4 * jitter;
-      const p = world.addParticle(
-        centerX + Math.cos(a) * r,
-        centerY + Math.sin(a) * r,
-        challengeGenomeFromSample(sample, opts.freezeReproduction),
-        challengeEnergyFromSample(sample, opts),
-      );
-      if (p) {
-        p.vx = 0;
-        p.vy = 0;
-        cohortParticles.push(p);
-      }
-    }
+    const placed = cohortKind === 'particles'
+      ? placeParticleCohort(world, kind, cohort, opts, centerX, centerY, jitter)
+      : placeClusterCohort(world, kind, cohort, opts, centerX, centerY, jitter, cohortKind === 'clusters-intact');
+    const cohortParticles = placed.cohortParticles;
+    const clusterGroups = placed.clusterGroups;
 
     const hunterBase = makeHunterGenome(opts);
     const predatorX = kind === 'glass-gap' ? W * 0.63 : W * 0.5;
     const predatorPhase = Math.random() * Math.PI * 2;
+    const hunterParticles = [];
     for (let i = 0; i < predatorCount; i++) {
       const a = predatorPhase + (i / Math.max(1, predatorCount)) * Math.PI * 2 +
         (Math.random() - 0.5) * 0.24 * jitter;
@@ -343,6 +661,7 @@ async function runChallenge(kind, cohort, opts, seed) {
       if (h) {
         h.vx = 0;
         h.vy = 0;
+        hunterParticles.push(h);
       }
     }
 
@@ -351,6 +670,10 @@ async function runChallenge(kind, cohort, opts, seed) {
 
     let mudUseSamples = 0;
     let safeSideSamples = 0;
+    let predatorDistanceSamples = 0;
+    let predatorDistanceCount = 0;
+    let bondMsgSamples = 0;
+    let bondMsgCount = 0;
     let sampleTicks = 0;
     for (let t = 0; t < opts.challengeTicks; t++) {
       await world.step();
@@ -362,6 +685,15 @@ async function runChallenge(kind, cohort, opts, seed) {
           const gy = Math.max(0, Math.min(GH - 1, (p.y / CELL) | 0));
           if (world.walls[gy * GW + gx] === WALL_POROUS) mudUseSamples++;
           if (kind === 'glass-gap' && p.x < W * 0.5) safeSideSamples++;
+          const predatorDistance = nearestDistanceToAny(p, hunterParticles);
+          if (Number.isFinite(predatorDistance)) {
+            predatorDistanceSamples += predatorDistance;
+            predatorDistanceCount++;
+          }
+          bondMsgSamples += Math.abs(p.bondMsgR || 0) + Math.abs(p.bondMsgG || 0) +
+            Math.abs(p.bondMsgB || 0) + Math.abs(p.incomingBondMsgR || 0) +
+            Math.abs(p.incomingBondMsgG || 0) + Math.abs(p.incomingBondMsgB || 0);
+          bondMsgCount++;
         }
       }
     }
@@ -373,6 +705,7 @@ async function runChallenge(kind, cohort, opts, seed) {
     const slots = alive.map(p => p.genome.brain.enabledCount());
     return {
       kind,
+      cohortKind,
       challengeSeed: seed >>> 0,
       start,
       alive: alive.length,
@@ -398,6 +731,9 @@ async function runChallenge(kind, cohort, opts, seed) {
       meanSlotsAlive: round(slots.reduce((a, b) => a + b, 0) / Math.max(1, slots.length)),
       mudUsePerTick: round(mudUseSamples / Math.max(1, sampleTicks * start)),
       safeSidePerTick: round(safeSideSamples / Math.max(1, sampleTicks * start)),
+      meanPredatorDistance: round(predatorDistanceSamples / Math.max(1, predatorDistanceCount)),
+      bondMsgPerCellTick: round(bondMsgSamples / Math.max(1, bondMsgCount)),
+      ...summarizeClusterGroups(clusterGroups),
     };
   });
 }
@@ -422,6 +758,10 @@ async function main() {
   const challengeJitter = Math.max(0, Number(readArgCompat('challengeJitter', 17, challengeRepeats > 1 ? 1 : 0)));
   const cohortEnergyRaw = readArgCompat('cohortEnergy', 18, '');
   const cohortEnergy = cohortEnergyRaw === '' ? NaN : Math.max(0.1, Number(cohortEnergyRaw));
+  const replayModes = parseReplayModes(readArgCompat('replay', 19, 'particles'));
+  const clusterBudget = Math.max(8, Number(readArgCompat('clusterBudget', 20, sampleSize)) | 0);
+  const clusterMaxClusters = Math.max(1, Number(readArgCompat('clusterMaxClusters', 21, 4)) | 0);
+  const clusterMinSize = Math.max(2, Number(readArgCompat('clusterMinSize', 22, 8)) | 0);
   const samples = parseSamples(readArgCompat('samples', 1, ''), ticks);
   const challengeKinds = readArgCompat('challenges', 6, 'predator,mud-refuge,glass-gap')
     .split(',')
@@ -442,6 +782,10 @@ async function main() {
     challengeRepeats,
     challengeJitter,
     cohortEnergy,
+    replayModes,
+    clusterBudget,
+    clusterMaxClusters,
+    clusterMinSize,
   };
 
   const t0 = performance.now();
@@ -453,25 +797,41 @@ async function main() {
   async function recordSnapshot() {
     world.updateClusters();
     const summary = summarizeWorld(world);
-    const cohort = sampleCohort(world, sampleSize, (seed ^ world.tick ^ 0x5A17) >>> 0);
+    const particleCohort = sampleCohort(world, sampleSize, (seed ^ world.tick ^ 0x5A17) >>> 0);
+    const wantsClusters = replayModes.some(mode => mode.startsWith('clusters-'));
+    const clusterCohort = wantsClusters
+      ? sampleClusterCohort(world, clusterBudget, (seed ^ world.tick ^ 0xC1057E2) >>> 0, {
+          clusterMinSize,
+          clusterMaxClusters,
+        })
+      : { clusters: [], particleCount: 0, bondCount: 0 };
     const challenges = [];
     for (let i = 0; i < challengeKinds.length; i++) {
       const kind = challengeKinds[i];
-      const trials = [];
-      const baseSeed = (seed ^ world.tick ^ ((i + 1) * 0x9E3779B9)) >>> 0;
-      for (let r = 0; r < opts.challengeRepeats; r++) {
-        const challengeSeed = (baseSeed ^ ((r + 1) * 0x85EBCA6B)) >>> 0;
-        const result = await runChallenge(kind, cohort, opts, challengeSeed);
-        result.repeat = r;
-        trials.push(result);
+      for (const cohortKind of replayModes) {
+        const cohort = cohortKind === 'particles' ? particleCohort : clusterCohort;
+        const trials = [];
+        const count = cohortParticleCount(cohort, cohortKind);
+        const baseSeed = (seed ^ world.tick ^ ((i + 1) * 0x9E3779B9) ^
+          (cohortKind === 'particles' ? 0x1 : cohortKind === 'clusters-intact' ? 0x2 : 0x3)) >>> 0;
+        for (let r = 0; r < opts.challengeRepeats && count > 0; r++) {
+          const challengeSeed = (baseSeed ^ ((r + 1) * 0x85EBCA6B)) >>> 0;
+          const result = await runChallenge(kind, cohort, opts, challengeSeed, cohortKind);
+          result.repeat = r;
+          trials.push(result);
+        }
+        challenges.push(aggregateChallengeTrials(kind, trials, cohortKind));
       }
-      challenges.push(aggregateChallengeTrials(kind, trials));
     }
     snapshots.push({
       ...summary,
-      sampleSize: cohort.length,
-      sampleMeanSlots: round(cohort.reduce((sum, c) => sum + c.slots, 0) / Math.max(1, cohort.length)),
-      sampleMaxSlots: cohort.length ? Math.max(...cohort.map(c => c.slots)) : 0,
+      sampleSize: particleCohort.length,
+      sampleMeanSlots: round(particleCohort.reduce((sum, c) => sum + c.slots, 0) / Math.max(1, particleCohort.length)),
+      sampleMaxSlots: particleCohort.length ? Math.max(...particleCohort.map(c => c.slots)) : 0,
+      clusterSampleClusters: clusterCohort.clusters.length,
+      clusterSampleParticles: clusterCohort.particleCount,
+      clusterSampleBonds: clusterCohort.bondCount,
+      clusterSampleMeanSlots: clusterCohortMeanSlots(clusterCohort),
       challenges,
     });
   }
@@ -508,6 +868,10 @@ async function main() {
     challengeRepeats,
     challengeJitter,
     cohortEnergy: Number.isFinite(cohortEnergy) ? cohortEnergy : null,
+    replayModes,
+    clusterBudget,
+    clusterMaxClusters,
+    clusterMinSize,
     freezeReproduction: opts.freezeReproduction,
     elapsedMs: round(elapsedMs, 1),
     snapshots,
@@ -520,10 +884,12 @@ async function main() {
 
   console.log(JSON.stringify(result, null, 2));
   console.log('\nDefense challenge summary');
-  console.log('tick | mode | pop | meanSlots | p90/max | meatE | combat | fieldE | challenge | survival | predDeaths | injured | mudUse | safeSide');
+  console.log('tick | mode | pop | meanSlots | p90/max | buds/cells | replay | challenge | survival | clusters | bondRet | predDist | predDeaths | injured | mudUse | safeSide');
   for (const s of snapshots) {
     for (const c of s.challenges) {
-      const survival = c.repeats > 1
+      const survival = c.repeats === 0
+        ? 'n/a'
+        : c.repeats > 1
         ? `${c.survival.toFixed(2)}(${c.survivalMin.toFixed(2)}-${c.survivalMax.toFixed(2)})`
         : c.survival.toFixed(2);
       console.log([
@@ -532,11 +898,13 @@ async function main() {
         s.population,
         s.meanSlots.toFixed(2),
         `${s.p90Slots}/${s.maxSlots}`,
-        Math.round(s.predationEnergy),
-        `${s.combatKills}/${s.combatCounters}/${s.combatEscapes}`,
-        Math.round(s.fieldEnergy),
+        `${s.clusterBuds}/${s.clusterCellBirths}`,
+        c.cohortKind,
         c.kind,
         survival,
+        `${c.cohortClusters || 0}:${(c.clusterMajoritySurvival || 0).toFixed(2)}`,
+        (c.meanBondRetention || 0).toFixed(2),
+        (c.meanPredatorDistance || 0).toFixed(0),
         c.predationDeaths,
         (c.injuredAliveFrac || 0).toFixed(2),
         c.mudUsePerTick.toFixed(2),
@@ -546,7 +914,9 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error(err && err.stack ? err.stack : err);
-  process.exit(1);
-});
+if (!process.argv[1] || import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(err => {
+    console.error(err && err.stack ? err.stack : err);
+    process.exit(1);
+  });
+}
