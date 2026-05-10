@@ -20,6 +20,17 @@ await runTest('world-template: export/import keeps terrain sterile', async () =>
   source._wallCount = 2;
   source.wallOwnerId[solidIdx] = p.id;
   source.wallOwnerClusterId[solidIdx] = 123;
+  source.habitatRegions = [{
+    id: 'test-basin',
+    name: 'test basin',
+    type: 'basin',
+    x: 22 * CELL,
+    y: 18 * CELL,
+    gx: 22,
+    gy: 18,
+    radius: 8 * CELL,
+    radiusCells: 8,
+  }];
   source.field[0][solidIdx] = 1.25;
   source.field[1][mudIdx] = 2.5;
   source.mutagen[mudIdx] = 0.75;
@@ -46,4 +57,6 @@ await runTest('world-template: export/import keeps terrain sterile', async () =>
   assert('decay field restored', Math.abs(target.field[1][mudIdx] - 2.5) < 0.0002);
   assert('mutagen restored', Math.abs(target.mutagen[mudIdx] - 0.75) < 0.0002);
   assert('template import does not preserve wall owner', target.wallOwnerId[solidIdx] === 0);
+  assert('habitat regions preserved', target.habitatRegions.length === 1 &&
+    target.habitatRegions[0].id === 'test-basin');
 });

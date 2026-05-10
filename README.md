@@ -34,9 +34,11 @@ The CPU probe reports timing plus construction diagnostics (`wallDigs`,
 `profileMetrics()`) so builder and organism-level reproduction regressions are
 easy to spot during performance work. `--profileEvery` emits rolling phase
 windows and line-of-sight counters (`losHashSkips`, `losWalks`, etc.) for
-degradation checks. Use `--combat nibble` or `--combat event` to compare the
-legacy contact-predation model against the event-style attack/counter/escape
-model used by the browser app.
+degradation checks. Habitat presets such as Planet also emit region metrics:
+basin occupancy, mean energy, mud/glass use, food/decay/mutagen mass, and
+species entropy. Use `--combat nibble` or `--combat event` to compare the legacy
+contact-predation model against the event-style attack/counter/escape model
+used by the browser app.
 
 ## Defense soak probe
 
@@ -95,5 +97,6 @@ slider when you want a heavier stress ecology.
 - `js/render.js` — Canvas2D field + particle pass, wall rendering, camera
 - `js/audio.js` — vocalisation-driven synth voices + wall-action one-shots
 - `js/lineage.js` — clade tracker, complexity metrics
+- `js/region_metrics.js` — habitat/region occupancy and niche telemetry
 - `js/gpu_pairforce.js` — WebGPU compute shader for pair-force + brain forward
 - `tests/` — Node-runnable regression suite (deterministic seeded RNG)

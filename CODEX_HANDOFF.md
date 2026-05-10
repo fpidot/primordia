@@ -40,11 +40,13 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add planetary ecology scaffold`
+  current `main` HEAD after this pass: `Add habitat region telemetry`
 
 Recent useful commits:
 
-- current `main` HEAD - Add planetary ecology scaffold
+- current `main` HEAD - Add habitat region telemetry
+- `91b04ca` - Show event combat attack flashes
+- `ca91cfc` - Add planetary ecology scaffold
 - `118493c` - Strengthen cluster topology coordination
 - `a57c68d` - Add cluster-preserving defense replay
 - `b58d767` - Expose organism bud telemetry
@@ -143,6 +145,8 @@ Core systems:
 - `Planet` habitat preset for niche-rich ecology: protected food oases, mud
   rings, glass arcs, thick diggable ridges, migration gaps, quarries, decay
   pockets, and local mutagen cracks
+- habitat-region metadata plus `js/region_metrics.js` for basin/niche
+  occupancy, energy, material, and species-entropy telemetry
 - import/export for particles, species/clades, clusters, and sterile worlds
 - CPU simulation path
 - WebGPU pair-force/brain path with CPU fallback
@@ -197,7 +201,7 @@ Inspection and UI:
 - cluster membranes stay visible when cluster labels/flags are off
 - chased clusters pulse membrane rather than flashing every member
 - wall segments are inspectable and preserve builder/cluster metadata
-- full event-combat attacks queue a small red world-space flash at the attack
+- full event-combat attacks queue a small red blood-drop flash at the attack
   site; this is cosmetic-only and separate from evolved visual signals
 - current best/top panels can copy/export/view/chase, though polish remains open
 - stable, energy-rich bonded clusters can occasionally bud a daughter cluster:
@@ -234,9 +238,11 @@ Environment:
   terrain, oases, mud basins, glass arcs, quarries, decay pockets, and mutagen
   cracks. Its default start is 720 particles; the slider can still raise it for
   stress tests.
+- Planet registers four named basins and a central crossing so bench output can
+  report where organisms are actually concentrating.
 - Future world generation still needs editable sterile-world tools, thicker
   walls, isolation/protection motifs, raw materials, reusable challenge worlds,
-  and region/niche telemetry.
+  and migration/lineage-turnover telemetry between regions.
 
 Audio:
 
@@ -743,7 +749,7 @@ Visuals:
   - two soft concentric rings
   - about half-second offset
   - inner ring roughly two-thirds outer radius
-- full event-combat attacks now flash a small red indicator so
+- full event-combat attacks now flash a small red blood-drop indicator so
   predation/violence is visible without overwhelming normal signals
 
 World/building tools:
@@ -923,6 +929,22 @@ Latest verification in the cluster-budding pass:
   - `npm test -- event-combat.test.js planet-preset.test.js` passed.
   - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset planet --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9237` passed: 18.4 FPS/ticks-per-second, no page errors.
   - `npm test` passed all 20 test files after the attack-flash pass.
+- Habitat-region telemetry verification:
+  - `node --check js\sim.js`, `node --check js\presets.js`,
+    `node --check js\render.js`, `node --check js\region_metrics.js`, and
+    `node --check tools\bench-cpu.js` passed.
+  - `npm test -- planet-preset.test.js world-template.test.js event-combat.test.js`
+    passed. Planet tests now assert named habitat regions and region metrics;
+    world-template tests assert habitat regions survive sterile export/import.
+  - `node tools\bench-cpu.js --preset planet --ticks 300 --cap 900 --seed 0xC1A0C0 --combat event --profileEvery 150`
+    passed and emitted `regions` in both final JSON and profile windows. At
+    tick 300, `root basin` had 177 particles, mean energy 9.927, and species
+    entropy 0.954; `glass basin` had 119 particles, mean energy 3.162, and
+    96 mud occupants; `outside` had 425 particles.
+  - `npm test` passed all 20 test files.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset planet --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9238`
+    passed after the blood-drop renderer change: 22.9 FPS/ticks-per-second,
+    population 874, no page errors.
 
 Core:
 
@@ -999,12 +1021,12 @@ git log --oneline -5
 
 3. Choose one narrow pass:
 
-- planet ecology: add region/niche telemetry for basin occupancy, energy,
-  clade/species divergence, migration, mud/glass use, and local extinction
+- planet ecology: extend region/niche telemetry with migration, lineage
+  turnover, local extinction, and region-to-region survival comparisons
 - planet ecology: run longer multi-seed Planet soaks and compare against
   soup/maze for daughter buds, topology, wall work, attacks, and brain slots
-- visuals: add the small red full-attack flash and keep it distinct from
-  ordinary visual signaling
+- visuals: tune the small red blood-drop attack flash if it reads too loud or
+  too subtle during real runs
 - performance: keep profiling Planet and Maze long runs; the next structural
   target remains worker/snapshot architecture if sim-step cost keeps dominating
 - agency: run repeated post-topology `--replay both` evidence with behavior

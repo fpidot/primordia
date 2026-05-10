@@ -373,6 +373,29 @@ function planet(world, count = PRESET_COUNTS.planet) {
     { x: 0.30, y: 0.78, r: 20, food: 3.8, mud: 28, glass: [5.10, 0.35] },
     { x: 0.70, y: 0.74, r: 16, food: 2.8, mud: 23, glass: [2.10, 3.05] },
   ];
+  const basinNames = ['dawn basin', 'tide basin', 'root basin', 'glass basin'];
+  world.habitatRegions = basins.map((b, i) => ({
+    id: `planet-basin-${i + 1}`,
+    name: basinNames[i] || `basin ${i + 1}`,
+    type: 'basin',
+    x: b.x * W,
+    y: b.y * H,
+    gx: (b.x * GW) | 0,
+    gy: (b.y * GH) | 0,
+    radius: (b.mud + 10) * CELL,
+    radiusCells: b.mud + 10,
+  }));
+  world.habitatRegions.push({
+    id: 'planet-crossing',
+    name: 'central crossing',
+    type: 'crossing',
+    x: W * 0.50,
+    y: H * 0.50,
+    gx: (GW * 0.50) | 0,
+    gy: (GH * 0.50) | 0,
+    radius: 32 * CELL,
+    radiusCells: 32,
+  });
   for (const b of basins) {
     const cx = (b.x * GW) | 0;
     const cy = (b.y * GH) | 0;

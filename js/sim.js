@@ -433,6 +433,7 @@ export class World {
     this._decayActive = false;
     this._mutagenActive = false;
     this.walls = new Uint8Array(GW * GH);
+    this.habitatRegions = [];
     this.wallOwnerId = new Int32Array(GW * GH);
     this.wallOwnerClusterId = new Int32Array(GW * GH);
     this.wallOwnerCladeId = new Int32Array(GW * GH);
@@ -902,6 +903,7 @@ export class World {
     this.mutagen.fill(0);
     this._mutagenActive = false;
     this.walls.fill(0);
+    this.habitatRegions = [];
     this.wallOwnerId.fill(0);
     this.wallOwnerClusterId.fill(0);
     this.wallOwnerCladeId.fill(0);
@@ -3365,6 +3367,7 @@ export class World {
       version: 2,
       tick: this.tick,
       walls: Array.from(this.walls),
+      habitatRegions: this.habitatRegions || [],
       field0: Array.from(this.field[0]),
       field1: Array.from(this.field[1]),
       mutagen: Array.from(this.mutagen),
@@ -3428,6 +3431,7 @@ export class World {
       gh: GH,
       cell: CELL,
       walls: Array.from(this.walls),
+      habitatRegions: this.habitatRegions || [],
       field0: Array.from(this.field[0], v => +v.toFixed(4)),
       field1: Array.from(this.field[1], v => +v.toFixed(4)),
       mutagen: Array.from(this.mutagen, v => +v.toFixed(4)),
@@ -3442,6 +3446,9 @@ export class World {
       throw new Error('World template dimensions do not match this simulator build');
     }
     this.reset();
+    this.habitatRegions = Array.isArray(template.habitatRegions)
+      ? template.habitatRegions.map(r => ({ ...r }))
+      : [];
     if (template.walls) this.walls.set(template.walls);
     if (template.field0) this.field[0].set(template.field0);
     if (template.field1) {
@@ -3473,6 +3480,9 @@ export class World {
       for (let i = 0; i < this.walls.length; i++) if (this.walls[i]) wc++;
       this._wallCount = wc;
     }
+    this.habitatRegions = Array.isArray(data.habitatRegions)
+      ? data.habitatRegions.map(r => ({ ...r }))
+      : [];
     if (data.field0) this.field[0].set(data.field0);
     if (data.field1) {
       this.field[1].set(data.field1);

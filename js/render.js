@@ -607,21 +607,28 @@ export class Renderer {
       const t = age / ttl;
       const fade = (1 - t) * (1 - t);
       const power = Math.max(0.7, Math.min(1.6, e.intensity || 1));
-      const r = base * power * (1 + t * 1.4);
+      const r = base * power * (1 + t * 0.55);
+      const dropR = r * 0.8;
+      const tipY = e.y + r * 1.05;
       ctx.lineWidth = width;
-      ctx.fillStyle = `rgba(255, 44, 58, ${0.22 * fade})`;
-      ctx.strokeStyle = `rgba(255, 74, 82, ${0.62 * fade})`;
+      ctx.fillStyle = `rgba(160, 12, 24, ${0.62 * fade})`;
+      ctx.strokeStyle = `rgba(255, 76, 84, ${0.55 * fade})`;
       ctx.beginPath();
-      ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+      ctx.moveTo(e.x, tipY);
+      ctx.bezierCurveTo(e.x - dropR * 0.95, e.y + dropR * 0.25,
+        e.x - dropR * 0.68, e.y - dropR * 0.8,
+        e.x, e.y - dropR);
+      ctx.bezierCurveTo(e.x + dropR * 0.68, e.y - dropR * 0.8,
+        e.x + dropR * 0.95, e.y + dropR * 0.25,
+        e.x, tipY);
+      ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      ctx.strokeStyle = `rgba(255, 235, 226, ${0.42 * fade})`;
+      ctx.fillStyle = `rgba(255, 188, 188, ${0.26 * fade})`;
       ctx.beginPath();
-      ctx.moveTo(e.x - r * 0.55, e.y);
-      ctx.lineTo(e.x + r * 0.55, e.y);
-      ctx.moveTo(e.x, e.y - r * 0.55);
-      ctx.lineTo(e.x, e.y + r * 0.55);
-      ctx.stroke();
+      ctx.ellipse(e.x - dropR * 0.22, e.y - dropR * 0.18, dropR * 0.18, dropR * 0.30,
+        -0.55, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
   }

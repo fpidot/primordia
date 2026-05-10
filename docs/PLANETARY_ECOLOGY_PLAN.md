@@ -78,6 +78,13 @@ First validation:
 - No daughter-cluster buds appeared in that short planet probe; longer
   planet-specific soaks should test whether the richer habitat delays or
   enhances organism-level reproduction.
+- Region/niche telemetry is now available for Planet. The preset registers four
+  named basins plus a central crossing, and CPU bench JSON reports basin
+  occupancy, mean energy, low-energy count, mud/glass occupancy, carried wall
+  material, species entropy, dominant species, and local food/decay/mutagen
+  mass. In a 300-tick `0xC1A0C0` probe, `root basin` held 177 particles at
+  mean energy 9.927 while `glass basin` held 119 particles at mean energy 3.162
+  and 96 mud occupants; 425 particles remained outside named regions.
 
 Near validation:
 
@@ -95,8 +102,8 @@ Next habitat improvements:
 
 - Add a sterile world generator mode that lets saved habitats be reused with
   different imported populations.
-- Add basin/corridor metrics to bench output: particles per region, energy per
-  region, clade/species entropy by region, and migration between regions.
+- Extend basin/corridor metrics with migration and lineage turnover between
+  regions.
 - Add visible biome overlay or optional low-cost terrain labels.
 
 ## Phase 2: Resource Ecology
@@ -242,8 +249,8 @@ Next steps:
 
 - Record communication before/after events: attack, food discovery, wall dig,
   wall deposit, bud, death.
-- Add red visual attack flash for full-on attacks so predation/violence is
-  legible on the map.
+- Full-on attacks now render as a small red blood-drop flash at the attack site,
+  separate from evolved visual signals.
 - Add communication assays:
   - does a cluster that detects danger maintain cohesion better?
   - does a food-finder's signal pull bonded members toward the source?
@@ -280,9 +287,10 @@ Other scale steps:
 
 1. Ship `Planet` preset and tests.
 2. Run planet short/medium CPU soaks.
-3. Add region/niche telemetry to bench output.
+3. Region/niche telemetry to bench output. Shipped first pass; next add
+   migration/turnover.
 4. Add behavior metrics to defense replay.
-5. Add attack flash.
+5. Attack flash. Shipped as a small red droplet.
 6. Add detour-navigation assay.
 7. Decide whether torus topology or a small bounded fishbowl prototype is the
    better next topology/physics experiment.

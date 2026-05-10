@@ -6,6 +6,7 @@ seedGlobalRandom(0xC1A0C0);
 
 const { World, WALL_SOLID, WALL_MEMBRANE, WALL_POROUS } = await import('../js/sim.js');
 const { PRESETS } = await import('../js/presets.js');
+const { computeRegionMetrics } = await import('../js/region_metrics.js');
 
 function countTerrain(world) {
   let solid = 0, glass = 0, mud = 0, richFood = 0, decay = 0, mutagen = 0;
@@ -28,6 +29,8 @@ await runTest('planet preset: creates multiple persistent niche pressures', asyn
 
   assert('planet preset exists', typeof PRESETS.planet === 'function');
   assert('requested population seeded', world.particles.length === 720);
+  assert('planet registers named habitat regions', world.habitatRegions.length >= 5,
+    `regions=${world.habitatRegions.length}`);
   assert('solid ridges/quarries present', t.solid > 1500);
   assert('glass refuges present', t.glass > 300);
   assert('mud flats present', t.mud > 900);
@@ -35,6 +38,14 @@ await runTest('planet preset: creates multiple persistent niche pressures', asyn
   assert('decay pockets present', t.decay > 120);
   assert('mutagen cracks present', t.mutagen > 60);
   assertInRange('wall count matches terrain sum', world._wallCount, t.solid + t.glass + t.mud, t.solid + t.glass + t.mud);
+
+  const regions = computeRegionMetrics(world, { includeOutside: true });
+  const assigned = regions.reduce((sum, r) => sum + r.particles, 0);
+  assert('region metrics include outside population', assigned === world.particles.length,
+    `assigned=${assigned} particles=${world.particles.length}`);
+  assert('basin metrics capture food oases', regions.some(r => r.type === 'basin' && r.richFoodCells > 150));
+  assert('basin metrics capture mud rings', regions.some(r => r.type === 'basin' && r.mudCells > 100));
+  assert('region metrics include species entropy', regions.some(r => r.particles > 0 && r.speciesEntropy > 0));
 });
 
 await runTest('planet preset: short soak remains viable under constraints', async () => {

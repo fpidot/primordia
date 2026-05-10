@@ -446,9 +446,12 @@ Current implementation:
 - Visual signal flashes should feel more like radiating waves: two soft
   concentric rings, roughly half a second apart, with the earlier inner ring
   about two-thirds the radius of the later outer ring.
-- Full attack events now queue a small red world-space flash, separate from
-  normal evolved signals, so predation/violence is visible without turning the
-  canvas into a warning-light show.
+- Full attack events now queue a small red blood-drop world-space flash,
+  separate from normal evolved signals, so predation/violence is visible
+  without turning the canvas into a warning-light show.
+- Visual form update: attack flashes draw as a small red blood-drop glyph, not
+  a red circle or cross, so they read as predation without looking like a UI
+  alert.
 
 ### Wall visuals
 
@@ -780,6 +783,16 @@ regional ecotypes. After ~3k ticks, food density does stratify
 (verified visually). Genome divergence between equatorial and polar
 clades is unclear — would require per-clade genome-mean tracking by
 latitude. Add to a future analysis test.
+
+Current implementation: Planet registers named habitat regions and CPU bench
+reports region/niche telemetry for them. Each region reports occupancy, mean
+energy, low-energy count, mud/glass occupancy, wall carriers, species entropy,
+dominant species/share, terrain/material cell counts, and food/decay/mutagen
+mass. A 300-tick `0xC1A0C0` Planet probe showed strong niche differences:
+`root basin` had 177 particles at mean energy 9.927, `glass basin` had 119
+particles at mean energy 3.162 with 96 mud occupants, and 425 particles remained
+outside named regions. Next telemetry target: migration/lineage turnover between
+regions, not only per-window occupancy.
 
 ---
 
