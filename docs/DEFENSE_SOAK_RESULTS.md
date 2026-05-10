@@ -416,3 +416,52 @@ Current conclusion:
   `--replay both`; if intact clusters still do not reliably beat
   disassembled controls, the next structural target is not "more buds" but
   better topology-level payoffs and coordination scaffolding.
+
+### Four-seed topology-coordination follow-up
+
+The follow-up evidence pass used the same calibrated predator replay shape as
+above, with fixed replay energy and `--replay both`:
+
+```powershell
+node tools\defense-soak.js --preset soup --ticks 3000 --cap 900 --start 500 --seed <seed> --samples 0,1500,3000 --sampleSize 32 --clusterBudget 64 --clusterMaxClusters 3 --replay both --challenges predator --challengeTicks 75 --challengeRepeats 1 --challengeJitter 1 --predatorRatio 0.2 --combat event --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --cohortEnergy 5 --json
+```
+
+Before adding explicit topology payoff, the four-seed tick-3000 intact-vs-
+disassembled control was mixed and slightly negative on average:
+
+| seed | buds | bud cells | particle survival | intact survival | disassembled survival | intact delta | intact bond retention | intact / disassembled dispersion |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `0x51A11` | 23 | 212 | 0.938 | 0.770 | 0.885 | -0.115 | 0.799 | 0.965 / 1.439 |
+| `0xA11CE` | 27 | 257 | 0.844 | 0.973 | 1.000 | -0.027 | 0.944 | 1.009 / 1.100 |
+| `0xB00D1E` | 22 | 222 | 0.625 | 0.732 | 0.661 | +0.071 | 0.609 | 1.472 / 2.016 |
+| `0xC0FFEE` | 26 | 265 | 0.656 | 0.784 | 0.784 | +0.000 | 0.509 | 1.883 / 2.189 |
+
+Implementation response:
+
+- clusters now track `internalBonds`, `meanInternalBonds`, and a bounded
+  `topology` score based on internal bond density;
+- bond-message propagation gives a modest gain when several bonded neighbors
+  reinforce the same channel, plus a small topology-scaled gain;
+- event-combat guard power receives a conservative boost from cluster topology
+  and an additional alarm/topology term.
+
+Post-change tick-3000 results:
+
+| seed | buds | bud cells | mean topology | sampled topology | particle survival | intact survival | disassembled survival | intact delta | intact bond retention | intact / disassembled dispersion |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `0x51A11` | 13 | 129 | 0.724 | 0.804 | 0.875 | 0.828 | 0.906 | -0.078 | 0.718 | 1.216 / 1.761 |
+| `0xA11CE` | 24 | 245 | 0.858 | 1.000 | 0.938 | 0.889 | 0.815 | +0.074 | 0.750 | 1.481 / 2.099 |
+| `0xB00D1E` | 19 | 198 | 0.770 | 0.875 | 0.906 | 0.929 | 0.839 | +0.090 | 0.955 | 1.083 / 1.450 |
+| `0xC0FFEE` | 25 | 281 | 0.767 | 0.672 | 0.688 | 0.727 | 0.618 | +0.109 | 0.683 | 1.440 / 1.766 |
+
+Interpretation:
+
+- Final intact-vs-disassembled predator survival moved from one win, one tie,
+  and two losses to three wins and one smaller loss.
+- The mean intact delta moved from about `-0.018` to about `+0.049`.
+- This is evidence that topology now has ecological payoff, not evidence that
+  sophisticated defense is solved. The next sharper test should use repeated
+  replay trials and behavior metrics: cohesion under attack, alarm use,
+  predator-distance change, retreat vector, mud/glass use, and whether
+  topology-rich daughter clusters keep outperforming their disassembled
+  controls across longer soaks.

@@ -41,6 +41,30 @@ function addPair(world, aEnergy = 8, bEnergy = 4) {
   return { a, b };
 }
 
+function addDefensiveCluster(world) {
+  const ps = [];
+  const cx = 42 * CELL;
+  const cy = 42 * CELL;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const p = world.addParticle(cx + Math.cos(a) * 8, cy + Math.sin(a) * 8, combatGenome(i % 2), 8);
+    p.vx = 0;
+    p.vy = 0;
+    p.predationGain = -1;
+    ps.push(p);
+  }
+  for (let i = 0; i < ps.length; i++) {
+    const a = ps[i];
+    const b = ps[(i + 1) % ps.length];
+    const c = ps[(i + 2) % ps.length];
+    a.bonds.push(b.id, c.id);
+    b.bonds.push(a.id);
+    c.bonds.push(a.id);
+  }
+  world.updateClusters();
+  return ps[0];
+}
+
 await runTest('event combat: strong one-sided attack kills and consumes prey', async () => {
   const world = combatWorld();
   const { a: hunter, b: prey } = addPair(world, 8, 4);
@@ -59,6 +83,21 @@ await runTest('event combat: strong one-sided attack kills and consumes prey', a
     `predationDeaths=${world.totalPredationDeaths}`);
   assert('successful attack is not counted as failed cost', world.totalCombatFailedCost === 0,
     `failedCost=${world.totalCombatFailedCost}`);
+});
+
+await runTest('event combat: mesh topology boosts defensive guard power', async () => {
+  const soloWorld = combatWorld();
+  const solo = soloWorld.addParticle(10 * CELL, 10 * CELL, combatGenome(1), 8);
+  solo.predationGain = -1;
+
+  const clusterWorld = new World({ maxParticles: 16, combatMode: 'event' });
+  const defender = addDefensiveCluster(clusterWorld);
+
+  assert('defender belongs to a named cluster', !!defender.cluster);
+  assert('cluster topology is measured', defender.cluster.topology > 0);
+  assert('clustered mesh guard exceeds solo guard',
+    clusterWorld._guardPower(defender) > soloWorld._guardPower(solo) * 1.25,
+    `cluster=${clusterWorld._guardPower(defender)} solo=${soloWorld._guardPower(solo)}`);
 });
 
 await runTest('event combat: guarded prey counterkills a weak attacker', async () => {

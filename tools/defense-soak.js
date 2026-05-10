@@ -172,6 +172,7 @@ function summarizeWorld(world) {
   for (const n of slots) slotHist[n] = (slotHist[n] || 0) + 1;
   const energy = ps.map(p => p.energy || 0);
   const vitals = typeof world.vitals === 'function' ? world.vitals() : {};
+  const clusters = world._clusters || [];
   return {
     tick: world.tick,
     population: ps.length,
@@ -193,7 +194,8 @@ function summarizeWorld(world) {
     descendantParticles: vitals.descendantParticles || 0,
     maxOrganismGeneration: vitals.maxOrganismGeneration || 1,
     clusterBudDiagnostics: vitals.clusterBudDiagnostics || {},
-    clusters: world._clusters ? world._clusters.length : 0,
+    clusters: clusters.length,
+    meanClusterTopology: round(clusters.reduce((sum, c) => sum + (c.topology || 0), 0) / Math.max(1, clusters.length)),
     meanSlots: round(slots.reduce((a, b) => a + b, 0) / Math.max(1, slots.length)),
     p90Slots: quantile(slots, 0.9),
     maxSlots: slots.length ? Math.max(...slots) : 0,
@@ -342,6 +344,8 @@ export function sampleClusterCohort(world, particleBudget, seed, opts = {}) {
       count: exportedMembers.length,
       radius: c.radius || 0,
       spread: c.spread || 0,
+      topology: round(c.topology || 0),
+      meanInternalBonds: round(c.meanInternalBonds || 0),
       score: round(item.score),
       members: exportedMembers,
       bonds: bondPairs,
@@ -390,6 +394,11 @@ function cohortParticleCount(cohort, cohortKind) {
 function clusterCohortMeanSlots(cohort) {
   const members = cohort?.clusters?.flatMap(c => c.members || []) || [];
   return round(members.reduce((sum, m) => sum + (m.slots || 0), 0) / Math.max(1, members.length));
+}
+
+function clusterCohortMeanTopology(cohort) {
+  const clusters = cohort?.clusters || [];
+  return round(clusters.reduce((sum, c) => sum + (c.topology || 0), 0) / Math.max(1, clusters.length));
 }
 
 function meanDispersion(particles) {
@@ -832,6 +841,7 @@ async function main() {
       clusterSampleParticles: clusterCohort.particleCount,
       clusterSampleBonds: clusterCohort.bondCount,
       clusterSampleMeanSlots: clusterCohortMeanSlots(clusterCohort),
+      clusterSampleMeanTopology: clusterCohortMeanTopology(clusterCohort),
       challenges,
     });
   }

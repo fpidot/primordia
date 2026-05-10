@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Cluster-preserving defense replay`
+  current `main` HEAD after this pass: `Strengthen cluster topology coordination`
 
 Recent useful commits:
 
-- current `main` HEAD - Cluster-preserving defense replay
+- current `main` HEAD - Strengthen cluster topology coordination
+- `a57c68d` - Add cluster-preserving defense replay
 - `b58d767` - Expose organism bud telemetry
 - `5ab5318` - Tune membrane fill opacity
 - `2834862` - Panel action menus and stronger membranes
@@ -128,6 +129,8 @@ Core systems:
 - visual RGB signal channels
 - bond messages and named clusters
 - cluster alarm broadcast
+- cluster topology scoring that feeds modest bond-message reinforcement and
+  defensive guard payoff
 - cluster-level budding reproduction for stable, energy-rich bonded organisms,
   including inherited daughter bond topology
 - bounded birth provisioning: children get viable starter reserves plus a
@@ -195,6 +198,9 @@ Inspection and UI:
   the daughter inherits mutated member genomes, rough parent-relative positions,
   selected parent bond topology, and starts internally bonded; the parent
   cluster pays real energy
+- meshier clusters now have a measured topology score; topology modestly
+  reinforces shared bond messages and defensive guard power without directly
+  giving free energy
 - ordinary cell births and cluster buds now use bounded starter provisioning:
   fitter parents can provision slightly better and reproduce again sooner, but
   babies must earn further energy rather than inheriting parent-level reserves
@@ -680,8 +686,8 @@ Organism-level reproduction:
     new organism
 - Remaining tuning options:
   - compare reserve/readiness behavior across maze/soup presets
-  - if topology replay remains mixed, add topology-level payoffs or
-    communication bandwidth nudges rather than simply increasing bud frequency
+  - if topology replay remains mixed after the current payoff, add sharper
+    behavior metrics and only then consider further coordination nudges
   - allow adaptive smaller buds only if they can still become named clusters
 
 Construction:
@@ -862,6 +868,17 @@ Latest verification in the cluster-budding pass:
     `clusterCellBirths=471`, 8 live descendant clusters, max generation III;
     predator replay survival was particles 0.781, intact clusters 0.842,
     disassembled clusters 0.772.
+- Topology coordination payoff verification:
+  - `node --check js\sim.js` and `node --check tools\defense-soak.js` passed.
+  - `npm test -- signal-transmission.test.js event-combat.test.js cluster-replay-harness.test.js` passed.
+  - New targeted tests cover mesh bond-message reinforcement and topology-boosted
+    defensive guard power.
+  - Four post-change 3000-tick fixed-energy `--replay both` soaks passed for
+    seeds `0x51A11`, `0xA11CE`, `0xB00D1E`, and `0xC0FFEE`. At tick 3000,
+    intact clusters beat disassembled controls in three of four seeds; the mean
+    intact-vs-disassembled predator survival delta moved from about `-0.018`
+    before explicit topology payoff to about `+0.049` after it.
+  - `npm test` passed all 19 test files in about 134 seconds.
 
 Core:
 
@@ -938,9 +955,9 @@ git log --oneline -5
 
 - performance: pair-force-only GPU assist/readback reduction
 - performance: lower-write CPU pair-loop redesign if GPU readback remains limiting
-- agency: run a multi-seed post-topology `--replay both` evidence pass; if
-  intact clusters still fail to beat disassembled controls, pursue
-  topology-level payoff/coordination mechanics
+- agency: run repeated post-topology `--replay both` evidence with behavior
+  metrics for cohesion under attack, alarm use, predator-distance change,
+  retreat vector, and mud/glass use
 - agency: add detour-navigation microtests for food/prey behind glass with a
   nearby opening
 - UI: Best/top panel view/chase/card polish

@@ -153,9 +153,13 @@ const MUD_ENERGY_DRAIN   = 0.010;
 const SIGNAL_COST  = 0.0012;
 const SOUND_COST   = 0.0010;
 const BONDMSG_COST = 0.0008;
+const BONDMSG_DEGREE_GAIN = 0.10;
+const BONDMSG_TOPOLOGY_GAIN = 0.25;
 const COORD_HUNT_BONUS  = 0.25;
 const COORD_EAT_BONUS   = 0.08;
 const COORD_BUILD_BONUS = 0.35;
+const COORD_GUARD_BONUS = 0.32;
+const COORD_ALARM_GUARD_BONUS = 0.22;
 const WALL_SHELTER_RELIEF = 0.25;
 const COORD_SHELTER_RELIEF = 0.25;
 
@@ -1013,8 +1017,12 @@ export class World {
     if (guardDrive <= 0) return 0;
     const energyTerm = 0.75 + Math.min(1.25, (defender.energy || 0) / 8);
     const bondTerm = 1 + Math.min(0.4, (defender.bonds ? defender.bonds.length : 0) * 0.08);
-    const alarmTerm = defender.cluster && defender.cluster.alarm ? 1.2 : 1;
-    return guardDrive * energyTerm * bondTerm * alarmTerm;
+    const topology = defender.cluster ? (defender.cluster.topology || 0) : 0;
+    const topologyTerm = 1 + topology * COORD_GUARD_BONUS;
+    const alarmTerm = defender.cluster && defender.cluster.alarm
+      ? 1 + COORD_ALARM_GUARD_BONUS + topology * 0.12
+      : 1;
+    return guardDrive * energyTerm * bondTerm * topologyTerm * alarmTerm;
   }
 
   _recordDamage(target, amount, source) {
@@ -1318,9 +1326,12 @@ export class World {
       }
       if (n > 0) {
         const inv = 1 / n;
-        p.incomingBondMsgR = Math.tanh((sR * inv) * 2 - 1);
-        p.incomingBondMsgG = Math.tanh((sG * inv) * 2 - 1);
-        p.incomingBondMsgB = Math.tanh((sB * inv) * 2 - 1);
+        const degreeGain = 1 + Math.min(0.35, Math.max(0, n - 1) * BONDMSG_DEGREE_GAIN);
+        const topologyGain = p.cluster ? 1 + (p.cluster.topology || 0) * BONDMSG_TOPOLOGY_GAIN : 1;
+        const msgGain = degreeGain * topologyGain;
+        p.incomingBondMsgR = Math.tanh(((sR * inv) * 2 - 1) * msgGain);
+        p.incomingBondMsgG = Math.tanh(((sG * inv) * 2 - 1) * msgGain);
+        p.incomingBondMsgB = Math.tanh(((sB * inv) * 2 - 1) * msgGain);
       } else {
         p.incomingBondMsgR = p.incomingBondMsgG = p.incomingBondMsgB = 0;
       }
@@ -3084,13 +3095,22 @@ export class World {
       cx /= members.length;
       cy /= members.length;
       let spreadSum = 0, maxR2 = 0;
+      const memberIds = new Set(members.map(p => p.id));
+      let internalBondRefs = 0;
       for (const p of members) {
         const dx = p.x - cx;
         const dy = p.y - cy;
         const d2 = dx * dx + dy * dy;
         spreadSum += Math.sqrt(d2);
         if (d2 > maxR2) maxR2 = d2;
+        for (const partnerId of p.bonds || []) {
+          if (memberIds.has(partnerId)) internalBondRefs++;
+        }
       }
+      const internalBonds = internalBondRefs * 0.5;
+      const meanInternalBonds = internalBondRefs / Math.max(1, members.length);
+      const topologyDenom = Math.max(0.001, Math.min(MAX_BONDS, members.length - 1) - 1.5);
+      const topology = clamp((meanInternalBonds - 1.5) / topologyDenom, 0, 1);
       // Dominant clade
       let topClade = -1, topCount = 0;
       for (const [cid, cnt] of cladeCount) {
@@ -3124,6 +3144,9 @@ export class World {
         cx, cy,
         radius: Math.max(8, Math.sqrt(maxR2)),
         spread: spreadSum / members.length,
+        internalBonds,
+        meanInternalBonds,
+        topology,
         name,
         baseName,
         isMixed,

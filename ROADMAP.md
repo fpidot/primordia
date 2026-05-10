@@ -154,9 +154,19 @@ making the browser unusable.
    post-change `0x51A11` soak reached 17 buds, 158 budded cells, 471 somatic
    cluster-cell births, 8 live descendant clusters, and generation `III` by
    tick 2000; intact-cluster predator replay beat disassembled replay at ticks
-   1000 and 2000. Next validation target: multi-seed post-topology `--replay
-   both` soaks to see whether intact organism topology reliably beats the same
-   cells with bonds removed.
+   1000 and 2000. Current topology-coordination update: clusters now measure
+   internal bond density as a bounded topology score; same-channel bond
+   messages get modest degree/topology reinforcement; and event-combat guard
+   power gets a conservative topology/alarm boost. A four-seed tick-3000
+   `--replay both` follow-up moved intact-vs-disassembled predator survival
+   from a slightly negative mean delta before the payoff (`-0.018`) to a
+   positive mean delta after it (`+0.049`), with intact clusters beating
+   disassembled controls in three of four seeds. Current read: topology now
+   has measurable ecological value, but sophisticated defense is not solved.
+   Next validation target: repeated multi-seed replays with behavior metrics
+   for cohesion under attack, alarm activity, predator-distance change,
+   retreat vectors, mud/glass use, and whether topology-rich daughter clusters
+   continue to outperform disassembled controls in longer soaks.
    Ecology pressure status: ambient food has been nudged lower again, predation
    conversion has been raised, and the vitals/bench counters now separate
    field-food energy from meat energy. The immediate follow-up is not "add
@@ -211,9 +221,10 @@ making the browser unusable.
    but not enough seeds yet to call topology-specific defense solved. Note that
    the ecosystem now also uses bounded newborn energy, cluster-cell turnover,
    wider bud headroom, readiness credit, and inherited daughter bond topology,
-   so future defense soaks should be compared to fresh baselines rather than
-   the pre-provisioning six-seed table. If intact replay remains mixed, the
-   next structural target is topology-level payoff/coordination rather than
+   plus modest topology-level communication/guard payoff, so future defense
+   soaks should be compared to fresh baselines rather than the pre-provisioning
+   six-seed table. If intact replay remains mixed, the next structural target
+   is richer behavior measurement and coordination scaffolding rather than
    simply making buds more frequent.
 2. **Make construction evolvable.**
    Keep wall actions costly, but make successful digging/depositing reachable

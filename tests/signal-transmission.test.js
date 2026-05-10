@@ -103,3 +103,41 @@ await runTest('signal-transmission: visual signal drives through glass and mud, 
   assert('mud signal produces thrust', mud > 0.15, `mud vx=${mud}`);
   assert('solid blocks signal-driven thrust', Math.abs(solid) < 0.05, `solid vx=${solid}`);
 });
+
+await runTest('signal-transmission: mesh bonds reinforce shared messages', async () => {
+  const world = new World({ maxParticles: 12 });
+  const ps = [];
+  const cx = 60 * CELL;
+  const cy = 50 * CELL;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const p = world.addParticle(cx + Math.cos(a) * 8, cy + Math.sin(a) * 8, quietGenome(i % 2), 8);
+    p.vx = 0;
+    p.vy = 0;
+    p.bondMsgR = i === 0 ? 0.5 : 1;
+    p.bondMsgG = 0.5;
+    p.bondMsgB = 0.5;
+    ps.push(p);
+  }
+  const receiver = ps[0];
+  for (let i = 1; i <= 4; i++) {
+    receiver.bonds.push(ps[i].id);
+    ps[i].bonds.push(receiver.id);
+  }
+  for (let i = 1; i < ps.length; i++) {
+    const a = ps[i];
+    const b = ps[i === ps.length - 1 ? 1 : i + 1];
+    if (!a.bonds.includes(b.id)) a.bonds.push(b.id);
+    if (!b.bonds.includes(a.id)) b.bonds.push(a.id);
+  }
+
+  world.updateClusters();
+  assert('mesh cluster is detected', world._clusters.length === 1);
+  assert('mesh has positive topology score', world._clusters[0].topology > 0);
+
+  await world.step();
+
+  assert('same-channel bonded neighbors reinforce above single-message tanh limit',
+    receiver.incomingBondMsgR > 0.77,
+    `incoming=${receiver.incomingBondMsgR}`);
+});
