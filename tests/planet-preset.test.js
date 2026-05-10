@@ -7,6 +7,7 @@ seedGlobalRandom(0xC1A0C0);
 const { World, WALL_SOLID, WALL_MEMBRANE, WALL_POROUS } = await import('../js/sim.js');
 const { PRESETS } = await import('../js/presets.js');
 const {
+  computeRegionBehavior,
   computeRegionLineageTurnover,
   computeRegionMetrics,
   computeRegionSurvival,
@@ -89,6 +90,23 @@ await runTest('planet preset: creates multiple persistent niche pressures', asyn
   assert('region survival detects deaths by origin region',
     survivalRegion && survivalRegion.died >= 1,
     `died=${survivalRegion?.died || 0}`);
+
+  const initialBehavior = computeRegionBehavior(world, new Map(), { includeOutside: true });
+  assert('region behavior baseline maps live particles',
+    initialBehavior.current.size === world.particles.filter(p => !p.dead).length,
+    `mapped=${initialBehavior.current.size}`);
+  const actor = world.particles.find(p => !p.dead);
+  const actorRegion = initialBehavior.current.get(actor.id).regionId;
+  actor.wallDigs = (actor.wallDigs || 0) + 2;
+  actor.fieldEnergyGain = (actor.fieldEnergyGain || 0) + 3.5;
+  actor.combatAttacks = (actor.combatAttacks || 0) + 1;
+  const afterBehavior = computeRegionBehavior(world, initialBehavior.current, { includeOutside: true });
+  const behaviorRegion = afterBehavior.summary.regions.find(r => r.id === actorRegion);
+  assert('region behavior detects action deltas',
+    behaviorRegion && behaviorRegion.wallDigs >= 2 &&
+      behaviorRegion.fieldEnergyGain >= 3.5 &&
+      behaviorRegion.combatAttacks >= 1,
+    `wallDigs=${behaviorRegion?.wallDigs || 0} field=${behaviorRegion?.fieldEnergyGain || 0}`);
 });
 
 await runTest('planet preset: short soak remains viable under constraints', async () => {

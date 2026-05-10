@@ -38,15 +38,16 @@ degradation checks. Habitat presets such as Planet also emit region metrics:
 basin occupancy, mean energy, mud/glass use, food/decay/mutagen mass, species
 entropy, profile-window movement between regions, and clade turnover/local
 extinction by region. Profile windows also compare regional survival, deaths,
-escapes, new particles, and mean energy change. Use `--combat nibble` or
-`--combat event` to compare the legacy
+escapes, new particles, mean energy change, and per-region behavior deltas for
+feeding, wall work, predation, attacks, counters, escapes, and combat damage.
+Use `--combat nibble` or `--combat event` to compare the legacy
 contact-predation model against the event-style attack/counter/escape model
 used by the browser app.
 
 ## Defense soak probe
 
 ```sh
-npm run soak:defense -- --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 180 --combat event --predatorRatio 0.2 --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --challengeRepeats 3 --challengeJitter 1
+node tools/defense-soak.js --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 180 --combat event --predatorRatio 0.2 --hunterDrive 0.5 --hunterPreference 0 --hunterEnergy 5 --challengeRepeats 3 --challengeJitter 1
 ```
 
 The defense probe evolves a population, snapshots cohorts, and replays them in
@@ -55,7 +56,9 @@ pressure separately from the normal world, which keeps short challenge runs
 from becoming too lethal to interpret. `--challengeRepeats` and
 `--challengeJitter` reduce dependence on one exact placement. Add
 `--cohortEnergy 5` when you want founder and descendant cohorts to enter replay
-with identical starting energy.
+with identical starting energy. Replay results also include cohort-owned
+behavior counters: field energy, predation energy, attacks, kills, counters,
+escapes, and combat damage given/taken.
 Add `--replay both --clusterBudget 64 --clusterMaxClusters 3` to compare the
 old particle cohort, intact top-cluster organisms, and disassembled controls
 made from the same cluster member cells.
@@ -100,6 +103,7 @@ slider when you want a heavier stress ecology.
 - `js/render.js` — Canvas2D field + particle pass, wall rendering, camera
 - `js/audio.js` — vocalisation-driven synth voices + wall-action one-shots
 - `js/lineage.js` — clade tracker, complexity metrics
-- `js/region_metrics.js` — habitat/region occupancy and niche telemetry
+- `js/region_metrics.js` — habitat/region occupancy, niche, survival, turnover,
+  and behavior telemetry
 - `js/gpu_pairforce.js` — WebGPU compute shader for pair-force + brain forward
 - `tests/` — Node-runnable regression suite (deterministic seeded RNG)

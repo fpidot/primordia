@@ -53,8 +53,9 @@ quarries, decay pockets, sparse global food, and mutagen cracks. The goal is
 not a prettier maze; it is persistent niche pressure that can make navigation,
 construction, predation defense, communication, cluster reproduction, and brain
 capacity matter at the same time. Current validation now includes regional
-occupancy, movement, clade-turnover, and survival/death/escape telemetry; next
-validation target: behavior-outcome comparisons and soup/maze contrasts. First short
+occupancy, movement, clade-turnover, survival/death/escape telemetry, and
+behavior deltas for feeding, wall work, predation, and event combat. Next
+validation target: longer soup/maze/planet contrasts. First short
 validation on seed `0xC1A0C0` created 4733 solid, 2789 glass, 6749 mud, 3085
 rich-food, 2460 decay, and 789 mutagen cells. Planet's first-click default is
 720 particles, while the population slider can still push it higher. A 600-tick
@@ -216,8 +217,8 @@ machine; heavier Planet starts are still a deliberate stress test.
    defense has emerged.
    Follow-up harness calibration exposed challenge predator controls
    (`--hunterDrive`, `--hunterEnergy`, `--hunterPreference`,
-   `--hunterAttraction`, `--hunterSenseRadius`) plus injured-survivor
-   telemetry. Recommended near-term defense replay setting is now milder than
+   `--hunterAttraction`, `--hunterSenseRadius`) plus injured-survivor and
+   cohort-owned behavior telemetry. Recommended near-term defense replay setting is now milder than
    the first lethal probe: `--combat event --predatorRatio 0.2 --hunterDrive
    0.5 --hunterPreference 0 --hunterEnergy 5`. On seed `0x51A11`, this left
    founder open-predator survival around 0.69 and tick-1200 descendants around
@@ -791,16 +792,20 @@ energy, low-energy count, mud/glass occupancy, wall carriers, species entropy,
 dominant species/share, terrain/material cell counts, and food/decay/mutagen
 mass. Bench profile windows also report particle movement, clade colonizations,
 local clade extinctions, turnover score, dominant clade, top gaining or
-declining clades, and survival/death/escape/energy-change outcomes by region.
+declining clades, survival/death/escape/energy-change outcomes, and behavior
+deltas for feeding, wall work, predation, event-combat attacks/counters/escapes,
+and combat damage by region.
 A 300-tick `0xC1A0C0` Planet probe showed strong niche differences: `root
 basin` had 177 particles at mean energy 9.927, `glass basin` had 119 particles
 at mean energy 3.162 with 96 mud occupants, and 425 particles remained outside
 named regions. A later 180-tick profiled probe showed higher clade turnover in
 `central crossing` and `outside` than in the named basins; the final 90-tick
 window also flagged `glass basin` and `dawn basin` as the highest-death basins,
-while `central crossing` mostly acted as an escape corridor. Next telemetry
-target: explicit behavior outcomes by region, beyond the current occupancy,
-movement, turnover, and survival readouts.
+while `central crossing` mostly acted as an escape corridor. First behavior
+probe on the final 90-tick window showed `root basin` leading field energy,
+`tide basin` leading predation damage/energy, and `tide basin` plus `glass
+basin` leading wall work. Next telemetry target: longer comparisons across
+soup/maze/planet, using the new behavior blocks.
 
 ---
 

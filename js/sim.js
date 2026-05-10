@@ -802,6 +802,15 @@ export class World {
       predationEnergyGain: 0,
       predationFatalDrains: 0,
       predationKills: 0,
+      fieldFoodEaten: 0,
+      fieldEnergyGain: 0,
+      combatAttacks: 0,
+      combatKills: 0,
+      combatCounters: 0,
+      combatEscapes: 0,
+      combatFailedCost: 0,
+      combatDamageDealt: 0,
+      combatDamageTaken: 0,
       lastPredatorId: 0,
       lastPredationTick: -9999,
       lastAttackTick: -9999,
@@ -1047,7 +1056,11 @@ export class World {
     const damage = Math.min(target.energy || 0, amount);
     target.energy -= damage;
     this._recordDamage(target, damage, source);
-    if (damage > 0) this.totalCombatInjuries++;
+    if (damage > 0) {
+      this.totalCombatInjuries++;
+      target.combatDamageTaken = (target.combatDamageTaken || 0) + damage;
+      if (source && !source.dead) source.combatDamageDealt = (source.combatDamageDealt || 0) + damage;
+    }
     if (target.energy <= 0) this._killParticle(target, idMap);
     return damage;
   }
@@ -1105,6 +1118,10 @@ export class World {
     victim.lastPredatorId = killer.id;
     victim.lastPredationTick = this.tick;
     this._recordDamage(victim, drained, killer);
+    if (drained > 0) {
+      victim.combatDamageTaken = (victim.combatDamageTaken || 0) + drained;
+      killer.combatDamageDealt = (killer.combatDamageDealt || 0) + drained;
+    }
     killer.energy += gain;
     this.totalPredationEvents++;
     this.totalPredationDrain += drained;
@@ -1143,21 +1160,28 @@ export class World {
     attacker.energy -= intent.cost;
     attacker.lastAttackTick = this.tick;
     this.totalCombatAttacks++;
+    attacker.combatAttacks = (attacker.combatAttacks || 0) + 1;
     this._queueAttackFlash(attacker, defender, intent.power);
     const guard = this._guardPower(defender);
     if (guard >= intent.power * 1.15) {
       this.totalCombatCounters++;
       this.totalCombatFailedCost += intent.cost;
+      defender.combatCounters = (defender.combatCounters || 0) + 1;
+      defender.combatKills = (defender.combatKills || 0) + 1;
+      attacker.combatFailedCost = (attacker.combatFailedCost || 0) + intent.cost;
       this._combatConsume(defender, attacker, COMBAT_COUNTER_CONVERSION, idMap);
       return;
     }
     if (intent.power >= guard * 1.1 + COMBAT_ESCAPE_MARGIN) {
       this.totalCombatKills++;
+      attacker.combatKills = (attacker.combatKills || 0) + 1;
       this._combatConsume(attacker, defender, COMBAT_KILL_CONVERSION, idMap);
       return;
     }
     this.totalCombatEscapes++;
     this.totalCombatFailedCost += intent.cost;
+    defender.combatEscapes = (defender.combatEscapes || 0) + 1;
+    attacker.combatFailedCost = (attacker.combatFailedCost || 0) + intent.cost;
     const defenderDamage = COMBAT_ESCAPE_INJURY * (0.7 + Math.min(1.5, intent.power));
     const attackerDamage = COMBAT_ESCAPE_ATTACKER_INJURY * (0.7 + Math.min(1.5, guard));
     this._applyCombatDamage(defender, defenderDamage, attacker, idMap);
@@ -1170,21 +1194,31 @@ export class World {
     a.lastAttackTick = this.tick;
     b.lastAttackTick = this.tick;
     this.totalCombatAttacks += 2;
+    a.combatAttacks = (a.combatAttacks || 0) + 1;
+    b.combatAttacks = (b.combatAttacks || 0) + 1;
     this._queueAttackFlash(a, b, Math.max(aIntent.power, bIntent.power) * 1.15);
     if (aIntent.power > bIntent.power + COMBAT_ESCAPE_MARGIN) {
       this.totalCombatKills++;
       this.totalCombatFailedCost += bIntent.cost;
+      a.combatKills = (a.combatKills || 0) + 1;
+      b.combatFailedCost = (b.combatFailedCost || 0) + bIntent.cost;
       this._combatConsume(a, b, COMBAT_KILL_CONVERSION, idMap);
       return;
     }
     if (bIntent.power > aIntent.power + COMBAT_ESCAPE_MARGIN) {
       this.totalCombatKills++;
       this.totalCombatFailedCost += aIntent.cost;
+      b.combatKills = (b.combatKills || 0) + 1;
+      a.combatFailedCost = (a.combatFailedCost || 0) + aIntent.cost;
       this._combatConsume(b, a, COMBAT_KILL_CONVERSION, idMap);
       return;
     }
     this.totalCombatEscapes++;
     this.totalCombatFailedCost += aIntent.cost + bIntent.cost;
+    a.combatEscapes = (a.combatEscapes || 0) + 1;
+    b.combatEscapes = (b.combatEscapes || 0) + 1;
+    a.combatFailedCost = (a.combatFailedCost || 0) + aIntent.cost;
+    b.combatFailedCost = (b.combatFailedCost || 0) + bIntent.cost;
     this._applyCombatDamage(a, COMBAT_ESCAPE_ATTACKER_INJURY * (0.8 + bIntent.power), b, idMap);
     this._applyCombatDamage(b, COMBAT_ESCAPE_ATTACKER_INJURY * (0.8 + aIntent.power), a, idMap);
   }
@@ -2266,6 +2300,8 @@ export class World {
       if (eat > 0) {
         this.totalFieldFoodEaten += eat;
         this.totalFieldEnergyGain += eatGain;
+        p.fieldFoodEaten = (p.fieldFoodEaten || 0) + eat;
+        p.fieldEnergyGain = (p.fieldEnergyGain || 0) + eatGain;
       }
       // emit chemicals — body baseline plus brain decision
       const eF = g.emit[0] + Math.max(0, out[OUT_EMIT_FOOD]) * 0.06;
@@ -2345,6 +2381,15 @@ export class World {
             predationEnergyGain: 0,
             predationFatalDrains: 0,
             predationKills: 0,
+            fieldFoodEaten: 0,
+            fieldEnergyGain: 0,
+            combatAttacks: 0,
+            combatKills: 0,
+            combatCounters: 0,
+            combatEscapes: 0,
+            combatFailedCost: 0,
+            combatDamageDealt: 0,
+            combatDamageTaken: 0,
             lastPredatorId: 0,
             lastPredationTick: -9999,
             lastAttackTick: -9999,
@@ -2408,6 +2453,15 @@ export class World {
             predationEnergyGain: 0,
             predationFatalDrains: 0,
             predationKills: 0,
+            fieldFoodEaten: 0,
+            fieldEnergyGain: 0,
+            combatAttacks: 0,
+            combatKills: 0,
+            combatCounters: 0,
+            combatEscapes: 0,
+            combatFailedCost: 0,
+            combatDamageDealt: 0,
+            combatDamageTaken: 0,
             lastPredatorId: 0,
             lastPredationTick: -9999,
             lastAttackTick: -9999,
@@ -3412,6 +3466,15 @@ export class World {
         predationEnergyGain: p.predationEnergyGain || 0,
         predationFatalDrains: p.predationFatalDrains || 0,
         predationKills: p.predationKills || 0,
+        fieldFoodEaten: p.fieldFoodEaten || 0,
+        fieldEnergyGain: p.fieldEnergyGain || 0,
+        combatAttacks: p.combatAttacks || 0,
+        combatKills: p.combatKills || 0,
+        combatCounters: p.combatCounters || 0,
+        combatEscapes: p.combatEscapes || 0,
+        combatFailedCost: p.combatFailedCost || 0,
+        combatDamageDealt: p.combatDamageDealt || 0,
+        combatDamageTaken: p.combatDamageTaken || 0,
         lastAttackTick: p.lastAttackTick || -9999,
         lastAttackFlashTick: p.lastAttackFlashTick || -9999,
         recentDamage: p.recentDamage || 0,
@@ -3548,6 +3611,15 @@ export class World {
         predationEnergyGain: op.predationEnergyGain || 0,
         predationFatalDrains: op.predationFatalDrains || 0,
         predationKills: op.predationKills || 0,
+        fieldFoodEaten: op.fieldFoodEaten || 0,
+        fieldEnergyGain: op.fieldEnergyGain || 0,
+        combatAttacks: op.combatAttacks || 0,
+        combatKills: op.combatKills || 0,
+        combatCounters: op.combatCounters || 0,
+        combatEscapes: op.combatEscapes || 0,
+        combatFailedCost: op.combatFailedCost || 0,
+        combatDamageDealt: op.combatDamageDealt || 0,
+        combatDamageTaken: op.combatDamageTaken || 0,
         lastPredatorId: 0,
         lastPredationTick: -9999,
         lastAttackTick: op.lastAttackTick || -9999,

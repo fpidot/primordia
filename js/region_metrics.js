@@ -559,3 +559,150 @@ export function computeRegionSurvival(world, previous = new Map(), opts = {}) {
     },
   };
 }
+
+const BEHAVIOR_FIELDS = [
+  'wallDigs',
+  'wallDeposits',
+  'fieldFoodEaten',
+  'fieldEnergyGain',
+  'predationEvents',
+  'predationEnergyGain',
+  'predationKills',
+  'combatAttacks',
+  'combatKills',
+  'combatCounters',
+  'combatEscapes',
+  'combatFailedCost',
+  'combatDamageDealt',
+  'combatDamageTaken',
+];
+
+function particleBehaviorRecord(world, p, regions, includeOutside) {
+  const regionId = assignRegionId(world, p, regions, { includeOutside });
+  if (regionId == null) return null;
+  const rec = { regionId };
+  for (const field of BEHAVIOR_FIELDS) rec[field] = Number(p?.[field]) || 0;
+  return rec;
+}
+
+function emptyBehaviorRow(id, meta) {
+  const row = {
+    id,
+    name: meta?.name || id,
+    type: meta?.type || 'region',
+    trackedParticles: 0,
+    liveTrackedParticles: 0,
+    newParticles: 0,
+  };
+  for (const field of BEHAVIOR_FIELDS) row[field] = 0;
+  return row;
+}
+
+function finishBehaviorRow(row) {
+  const denom = Math.max(1, row.liveTrackedParticles || row.trackedParticles || 1);
+  const out = {
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    trackedParticles: row.trackedParticles,
+    liveTrackedParticles: row.liveTrackedParticles,
+    newParticles: row.newParticles,
+  };
+  for (const field of BEHAVIOR_FIELDS) out[field] = round(row[field], 3);
+  out.wallWork = row.wallDigs + row.wallDeposits;
+  out.combatEvents = row.combatAttacks + row.combatCounters + row.combatEscapes;
+  out.foodEnergyPerTracked = round(row.fieldEnergyGain / denom, 3);
+  out.predationEnergyPerTracked = round(row.predationEnergyGain / denom, 3);
+  out.wallWorkPerTracked = round(out.wallWork / denom, 3);
+  out.combatDamageBalance = round(row.combatDamageDealt - row.combatDamageTaken, 3);
+  out.combatAttacksPerTracked = round(row.combatAttacks / denom, 3);
+  out.combatKillsPerTracked = round(row.combatKills / denom, 3);
+  return out;
+}
+
+export function computeRegionBehavior(world, previous = new Map(), opts = {}) {
+  if (!world) return { current: new Map(), summary: null };
+  const includeOutside = opts.includeOutside !== false;
+  const { regions, info } = regionInfoForSurvival(world, includeOutside);
+  if (!regions.length) return { current: new Map(), summary: null };
+
+  const current = new Map();
+  for (const p of world.particles || []) {
+    if (!p || p.dead) continue;
+    const rec = particleBehaviorRecord(world, p, regions, includeOutside);
+    if (rec) current.set(p.id, rec);
+  }
+
+  const prevState = previous instanceof Map ? previous : new Map();
+  if (!prevState.size) return { current, summary: null };
+
+  const rows = new Map();
+  const ensure = (id) => {
+    if (!rows.has(id)) rows.set(id, emptyBehaviorRow(id, info.get(id)));
+    return rows.get(id);
+  };
+  for (const id of info.keys()) ensure(id);
+
+  let trackedParticles = 0;
+  let liveTrackedParticles = 0;
+  let newParticles = 0;
+  const totals = {};
+  for (const field of BEHAVIOR_FIELDS) totals[field] = 0;
+
+  for (const [id, prev] of prevState) {
+    const row = ensure(prev.regionId);
+    row.trackedParticles++;
+    trackedParticles++;
+    const cur = current.get(id);
+    if (!cur) continue;
+    row.liveTrackedParticles++;
+    liveTrackedParticles++;
+    for (const field of BEHAVIOR_FIELDS) {
+      const delta = Math.max(0, (cur[field] || 0) - (prev[field] || 0));
+      row[field] += delta;
+      totals[field] += delta;
+    }
+  }
+
+  for (const [id, cur] of current) {
+    if (prevState.has(id)) continue;
+    ensure(cur.regionId).newParticles++;
+    newParticles++;
+  }
+
+  const regionRows = [...rows.values()]
+    .map(finishBehaviorRow)
+    .sort((a, b) => b.trackedParticles - a.trackedParticles || a.id.localeCompare(b.id));
+  return {
+    current,
+    summary: {
+      regions: regionRows,
+      trackedParticles,
+      liveTrackedParticles,
+      newParticles,
+      totals: Object.fromEntries(BEHAVIOR_FIELDS.map(field => [field, round(totals[field], 3)])),
+      topFoodRegions: regionRows
+        .filter(r => r.fieldEnergyGain > 0)
+        .sort((a, b) => b.fieldEnergyGain - a.fieldEnergyGain || a.id.localeCompare(b.id))
+        .map(r => ({ id: r.id, name: r.name, fieldEnergyGain: r.fieldEnergyGain }))
+        .slice(0, 5),
+      topPredationRegions: regionRows
+        .filter(r => r.predationEnergyGain > 0 || r.combatKills > 0)
+        .sort((a, b) => (b.predationEnergyGain + b.combatDamageDealt) -
+          (a.predationEnergyGain + a.combatDamageDealt) || a.id.localeCompare(b.id))
+        .map(r => ({
+          id: r.id,
+          name: r.name,
+          predationEnergyGain: r.predationEnergyGain,
+          combatKills: r.combatKills,
+          combatDamageDealt: r.combatDamageDealt,
+        }))
+        .slice(0, 5),
+      topBuilderRegions: regionRows
+        .filter(r => r.wallWork > 0)
+        .sort((a, b) => b.wallWork - a.wallWork || a.id.localeCompare(b.id))
+        .map(r => ({ id: r.id, name: r.name, wallWork: r.wallWork }))
+        .slice(0, 5),
+    },
+  };
+}

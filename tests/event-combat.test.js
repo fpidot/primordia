@@ -79,6 +79,10 @@ await runTest('event combat: strong one-sided attack kills and consumes prey', a
     `before=${before} after=${hunter.energy}`);
   assert('combat kill counter increments', world.totalCombatKills === 1,
     `kills=${world.totalCombatKills}`);
+  assert('attacker combat kill counter increments', hunter.combatKills === 1,
+    `hunterKills=${hunter.combatKills}`);
+  assert('attacker combat attack counter increments', hunter.combatAttacks === 1,
+    `hunterAttacks=${hunter.combatAttacks}`);
   assert('predation death is attributed', world.totalPredationDeaths === 1,
     `predationDeaths=${world.totalPredationDeaths}`);
   assert('successful attack is not counted as failed cost', world.totalCombatFailedCost === 0,
@@ -118,6 +122,10 @@ await runTest('event combat: guarded prey counterkills a weak attacker', async (
     `before=${defenderBefore} after=${defender.energy}`);
   assert('counter counter increments', world.totalCombatCounters === 1,
     `counters=${world.totalCombatCounters}`);
+  assert('defender counter counter increments', defender.combatCounters === 1,
+    `defenderCounters=${defender.combatCounters}`);
+  assert('attacker failed-cost counter increments', attacker.combatFailedCost > 0,
+    `attackerFailed=${attacker.combatFailedCost}`);
   assert('failed attack cost is recorded for the attacker', world.totalCombatFailedCost > 0,
     `failedCost=${world.totalCombatFailedCost}`);
 });
@@ -135,6 +143,10 @@ await runTest('event combat: failed attack gives no food and leaves damage memor
   assert('both survive a close escape', !attacker.dead && !defender.dead);
   assert('escape counter increments', world.totalCombatEscapes === 1,
     `escapes=${world.totalCombatEscapes}`);
+  assert('defender escape counter increments', defender.combatEscapes === 1,
+    `defenderEscapes=${defender.combatEscapes}`);
+  assert('damage counters are attributed', attacker.combatDamageTaken > 0 && defender.combatDamageTaken > 0,
+    `attackerDamage=${attacker.combatDamageTaken} defenderDamage=${defender.combatDamageTaken}`);
   assert('failed attack is net negative to the attacker', attacker.energy < attackerBefore,
     `before=${attackerBefore} after=${attacker.energy}`);
   assert('defender is injured but not eaten', defender.energy < defenderBefore,

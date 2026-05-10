@@ -9,6 +9,7 @@ import { mulberry32 } from '../tests/harness.js';
 import { World } from '../js/sim.js';
 import { PRESETS, PRESET_COUNTS } from '../js/presets.js';
 import {
+  computeRegionBehavior,
   computeRegionLineageTurnover,
   computeRegionMetrics,
   computeRegionSurvival,
@@ -54,6 +55,8 @@ let regionLineages = computeRegionLineageTurnover(world, new Map(), { includeOut
 let lastRegionLineageTurnover = null;
 let regionSurvival = computeRegionSurvival(world, new Map(), { includeOutside: true }).current;
 let lastRegionSurvival = null;
+let regionBehavior = computeRegionBehavior(world, new Map(), { includeOutside: true }).current;
+let lastRegionBehavior = null;
 const t0 = performance.now();
 let lastWindowTick = 0;
 let lastWindowTime = t0;
@@ -83,6 +86,10 @@ for (let i = 0; i < ticks; i++) {
     regionSurvival = survivalSnap.current;
     lastRegionSurvival = survivalSnap.summary;
     if (survivalSnap.summary) snap.regionSurvival = survivalSnap.summary;
+    const behaviorSnap = computeRegionBehavior(world, regionBehavior, { includeOutside: true });
+    regionBehavior = behaviorSnap.current;
+    lastRegionBehavior = behaviorSnap.summary;
+    if (behaviorSnap.summary) snap.regionBehavior = behaviorSnap.summary;
     snap.elapsedMs = Number((now - t0).toFixed(1));
     snap.windowTicks = windowTicks;
     snap.windowMsPerTick = Number((windowMs / Math.max(1, windowTicks)).toFixed(3));
@@ -141,6 +148,7 @@ console.log(JSON.stringify({
   regionTransitions: lastRegionTransitions || undefined,
   regionLineageTurnover: lastRegionLineageTurnover || undefined,
   regionSurvival: lastRegionSurvival || undefined,
+  regionBehavior: lastRegionBehavior || undefined,
   profile: profile && typeof world.profileSummary === 'function' ? world.profileSummary() : undefined,
   profileTrend: profileTrend.length ? profileTrend : undefined,
 }, null, 2));

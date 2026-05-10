@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Track habitat survival telemetry`
+  current `main` HEAD after this pass: `Track regional behavior outcomes`
 
 Recent useful commits:
 
-- current `main` HEAD - Track habitat survival telemetry
+- current `main` HEAD - Track regional behavior outcomes
+- `e8c25b5` - Track habitat survival telemetry
 - `30a135d` - Track habitat lineage turnover
 - `f6b4455` - Track habitat region movement
 - `7df3dfb` - Add habitat region telemetry
@@ -150,7 +151,8 @@ Core systems:
   pockets, and local mutagen cracks
 - habitat-region metadata plus `js/region_metrics.js` for basin/niche
   occupancy, energy, material, species-entropy, movement, and clade turnover
-  telemetry, plus profile-window survival/death/escape comparisons by region
+  telemetry, plus profile-window survival/death/escape and behavior
+  comparisons by region
 - import/export for particles, species/clades, clusters, and sterile worlds
 - CPU simulation path
 - WebGPU pair-force/brain path with CPU fallback
@@ -497,6 +499,11 @@ Predation and food pressure:
   include `injuredAlive` / `injuredAliveFrac`, which is more useful than
   `hitAlive` for event combat because escaped/injured survivors do not get a
   predation-death attribution timestamp.
+- Defense replay behavior-metrics pass:
+  challenge trials now include cohort-owned counters for field energy,
+  predation energy, event-combat attacks, kills, counters, escapes, and combat
+  damage given/taken. This separates "the arena had combat" from "the sampled
+  cohort actually fought, fed, escaped, or absorbed damage."
 - Calibration finding:
   the original event challenge default (`hunterDrive=4`,
   `hunterPreference=1`, `hunterEnergy=9`, `predatorRatio=0.35`) is too lethal
@@ -979,6 +986,22 @@ Latest verification in the cluster-budding pass:
     rate 0.118, move-out rate 0.141. Highest death regions were `glass basin`
     at 0.168 and `dawn basin` at 0.160; `central crossing` had the highest
     move-out rate at 0.439.
+- Habitat-region behavior verification:
+  - `node --check js\sim.js`, `node --check js\region_metrics.js`,
+    `node --check tools\bench-cpu.js`, and `node --check tools\defense-soak.js`
+    passed.
+  - `npm test -- event-combat.test.js planet-preset.test.js food-chemotaxis.test.js`
+    passed. Event-combat tests now assert per-particle combat counters; Planet
+    tests assert region behavior deltas for wall work, field energy, and combat
+    attacks.
+  - `npm test` passed all 20 test files after the behavior-outcome pass.
+  - `node tools\bench-cpu.js --preset planet --ticks 180 --cap 900 --seed 0xC1A0C0 --combat event --profileEvery 90`
+    passed and emitted `regionBehavior`. Final window: `root basin` led field
+    energy gain (959.373), `tide basin` led predation energy/damage
+    (48.195/75.118), and `tide basin` plus `glass basin` led wall work (25
+    each).
+  - `node tools\defense-soak.js --ticks 120 --samples 0,120 --sampleSize 12 --challengeTicks 40 --challenges predator --replay particles --combat event --json`
+    passed and emitted cohort-owned behavior counters in challenge results.
 
 Core:
 
@@ -1055,17 +1078,15 @@ git log --oneline -5
 
 3. Choose one narrow pass:
 
-- planet ecology: extend region/niche telemetry with explicit behavior outcomes
-  by region
 - planet ecology: run longer multi-seed Planet soaks and compare against
   soup/maze for daughter buds, topology, wall work, attacks, and brain slots
 - visuals: tune the small red blood-drop attack flash if it reads too loud or
   too subtle during real runs
 - performance: keep profiling Planet and Maze long runs; the next structural
   target remains worker/snapshot architecture if sim-step cost keeps dominating
-- agency: run repeated post-topology `--replay both` evidence with behavior
-  metrics for cohesion under attack, alarm use, predator-distance change,
-  retreat vector, and mud/glass use
+- agency: run repeated post-topology `--replay both` evidence with the new
+  cohort behavior metrics plus still-missing cohesion under attack, alarm use,
+  predator-distance change, retreat vector, and mud/glass use
 - agency: add detour-navigation microtests for food/prey behind glass with a
   nearby opening
 - UI: Best/top panel view/chase/card polish

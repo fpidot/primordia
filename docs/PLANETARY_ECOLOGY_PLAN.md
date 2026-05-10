@@ -85,14 +85,18 @@ First validation:
   mass. Profile windows also report movement between regions, clade
   colonization, local clade extinction, turnover score, dominant clade, and the
   top gaining/declining clades per region. They also compare regional
-  survival, death rate, escape rate, new particles, and mean energy change. In
+  survival, death rate, escape rate, new particles, mean energy change, feeding,
+  wall work, predation, event-combat attacks/counters/escapes, and combat
+  damage. In
   a 300-tick `0xC1A0C0` probe, `root basin` held 177 particles at mean energy
   9.927 while `glass basin` held 119 particles at mean energy 3.162 and 96 mud
   occupants; 425 particles remained outside named regions. A later 180-tick
   profiled probe showed the central crossing and outside pool turning over
   faster than the protected basins; the final 90-tick survival window flagged
   `glass basin` and `dawn basin` as the highest-death basins, while `central
-  crossing` mostly acted as an escape corridor.
+  crossing` mostly acted as an escape corridor. The behavior window also showed
+  `root basin` leading field-energy gain, `tide basin` leading predation
+  damage/energy, and `tide basin` plus `glass basin` leading wall work.
 
 Near validation:
 
@@ -110,7 +114,7 @@ Next habitat improvements:
 
 - Add a sterile world generator mode that lets saved habitats be reused with
   different imported populations.
-- Extend basin/corridor metrics with explicit behavior outcomes by region.
+- Run longer soup/maze/planet comparisons using region behavior outcomes.
 - Add visible biome overlay or optional low-cost terrain labels.
 
 ## Phase 2: Resource Ecology
@@ -228,8 +232,10 @@ Goal: raise neural capacity only when there is a reason.
 Near steps:
 
 - Add detour-navigation microtests: food/prey behind glass with a gap.
-- Add behavior metrics to defense replay: retreat vector, predator-distance
-  delta, alarm timing, cohesion under attack, mud/glass use.
+- Add more behavior metrics to defense replay: retreat vector, predator-distance
+  delta, alarm timing, cohesion under attack, mud/glass use. First pass now
+  reports cohort-owned feeding, predation, attacks, kills, counters, escapes,
+  and combat damage.
 - Audit whether food gradients are too local or too weak for visible attraction
   when the user drops food nearby.
 - Raise brain slot cap only after planet/niche tests show pressure for more
@@ -295,8 +301,9 @@ Other scale steps:
 1. Ship `Planet` preset and tests.
 2. Run planet short/medium CPU soaks.
 3. Region/niche telemetry to bench output. Shipped occupancy, movement, clade
-   turnover/local extinction, and survival; next add behavior outcomes.
-4. Add behavior metrics to defense replay.
+   turnover/local extinction, survival, and behavior outcomes.
+4. Add behavior metrics to defense replay. Shipped first cohort-owned behavior
+   counters; next add retreat/alarm/cohesion timing.
 5. Attack flash. Shipped as a small red droplet.
 6. Add detour-navigation assay.
 7. Decide whether torus topology or a small bounded fishbowl prototype is the

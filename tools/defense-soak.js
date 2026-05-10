@@ -75,6 +75,10 @@ function maxOf(values) {
   return values.length ? Math.max(...values) : 0;
 }
 
+function sumParticleField(particles, field) {
+  return particles.reduce((sum, p) => sum + (Number(p?.[field]) || 0), 0);
+}
+
 function aggregateChallengeTrials(kind, trials, cohortKind = 'particles') {
   if (!trials.length) {
     return {
@@ -91,6 +95,14 @@ function aggregateChallengeTrials(kind, trials, cohortKind = 'particles') {
       safeSidePerTick: 0,
       meanPredatorDistance: 0,
       bondMsgPerCellTick: 0,
+      cohortFieldEnergy: 0,
+      cohortPredationEnergy: 0,
+      cohortCombatAttacks: 0,
+      cohortCombatKills: 0,
+      cohortCombatCounters: 0,
+      cohortCombatEscapes: 0,
+      cohortCombatDamageDealt: 0,
+      cohortCombatDamageTaken: 0,
       cohortClusters: 0,
       meanBondRetention: 0,
       meanDispersionRatio: 0,
@@ -124,6 +136,14 @@ function aggregateChallengeTrials(kind, trials, cohortKind = 'particles') {
     combatEscapes: round(mean(get('combatEscapes'))),
     combatFailedCost: round(mean(get('combatFailedCost'))),
     fieldEnergy: round(mean(get('fieldEnergy'))),
+    cohortFieldEnergy: round(mean(get('cohortFieldEnergy'))),
+    cohortPredationEnergy: round(mean(get('cohortPredationEnergy'))),
+    cohortCombatAttacks: round(mean(get('cohortCombatAttacks'))),
+    cohortCombatKills: round(mean(get('cohortCombatKills'))),
+    cohortCombatCounters: round(mean(get('cohortCombatCounters'))),
+    cohortCombatEscapes: round(mean(get('cohortCombatEscapes'))),
+    cohortCombatDamageDealt: round(mean(get('cohortCombatDamageDealt'))),
+    cohortCombatDamageTaken: round(mean(get('cohortCombatDamageTaken'))),
     hitAliveFrac: round(mean(get('hitAliveFrac'))),
     injuredAliveFrac: round(mean(get('injuredAliveFrac'))),
     meanSlotsAlive: round(mean(get('meanSlotsAlive'))),
@@ -712,6 +732,14 @@ export async function runChallenge(kind, cohort, opts, seed, cohortKind = 'parti
     const hitAlive = alive.filter(p => p.lastPredationTick >= 0).length;
     const injuredAlive = alive.filter(p => p.lastDamageTick >= 0).length;
     const slots = alive.map(p => p.genome.brain.enabledCount());
+    const cohortFieldEnergy = sumParticleField(cohortParticles, 'fieldEnergyGain');
+    const cohortPredationEnergy = sumParticleField(cohortParticles, 'predationEnergyGain');
+    const cohortCombatAttacks = sumParticleField(cohortParticles, 'combatAttacks');
+    const cohortCombatKills = sumParticleField(cohortParticles, 'combatKills');
+    const cohortCombatCounters = sumParticleField(cohortParticles, 'combatCounters');
+    const cohortCombatEscapes = sumParticleField(cohortParticles, 'combatEscapes');
+    const cohortCombatDamageDealt = sumParticleField(cohortParticles, 'combatDamageDealt');
+    const cohortCombatDamageTaken = sumParticleField(cohortParticles, 'combatDamageTaken');
     return {
       kind,
       cohortKind,
@@ -731,6 +759,14 @@ export async function runChallenge(kind, cohort, opts, seed, cohortKind = 'parti
       combatEscapes: world.totalCombatEscapes || 0,
       combatFailedCost: round(world.totalCombatFailedCost || 0),
       fieldEnergy: round(world.totalFieldEnergyGain || 0),
+      cohortFieldEnergy: round(cohortFieldEnergy),
+      cohortPredationEnergy: round(cohortPredationEnergy),
+      cohortCombatAttacks: round(cohortCombatAttacks),
+      cohortCombatKills: round(cohortCombatKills),
+      cohortCombatCounters: round(cohortCombatCounters),
+      cohortCombatEscapes: round(cohortCombatEscapes),
+      cohortCombatDamageDealt: round(cohortCombatDamageDealt),
+      cohortCombatDamageTaken: round(cohortCombatDamageTaken),
       predatorCount,
       cohortEnergy: Number.isFinite(opts.cohortEnergy) ? round(opts.cohortEnergy) : null,
       hunterEnergy: round(opts.hunterEnergy),
@@ -894,7 +930,7 @@ async function main() {
 
   console.log(JSON.stringify(result, null, 2));
   console.log('\nDefense challenge summary');
-  console.log('tick | mode | pop | meanSlots | p90/max | buds/cells | replay | challenge | survival | clusters | bondRet | predDist | predDeaths | injured | mudUse | safeSide');
+  console.log('tick | mode | pop | meanSlots | p90/max | buds/cells | replay | challenge | survival | clusters | bondRet | predDist | predDeaths | cohortAtk/K/C/E | cohortDmg | injured | mudUse | safeSide');
   for (const s of snapshots) {
     for (const c of s.challenges) {
       const survival = c.repeats === 0
@@ -916,6 +952,8 @@ async function main() {
         (c.meanBondRetention || 0).toFixed(2),
         (c.meanPredatorDistance || 0).toFixed(0),
         c.predationDeaths,
+        `${c.cohortCombatAttacks}/${c.cohortCombatKills}/${c.cohortCombatCounters}/${c.cohortCombatEscapes}`,
+        `${c.cohortCombatDamageDealt}/${c.cohortCombatDamageTaken}`,
         (c.injuredAliveFrac || 0).toFixed(2),
         c.mudUsePerTick.toFixed(2),
         c.safeSidePerTick.toFixed(2),
