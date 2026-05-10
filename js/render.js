@@ -590,6 +590,42 @@ export class Renderer {
     }
   }
 
+  renderAttackFlashes(ctx, world, minX, maxX, minY, maxY, z) {
+    const events = world._attackFlashEvents || [];
+    if (!events.length) return;
+    const now = world.tick || 0;
+    const ttl = 18;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    const base = Math.max(2.2, 3.3 / Math.sqrt(Math.max(0.35, z)));
+    const width = Math.max(0.55, 1.0 / z);
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i];
+      const age = now - (e.tick || 0);
+      if (age < 0 || age > ttl) continue;
+      if (e.x < minX || e.x > maxX || e.y < minY || e.y > maxY) continue;
+      const t = age / ttl;
+      const fade = (1 - t) * (1 - t);
+      const power = Math.max(0.7, Math.min(1.6, e.intensity || 1));
+      const r = base * power * (1 + t * 1.4);
+      ctx.lineWidth = width;
+      ctx.fillStyle = `rgba(255, 44, 58, ${0.22 * fade})`;
+      ctx.strokeStyle = `rgba(255, 74, 82, ${0.62 * fade})`;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(255, 235, 226, ${0.42 * fade})`;
+      ctx.beginPath();
+      ctx.moveTo(e.x - r * 0.55, e.y);
+      ctx.lineTo(e.x + r * 0.55, e.y);
+      ctx.moveTo(e.x, e.y - r * 0.55);
+      ctx.lineTo(e.x, e.y + r * 0.55);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   renderParticles(world) {
     const ctx = this.fgCtx;
     const opts = this.options;
@@ -623,6 +659,7 @@ export class Renderer {
     const ps = world.particles;
     if (z < 0.55) {
       this.renderParticleDensityLod(ctx, world, minX, maxX, minY, maxY, z);
+      this.renderAttackFlashes(ctx, world, minX, maxX, minY, maxY, z);
       this.renderClusterFlags(ctx, world);
       return;
     }
@@ -706,6 +743,7 @@ export class Renderer {
       }
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
+      this.renderAttackFlashes(ctx, world, minX, maxX, minY, maxY, z);
       this.renderClusterFlags(ctx, world);
       return;
     }
@@ -895,6 +933,7 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
+    this.renderAttackFlashes(ctx, world, minX, maxX, minY, maxY, z);
 
     // Cluster flags — drawn last in screen space so labels stay readable
     // regardless of zoom level.

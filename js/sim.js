@@ -490,6 +490,7 @@ export class World {
     // path, consumer is audio.js (drained each tick). Cosmetic only.
     this._wallSoundEvents = [];
     this._deathSoundEvents = [];
+    this._attackFlashEvents = [];
     // Wall version — bumped on every wall brush so the renderer can rebuild
     // its smooth-edge cache even when count is unchanged but a cell changed
     // type (e.g. solid -> glass).
@@ -803,6 +804,7 @@ export class World {
       lastPredatorId: 0,
       lastPredationTick: -9999,
       lastAttackTick: -9999,
+      lastAttackFlashTick: -9999,
       recentDamage: 0,
       damageDirX: 0,
       damageDirY: 0,
@@ -938,6 +940,7 @@ export class World {
     this._wallsVersion++;
     this._wallSoundEvents.length = 0;
     this._deathSoundEvents.length = 0;
+    this._attackFlashEvents.length = 0;
     this._brainsDirty = true;
     this._gpuStateDirty = true;
     // Phase 4g — drop any in-flight GPU readback so the next tick doesn't
@@ -966,6 +969,7 @@ export class World {
     if (this._soundFields) for (const s of this._soundFields) s.fill(0);
     if (this._wallSoundEvents) this._wallSoundEvents.length = 0;
     if (this._deathSoundEvents) this._deathSoundEvents.length = 0;
+    if (this._attackFlashEvents) this._attackFlashEvents.length = 0;
   }
 
   // ────────────────────────────────────────────────────────────── brushes
@@ -1112,11 +1116,32 @@ export class World {
     return gain;
   }
 
+  _queueAttackFlash(attacker, defender, intensity = 1) {
+    if (!this._attackFlashEvents) this._attackFlashEvents = [];
+    const ax = attacker ? attacker.x : 0;
+    const ay = attacker ? attacker.y : 0;
+    const bx = defender ? defender.x : ax;
+    const by = defender ? defender.y : ay;
+    const power = clamp(Number.isFinite(intensity) ? intensity : 1, 0.4, 2.5);
+    this._attackFlashEvents.push({
+      x: (ax + bx) * 0.5,
+      y: (ay + by) * 0.5,
+      tick: this.tick,
+      intensity: power,
+    });
+    if (this._attackFlashEvents.length > 180) {
+      this._attackFlashEvents.splice(0, this._attackFlashEvents.length - 180);
+    }
+    if (attacker) attacker.lastAttackFlashTick = this.tick;
+    if (defender) defender.lastAttackFlashTick = this.tick;
+  }
+
   _resolveSingleEventAttack(attacker, defender, intent, idMap) {
     if (!intent || attacker.dead || defender.dead) return;
     attacker.energy -= intent.cost;
     attacker.lastAttackTick = this.tick;
     this.totalCombatAttacks++;
+    this._queueAttackFlash(attacker, defender, intent.power);
     const guard = this._guardPower(defender);
     if (guard >= intent.power * 1.15) {
       this.totalCombatCounters++;
@@ -1143,6 +1168,7 @@ export class World {
     a.lastAttackTick = this.tick;
     b.lastAttackTick = this.tick;
     this.totalCombatAttacks += 2;
+    this._queueAttackFlash(a, b, Math.max(aIntent.power, bIntent.power) * 1.15);
     if (aIntent.power > bIntent.power + COMBAT_ESCAPE_MARGIN) {
       this.totalCombatKills++;
       this.totalCombatFailedCost += bIntent.cost;
@@ -2320,6 +2346,7 @@ export class World {
             lastPredatorId: 0,
             lastPredationTick: -9999,
             lastAttackTick: -9999,
+            lastAttackFlashTick: -9999,
             recentDamage: 0,
             damageDirX: 0,
             damageDirY: 0,
@@ -2382,6 +2409,7 @@ export class World {
             lastPredatorId: 0,
             lastPredationTick: -9999,
             lastAttackTick: -9999,
+            lastAttackFlashTick: -9999,
             recentDamage: 0,
             damageDirX: 0,
             damageDirY: 0,
@@ -3382,6 +3410,7 @@ export class World {
         predationFatalDrains: p.predationFatalDrains || 0,
         predationKills: p.predationKills || 0,
         lastAttackTick: p.lastAttackTick || -9999,
+        lastAttackFlashTick: p.lastAttackFlashTick || -9999,
         recentDamage: p.recentDamage || 0,
         damageDirX: p.damageDirX || 0,
         damageDirY: p.damageDirY || 0,
@@ -3512,6 +3541,7 @@ export class World {
         lastPredatorId: 0,
         lastPredationTick: -9999,
         lastAttackTick: op.lastAttackTick || -9999,
+        lastAttackFlashTick: op.lastAttackFlashTick || -9999,
         recentDamage: op.recentDamage || 0,
         damageDirX: op.damageDirX || 0,
         damageDirY: op.damageDirY || 0,

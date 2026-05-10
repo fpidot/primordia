@@ -197,6 +197,8 @@ Inspection and UI:
 - cluster membranes stay visible when cluster labels/flags are off
 - chased clusters pulse membrane rather than flashing every member
 - wall segments are inspectable and preserve builder/cluster metadata
+- full event-combat attacks queue a small red world-space flash at the attack
+  site; this is cosmetic-only and separate from evolved visual signals
 - current best/top panels can copy/export/view/chase, though polish remains open
 - stable, energy-rich bonded clusters can occasionally bud a daughter cluster:
   the daughter inherits mutated member genomes, rough parent-relative positions,
@@ -741,8 +743,8 @@ Visuals:
   - two soft concentric rings
   - about half-second offset
   - inner ring roughly two-thirds outer radius
-- full attack events should flash a small red indicator so predation/violence
-  is visible without overwhelming normal signals
+- full event-combat attacks now flash a small red indicator so
+  predation/violence is visible without overwhelming normal signals
 
 World/building tools:
 
@@ -914,6 +916,13 @@ Latest verification in the cluster-budding pass:
   - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset planet --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9236` passed: 19.5 FPS/ticks-per-second, population 800 after 40 ticks, no page errors.
   - `npm test` passed all 20 test files after the Planet default was lowered
     to 720 particles.
+- Attack-flash verification:
+  - `node --check js\sim.js` and `node --check js\render.js` passed.
+  - `npm test -- event-combat.test.js` passed with assertions that successful
+    event attacks queue red visual flashes.
+  - `npm test -- event-combat.test.js planet-preset.test.js` passed.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset planet --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9237` passed: 18.4 FPS/ticks-per-second, no page errors.
+  - `npm test` passed all 20 test files after the attack-flash pass.
 
 Core:
 

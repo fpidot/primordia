@@ -446,9 +446,9 @@ Current implementation:
 - Visual signal flashes should feel more like radiating waves: two soft
   concentric rings, roughly half a second apart, with the earlier inner ring
   about two-thirds the radius of the later outer ring.
-- Full attack events should get a small red flash indicator, separate from
-  normal signals, so predation/violence is visible without turning the canvas
-  into a warning-light show.
+- Full attack events now queue a small red world-space flash, separate from
+  normal evolved signals, so predation/violence is visible without turning the
+  canvas into a warning-light show.
 
 ### Wall visuals
 

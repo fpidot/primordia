@@ -83,6 +83,10 @@ await runTest('event combat: strong one-sided attack kills and consumes prey', a
     `predationDeaths=${world.totalPredationDeaths}`);
   assert('successful attack is not counted as failed cost', world.totalCombatFailedCost === 0,
     `failedCost=${world.totalCombatFailedCost}`);
+  assert('successful attack queues a red visual flash', world._attackFlashEvents.length > 0,
+    `flashes=${world._attackFlashEvents.length}`);
+  assert('attacker is marked as recently flashed', hunter.lastAttackFlashTick > -9999,
+    `lastAttackFlashTick=${hunter.lastAttackFlashTick}`);
 });
 
 await runTest('event combat: mesh topology boosts defensive guard power', async () => {
