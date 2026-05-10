@@ -6,7 +6,7 @@ seedGlobalRandom(0xC1A0C0);
 
 const { World, WALL_SOLID, WALL_MEMBRANE, WALL_POROUS } = await import('../js/sim.js');
 const { PRESETS } = await import('../js/presets.js');
-const { computeRegionMetrics } = await import('../js/region_metrics.js');
+const { computeRegionMetrics, computeRegionTransitions } = await import('../js/region_metrics.js');
 
 function countTerrain(world) {
   let solid = 0, glass = 0, mud = 0, richFood = 0, decay = 0, mutagen = 0;
@@ -46,6 +46,18 @@ await runTest('planet preset: creates multiple persistent niche pressures', asyn
   assert('basin metrics capture food oases', regions.some(r => r.type === 'basin' && r.richFoodCells > 150));
   assert('basin metrics capture mud rings', regions.some(r => r.type === 'basin' && r.mudCells > 100));
   assert('region metrics include species entropy', regions.some(r => r.particles > 0 && r.speciesEntropy > 0));
+
+  const initialMoves = computeRegionTransitions(world, new Map(), { includeOutside: true });
+  assert('region transition baseline maps live particles',
+    initialMoves.current.size === world.particles.length,
+    `mapped=${initialMoves.current.size} particles=${world.particles.length}`);
+  const targetRegion = world.habitatRegions[0].id;
+  const moved = world.particles.find(p => initialMoves.current.get(p.id) !== targetRegion) || world.particles[0];
+  moved.x = world.habitatRegions[0].x;
+  moved.y = world.habitatRegions[0].y;
+  const afterMove = computeRegionTransitions(world, initialMoves.current, { includeOutside: true });
+  assert('region transitions detect moved particles', afterMove.summary.moved >= 1,
+    `moved=${afterMove.summary.moved}`);
 });
 
 await runTest('planet preset: short soak remains viable under constraints', async () => {

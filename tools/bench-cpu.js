@@ -8,7 +8,7 @@ import { performance } from 'node:perf_hooks';
 import { mulberry32 } from '../tests/harness.js';
 import { World } from '../js/sim.js';
 import { PRESETS, PRESET_COUNTS } from '../js/presets.js';
-import { computeRegionMetrics } from '../js/region_metrics.js';
+import { computeRegionMetrics, computeRegionTransitions } from '../js/region_metrics.js';
 
 function readArg(name, fallback) {
   const flag = `--${name}`;
@@ -43,6 +43,8 @@ if ((profile || profileEvery) && typeof world.setProfiling === 'function') world
 
 const startN = world.particles.length;
 const profileTrend = [];
+let regionAssignments = computeRegionTransitions(world, new Map(), { includeOutside: true }).current;
+let lastRegionTransitions = null;
 const t0 = performance.now();
 let lastWindowTick = 0;
 let lastWindowTime = t0;
@@ -60,6 +62,10 @@ for (let i = 0; i < ticks; i++) {
     const snap = world.profileSnapshot({ reset: true });
     const regions = computeRegionMetrics(world, { includeOutside: true });
     if (regions.length) snap.regions = regions;
+    const transitionSnap = computeRegionTransitions(world, regionAssignments, { includeOutside: true });
+    regionAssignments = transitionSnap.current;
+    lastRegionTransitions = transitionSnap.summary;
+    if (transitionSnap.summary) snap.regionTransitions = transitionSnap.summary;
     snap.elapsedMs = Number((now - t0).toFixed(1));
     snap.windowTicks = windowTicks;
     snap.windowMsPerTick = Number((windowMs / Math.max(1, windowTicks)).toFixed(3));
@@ -115,6 +121,7 @@ console.log(JSON.stringify({
   combatEscapes: world.totalCombatEscapes || 0,
   combatFailedCost: Number((world.totalCombatFailedCost || 0).toFixed(3)),
   regions: regions.length ? regions : undefined,
+  regionTransitions: lastRegionTransitions || undefined,
   profile: profile && typeof world.profileSummary === 'function' ? world.profileSummary() : undefined,
   profileTrend: profileTrend.length ? profileTrend : undefined,
 }, null, 2));

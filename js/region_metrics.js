@@ -45,6 +45,22 @@ function normaliseRegion(region, idx) {
   };
 }
 
+function normaliseRegions(world) {
+  const src = Array.isArray(world?.habitatRegions) ? world.habitatRegions : [];
+  return src.map(normaliseRegion);
+}
+
+export function assignRegionId(world, particle, regions = normaliseRegions(world), opts = {}) {
+  if (!particle || particle.dead) return null;
+  for (let ri = 0; ri < regions.length; ri++) {
+    const r = regions[ri];
+    const dx = particle.x - r.x;
+    const dy = particle.y - r.y;
+    if (dx * dx + dy * dy <= r.radius * r.radius) return r.id;
+  }
+  return opts.includeOutside ? 'outside' : null;
+}
+
 function emptyMetric(region) {
   return {
     id: region.id,
@@ -96,9 +112,9 @@ function finishMetric(m, energySum) {
 }
 
 export function computeRegionMetrics(world, opts = {}) {
-  const src = Array.isArray(world?.habitatRegions) ? world.habitatRegions : [];
-  if (!world || src.length === 0) return [];
-  const regions = src.map(normaliseRegion);
+  if (!world) return [];
+  const regions = normaliseRegions(world);
+  if (!regions.length) return [];
   const metrics = regions.map(emptyMetric);
   const energySums = new Array(metrics.length).fill(0);
   const includeOutside = !!opts.includeOutside;
@@ -146,16 +162,8 @@ export function computeRegionMetrics(world, opts = {}) {
 
   for (const p of world.particles || []) {
     if (!p || p.dead) continue;
-    let assigned = -1;
-    for (let ri = 0; ri < regions.length; ri++) {
-      const r = regions[ri];
-      const dx = p.x - r.x;
-      const dy = p.y - r.y;
-      if (dx * dx + dy * dy <= r.radius * r.radius) {
-        assigned = ri;
-        break;
-      }
-    }
+    const regionId = assignRegionId(world, p, regions, { includeOutside: false });
+    const assigned = regionId == null ? -1 : regions.findIndex(r => r.id === regionId);
     const m = assigned >= 0 ? metrics[assigned] : outside;
     if (!m) continue;
     const gx = clamp((p.x / CELL) | 0, 0, GW - 1);
@@ -175,4 +183,66 @@ export function computeRegionMetrics(world, opts = {}) {
   const out = metrics.map((m, i) => finishMetric(m, energySums[i]));
   if (outside) out.push(finishMetric(outside, outsideEnergy));
   return out;
+}
+
+export function computeRegionTransitions(world, previous = new Map(), opts = {}) {
+  const regions = normaliseRegions(world);
+  if (!world || !regions.length) {
+    return { current: new Map(), summary: null };
+  }
+  const includeOutside = opts.includeOutside !== false;
+  const current = new Map();
+  const liveIds = new Set();
+  const transitions = new Map();
+  const exits = new Map();
+  let stayed = 0, moved = 0, entered = 0, exited = 0;
+
+  for (const p of world.particles || []) {
+    if (!p || p.dead) continue;
+    const id = p.id;
+    liveIds.add(id);
+    const next = assignRegionId(world, p, regions, { includeOutside });
+    if (next == null) continue;
+    current.set(id, next);
+    if (!previous.has(id)) {
+      entered++;
+      continue;
+    }
+    const prev = previous.get(id);
+    if (prev === next) {
+      stayed++;
+    } else {
+      moved++;
+      const key = `${prev}->${next}`;
+      transitions.set(key, (transitions.get(key) || 0) + 1);
+    }
+  }
+
+  for (const [id, prev] of previous) {
+    if (liveIds.has(id)) continue;
+    exited++;
+    exits.set(prev, (exits.get(prev) || 0) + 1);
+  }
+
+  const rows = [...transitions.entries()]
+    .map(([key, count]) => {
+      const [from, to] = key.split('->');
+      return { from, to, count };
+    })
+    .sort((a, b) => b.count - a.count || a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+  const exitRows = [...exits.entries()]
+    .map(([from, count]) => ({ from, count }))
+    .sort((a, b) => b.count - a.count || a.from.localeCompare(b.from));
+
+  return {
+    current,
+    summary: {
+      stayed,
+      moved,
+      entered,
+      exited,
+      transitions: rows,
+      exits: exitRows,
+    },
+  };
 }

@@ -788,11 +788,12 @@ Current implementation: Planet registers named habitat regions and CPU bench
 reports region/niche telemetry for them. Each region reports occupancy, mean
 energy, low-energy count, mud/glass occupancy, wall carriers, species entropy,
 dominant species/share, terrain/material cell counts, and food/decay/mutagen
-mass. A 300-tick `0xC1A0C0` Planet probe showed strong niche differences:
-`root basin` had 177 particles at mean energy 9.927, `glass basin` had 119
-particles at mean energy 3.162 with 96 mud occupants, and 425 particles remained
-outside named regions. Next telemetry target: migration/lineage turnover between
-regions, not only per-window occupancy.
+mass. Bench profile windows also report particle movement between regions. A
+300-tick `0xC1A0C0` Planet probe showed strong niche differences: `root basin`
+had 177 particles at mean energy 9.927, `glass basin` had 119 particles at mean
+energy 3.162 with 96 mud occupants, and 425 particles remained outside named
+regions. Next telemetry target: lineage turnover and local extinction between
+regions, not only per-window occupancy/movement.
 
 ---
 

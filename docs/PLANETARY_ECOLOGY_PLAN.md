@@ -82,9 +82,10 @@ First validation:
   named basins plus a central crossing, and CPU bench JSON reports basin
   occupancy, mean energy, low-energy count, mud/glass occupancy, carried wall
   material, species entropy, dominant species, and local food/decay/mutagen
-  mass. In a 300-tick `0xC1A0C0` probe, `root basin` held 177 particles at
-  mean energy 9.927 while `glass basin` held 119 particles at mean energy 3.162
-  and 96 mud occupants; 425 particles remained outside named regions.
+  mass. Profile windows also report movement between regions. In a 300-tick
+  `0xC1A0C0` probe, `root basin` held 177 particles at mean energy 9.927 while
+  `glass basin` held 119 particles at mean energy 3.162 and 96 mud occupants;
+  425 particles remained outside named regions.
 
 Near validation:
 
@@ -102,8 +103,8 @@ Next habitat improvements:
 
 - Add a sterile world generator mode that lets saved habitats be reused with
   different imported populations.
-- Extend basin/corridor metrics with migration and lineage turnover between
-  regions.
+- Extend basin/corridor metrics with lineage turnover and local extinction
+  between regions.
 - Add visible biome overlay or optional low-cost terrain labels.
 
 ## Phase 2: Resource Ecology
@@ -287,8 +288,8 @@ Other scale steps:
 
 1. Ship `Planet` preset and tests.
 2. Run planet short/medium CPU soaks.
-3. Region/niche telemetry to bench output. Shipped first pass; next add
-   migration/turnover.
+3. Region/niche telemetry to bench output. Shipped occupancy and movement;
+   next add lineage turnover/local extinction.
 4. Add behavior metrics to defense replay.
 5. Attack flash. Shipped as a small red droplet.
 6. Add detour-navigation assay.
