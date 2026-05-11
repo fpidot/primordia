@@ -298,13 +298,15 @@ Current structural target:
   around 5-6 ms/frame, while worker-side tick throughput is still limited by
   simulation cost and snapshot payload. The first layered-snapshot pass now
   refreshes particle/cluster state frequently while sending field and wall
-  typed-array layers on slower cadences.
+  typed-array layers on slower cadences; particle state itself now travels as a
+  typed slab and is rehydrated by the main-thread proxy.
 
 Other scale steps:
 
 - Reduce worker snapshot pressure with diff/static layers, typed particle
   slabs, transfer pooling, and on-demand full-detail inspection. Field/wall
-  cadence splitting is shipped; particle slab/pool work remains.
+  cadence splitting and typed particle slabs are shipped; transfer pooling and
+  on-demand full-detail inspection remain.
 - Reach command parity for worker mode: live import/copy/duplication and richer
   genome/card detail without bloating every snapshot.
 - User-facing population/work budgets. A first `Sim budget` slider now exposes

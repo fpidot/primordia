@@ -125,7 +125,9 @@ simulation path; `--workBudget` controls how much wall-clock time each worker
 slice may spend advancing ticks before it posts another snapshot. Worker
 bench output includes layer counts; `--fieldInterval` and `--wallInterval`
 control how often larger field/terrain buffers are refreshed relative to
-lighter particle/cluster snapshots.
+lighter particle/cluster snapshots. Worker mode uses typed particle slabs for
+those light snapshots, then rehydrates the familiar particle objects in the
+main-thread proxy for renderer/UI compatibility.
 
 ## Preset population
 

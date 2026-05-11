@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Layer worker snapshot payloads`
+  current `main` HEAD after this pass: `Use typed worker particle slabs`
 
 Recent useful commits:
 
-- current `main` HEAD - Layer worker snapshot payloads
+- current `main` HEAD - Use typed worker particle slabs
+- `9a32014` - Layer worker snapshot payloads
 - `0bd782c` - Add detour curriculum ladder
 - `d8d6cb0` - Add worker snapshot simulation mode
 - `1b633cf` - Instrument detour navigation and hard contacts
@@ -384,6 +385,10 @@ Performance reality:
   slower field cadence and wall typed arrays/meta refresh immediately after
   terrain changes only up to a wall cadence. Browser bench reports the layer
   counts and transferred bytes as `workerLayers`.
+- Worker particle payloads now use typed slabs instead of object arrays. The
+  main-thread proxy rehydrates those slabs into the same particle objects the
+  renderer, UI, and audio systems already expect. Object snapshots remain the
+  default outside worker mode for compatibility.
 - A first user-facing work-budget control is now in the Run panel. In
   compatibility mode it adjusts the per-frame sim-step budget from the previous
   hard-coded 12 ms default; in worker mode the same setting is sent to the
@@ -412,6 +417,15 @@ Performance reality:
     about 19.1 MB transferred, about 49.6 FPS, frame `step` about 0.017 ms, no
     page errors. If every snapshot had carried all typed field/wall layers, the
     same shape would have been roughly 50 MB of typed-array transfer.
+- Local typed-particle-slab measurements from this pass:
+  - worker soup, 3s, speed 2/workBudget 12: 31 snapshots, 22 dynamic-only
+    snapshots, about 49 FPS, no page errors.
+  - worker dense low-zoom maze, seed `0xC0FFEE`, speed 4/workBudget 12: 50
+    snapshots, 25 dynamic-only snapshots, about 49.4 FPS, about 13 ticks/sec,
+    frame `step` about 0.017 ms, no page errors. The comparable pre-slab
+    layered worker smoke in this thread was about 9 ticks/sec. Transfer-byte
+    accounting increased because particle slabs are now real transferable
+    buffers; the intended win is lower structured-clone object churn.
 - Caveat: this is a responsiveness win, not yet a raw sim-throughput win.
   Dense worker tick rate is still constrained by worker CPU cost plus snapshot
   clone/transfer pressure, and the dense maze worker smoke still showed one
@@ -420,9 +434,9 @@ Performance reality:
 Next performance target:
 
 - Priority order after the worker preview:
-  1. Continue shrinking snapshot pressure: field/wall cadence splitting is
-     shipped; next move particles toward typed slabs, reuse transferable
-     buffers, and request full genome/card detail on demand.
+  1. Continue shrinking snapshot pressure: field/wall cadence splitting and
+     typed particle slabs are shipped; next reuse transferable buffers and
+     request full genome/card detail on demand.
   2. Restore worker command parity for live imports, duplication, and cluster
      builder actions.
   3. Keep population/work budgets user-facing for dense long soaks.
@@ -1169,6 +1183,22 @@ Latest verification in the cluster-budding pass:
     passed in compatibility mode with no page errors.
   - `npm test` passed all 22 test files after the layered snapshot pass.
   - `git diff --check` passed with only the repo's usual CRLF warnings.
+- Typed worker particle slab verification:
+  - `node --check js\snapshot.js`, `node --check js\sim_worker.js`,
+    `node --check js\worker_runtime.js`, and
+    `node --check tests\worker-snapshot.test.js` passed.
+  - `npm test -- worker-snapshot.test.js` passed with the new particle-slab
+    contract regression.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 2 --warmup 200 --width 1200 --height 800 --port 9258 --worker --workBudget 12`
+    passed with no page errors and reported `particles: "slab"` in the latest
+    worker layer.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset maze --seconds 5 --speed 4 --seed 0xC0FFEE --profile --zoom 0.35 --port 9259 --worker --workBudget 12`
+    passed with no page errors, about 49.4 FPS, about 13 ticks/sec, and frame
+    `step` about 0.017 ms.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9260`
+    passed in compatibility mode with no page errors.
+  - `npm test` passed all 22 test files after the typed particle slab pass.
+  - `git diff --check` passed with only the repo's usual CRLF warnings.
 - Detour curriculum verification:
   - `node --check tools\detour-assay.js`, `node --check tools\detour-suite.js`,
     and `node --check tests\detour-navigation.test.js` passed.
@@ -1262,9 +1292,8 @@ git log --oneline -5
 - visuals: tune the small red blood-drop attack flash if it reads too loud or
   too subtle during real runs
 - performance: keep profiling Planet and Maze long runs; after field/wall
-  layered snapshots, the next structural target is typed particle slabs,
-  transferable buffer reuse, and on-demand full-detail inspection for worker
-  mode
+  layering and typed particle slabs, the next structural target is transferable
+  buffer reuse and on-demand full-detail inspection for worker mode
 - agency: run repeated post-topology `--replay both` evidence with the new
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use

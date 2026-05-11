@@ -2,6 +2,10 @@
 
 import { NUM_SPECIES, NUM_CHEM } from './genome.js';
 
+export const SNAPSHOT_MAX_BONDS = 4;
+export const PARTICLE_STRIDE = 22;
+export const PARTICLE_GENOME_STRIDE = 13;
+
 function genomeView(g, detail = true) {
   if (!g) return null;
   return {
@@ -87,12 +91,8 @@ function sparseWallMeta(world) {
   return rows;
 }
 
-export function buildWorldSnapshot(world, opts = {}) {
-  const includeFields = opts.includeFields !== false;
-  const includeWalls = opts.includeWalls !== false;
-  const includeWallMeta = opts.includeWallMeta !== false && includeWalls;
-  if (typeof world.updateClusters === 'function') world.updateClusters();
-  const particles = world.particles.map(p => ({
+function particleObjectView(p) {
+  return {
     id: p.id,
     x: p.x || 0,
     y: p.y || 0,
@@ -118,7 +118,94 @@ export function buildWorldSnapshot(world, opts = {}) {
     bondMsgG: p.bondMsgG || 0.5,
     bondMsgB: p.bondMsgB || 0.5,
     genome: genomeView(p.genome, false),
-  }));
+  };
+}
+
+function buildParticleSlab(particles, addTransfer) {
+  const n = particles.length;
+  const ids = addTransfer(new Uint32Array(n));
+  const data = addTransfer(new Float32Array(n * PARTICLE_STRIDE));
+  const bonds = addTransfer(new Int32Array(n * SNAPSHOT_MAX_BONDS));
+  const genomes = addTransfer(new Float32Array(n * PARTICLE_GENOME_STRIDE));
+  for (let i = 0; i < n; i++) {
+    const p = particles[i];
+    const o = i * PARTICLE_STRIDE;
+    ids[i] = p.id >>> 0;
+    data[o + 0] = p.x || 0;
+    data[o + 1] = p.y || 0;
+    data[o + 2] = p.vx || 0;
+    data[o + 3] = p.vy || 0;
+    data[o + 4] = p.energy || 0;
+    data[o + 5] = p.age || 0;
+    data[o + 6] = p.lineage || 0;
+    data[o + 7] = p.species ?? p.genome?.species ?? 0;
+    data[o + 8] = p.cladeId || 0;
+    data[o + 9] = p.wallCarry || 0;
+    data[o + 10] = p.wallDigs || 0;
+    data[o + 11] = p.wallDeposits || 0;
+    data[o + 12] = p.predationGain || 0;
+    data[o + 13] = p.signalR || 0;
+    data[o + 14] = p.signalG || 0;
+    data[o + 15] = p.signalB || 0;
+    data[o + 16] = p.signalFlash || 0;
+    data[o + 17] = p.soundCh || 0;
+    data[o + 18] = p.soundAmp || 0;
+    data[o + 19] = p.bondMsgR || 0.5;
+    data[o + 20] = p.bondMsgG || 0.5;
+    data[o + 21] = p.bondMsgB || 0.5;
+    const bondList = p.bonds || [];
+    const bo = i * SNAPSHOT_MAX_BONDS;
+    for (let b = 0; b < Math.min(SNAPSHOT_MAX_BONDS, bondList.length); b++) {
+      bonds[bo + b] = bondList[b] | 0;
+    }
+
+    const g = p.genome || {};
+    const go = i * PARTICLE_GENOME_STRIDE;
+    genomes[go + 0] = g.species || 0;
+    genomes[go + 1] = g.cohesion || 0;
+    genomes[go + 2] = g.metab || 0;
+    genomes[go + 3] = g.efficiency || 0;
+    genomes[go + 4] = g.repro_thresh || 0;
+    genomes[go + 5] = g.mut_rate || 0;
+    genomes[go + 6] = g.sense_radius || 0;
+    genomes[go + 7] = g.cluster_affinity ?? 0;
+    genomes[go + 8] = g.kin_aversion ?? 0.5;
+    genomes[go + 9] = g.wall_affinity ?? 0;
+    genomes[go + 10] = g.prey_walling ?? 0;
+    genomes[go + 11] = g.brain && typeof g.brain.enabledCount === 'function'
+      ? g.brain.enabledCount()
+      : 0;
+    genomes[go + 12] = g.brain && g.brain.biasO ? (g.brain.biasO[16] || 0) : 0;
+  }
+  return {
+    count: n,
+    stride: PARTICLE_STRIDE,
+    genomeStride: PARTICLE_GENOME_STRIDE,
+    maxBonds: SNAPSHOT_MAX_BONDS,
+    ids,
+    data,
+    bonds,
+    genomes,
+  };
+}
+
+export function buildWorldSnapshot(world, opts = {}) {
+  const includeFields = opts.includeFields !== false;
+  const includeWalls = opts.includeWalls !== false;
+  const includeWallMeta = opts.includeWallMeta !== false && includeWalls;
+  if (typeof world.updateClusters === 'function') world.updateClusters();
+  const transfer = [];
+  let transferBytes = 0;
+  const addTransfer = (array) => {
+    if (!array) return array;
+    transfer.push(array.buffer);
+    transferBytes += array.byteLength || 0;
+    return array;
+  };
+  const useParticleSlab = opts.particleFormat === 'slab';
+  const particlePayload = useParticleSlab
+    ? buildParticleSlab(world.particles, addTransfer)
+    : world.particles.map(particleObjectView);
 
   const clusters = (world._clusters || []).map(c => ({
     anchorId: c.anchorId || 0,
@@ -156,14 +243,6 @@ export function buildWorldSnapshot(world, opts = {}) {
     ? tracker.attractionMatrix(world)
     : { matrix: new Array(NUM_SPECIES).fill(0).map(() => new Array(NUM_SPECIES).fill(0)), counts: new Array(NUM_SPECIES).fill(0) };
 
-  const transfer = [];
-  let transferBytes = 0;
-  const addTransfer = (array) => {
-    if (!array) return array;
-    transfer.push(array.buffer);
-    transferBytes += array.byteLength || 0;
-    return array;
-  };
   const field0 = includeFields ? addTransfer(Float32Array.from(world.field[0])) : null;
   const field1 = includeFields ? addTransfer(Float32Array.from(world.field[1])) : null;
   const mutagen = includeFields ? addTransfer(Float32Array.from(world.mutagen)) : null;
@@ -173,7 +252,7 @@ export function buildWorldSnapshot(world, opts = {}) {
     kind: 'primordia.world-snapshot.v1',
     tick: world.tick || 0,
     maxParticles: world.maxParticles || 0,
-    particles,
+    ...(useParticleSlab ? { particleSlab: particlePayload } : { particles: particlePayload }),
     clusters,
     ...(includeFields ? { field0, field1, mutagen } : {}),
     ...(includeWalls ? {
@@ -223,6 +302,7 @@ export function buildWorldSnapshot(world, opts = {}) {
     worker: {
       snapshotAt: Date.now(),
       layers: {
+        particles: useParticleSlab ? 'slab' : 'objects',
         fields: includeFields,
         walls: includeWalls,
         wallMeta: includeWallMeta,

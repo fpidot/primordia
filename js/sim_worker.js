@@ -82,6 +82,7 @@ function postSnapshot() {
   const includeWalls = forceSnapshot || (wallsChanged && now - lastWallSnapshotT >= wallSnapshotIntervalMs);
   const { snapshot, transfer } = buildWorldSnapshot(world, {
     resetProfile: profileResetRequested,
+    particleFormat: 'slab',
     includeFields,
     includeWalls,
     includeWallMeta: includeWalls,

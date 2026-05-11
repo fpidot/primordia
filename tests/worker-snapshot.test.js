@@ -42,3 +42,27 @@ await runTest('worker snapshot: dynamic layer can omit field and wall transfers'
     dynamic.snapshot.worker.layers.walls === false,
     JSON.stringify(dynamic.snapshot.worker.layers));
 });
+
+await runTest('worker snapshot: particle slab carries render-facing particle state', async () => {
+  const world = new World({ maxParticles: 80, combatMode: 'event' });
+  PRESETS.soup(world, 48);
+  for (let i = 0; i < 4; i++) await world.step();
+
+  const { snapshot, transfer } = buildWorldSnapshot(world, {
+    particleFormat: 'slab',
+    includeFields: false,
+    includeWalls: false,
+  });
+  const slab = snapshot.particleSlab;
+  assert('slab exists and object particles are omitted', slab && !snapshot.particles,
+    `slab=${!!slab} particles=${!!snapshot.particles}`);
+  assert('slab count matches world population', slab.count === world.particles.length,
+    `slab=${slab.count} world=${world.particles.length}`);
+  assert('slab has typed ids/data/genomes', slab.ids instanceof Uint32Array &&
+    slab.data instanceof Float32Array && slab.genomes instanceof Float32Array,
+    `ids=${slab.ids?.constructor?.name} data=${slab.data?.constructor?.name}`);
+  assert('slab layers are marked', snapshot.worker.layers.particles === 'slab',
+    JSON.stringify(snapshot.worker.layers));
+  assert('slab buffers are transferable', transfer.length >= 4,
+    `transfer=${transfer.length}`);
+});

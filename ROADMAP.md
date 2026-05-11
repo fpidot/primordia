@@ -379,10 +379,16 @@ heavier Planet starts are still a deliberate stress test.
    low-zoom maze worker smoke, 44 snapshots included 14 field layers, 16 wall
    layers, and 22 dynamic-only snapshots, transferring about 19 MB rather than
    roughly 50 MB if every snapshot had carried all typed layers. Frame `step`
-   remained about 0.017 ms with no page errors. Next performance work should
-   move particle snapshots toward typed slabs or double-buffered transfer pools
-   and add on-demand full-detail inspection so live cards do not force full
-   genomes into every frame.
+   remained about 0.017 ms with no page errors. Latest typed-particle update:
+   worker mode now sends live particles as transferable typed slabs and
+   rehydrates them into the existing main-thread proxy objects. In a comparable
+   seeded low-zoom maze worker smoke, tick throughput rose from roughly 9 to
+   roughly 13 ticks/sec on this machine while frame `step` stayed around 0.017
+   ms and page errors stayed at zero. Transfer-byte accounting is higher
+   because particle slabs are now counted as transferred buffers; the intended
+   win is lower structured-clone object churn. Next performance work should
+   add double-buffered transfer pools and on-demand full-detail inspection so
+   live cards do not force full genomes into every frame.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful

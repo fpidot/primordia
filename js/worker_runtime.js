@@ -2,6 +2,7 @@
 
 import { W, H, GW, GH, CELL } from './sim.js';
 import { NUM_SPECIES, NUM_CHEM } from './genome.js';
+import { PARTICLE_GENOME_STRIDE, PARTICLE_STRIDE, SNAPSHOT_MAX_BONDS } from './snapshot.js';
 
 function emptyVitals() {
   return {
@@ -75,6 +76,75 @@ function inflateGenome(src = {}) {
       enabledCount: () => src.brainSlots || 0,
     },
   };
+}
+
+function particleRowsFromSlab(slab) {
+  if (!slab || !slab.ids || !slab.data) return [];
+  const ids = slab.ids;
+  const data = slab.data;
+  const bonds = slab.bonds;
+  const genomes = slab.genomes;
+  const count = Math.min(slab.count || ids.length || 0, ids.length || 0);
+  const stride = slab.stride || PARTICLE_STRIDE;
+  const genomeStride = slab.genomeStride || PARTICLE_GENOME_STRIDE;
+  const maxBonds = slab.maxBonds || SNAPSHOT_MAX_BONDS;
+  const rows = new Array(count);
+  const gv = (offset, fallback = 0) => (genomes && Number.isFinite(genomes[offset]) ? genomes[offset] : fallback);
+  for (let i = 0; i < count; i++) {
+    const o = i * stride;
+    const go = i * genomeStride;
+    const species = data[o + 7] | 0;
+    const bondList = [];
+    if (bonds) {
+      const bo = i * maxBonds;
+      for (let b = 0; b < maxBonds; b++) {
+        const id = bonds[bo + b] | 0;
+        if (id > 0) bondList.push(id);
+      }
+    }
+    rows[i] = {
+      id: ids[i] | 0,
+      x: data[o + 0] || 0,
+      y: data[o + 1] || 0,
+      vx: data[o + 2] || 0,
+      vy: data[o + 3] || 0,
+      energy: data[o + 4] || 0,
+      age: data[o + 5] || 0,
+      lineage: data[o + 6] || 0,
+      species,
+      cladeId: data[o + 8] || 0,
+      bonds: bondList,
+      wallCarry: data[o + 9] || 0,
+      wallDigs: data[o + 10] || 0,
+      wallDeposits: data[o + 11] || 0,
+      predationGain: data[o + 12] || 0,
+      signalR: data[o + 13] || 0,
+      signalG: data[o + 14] || 0,
+      signalB: data[o + 15] || 0,
+      signalFlash: data[o + 16] || 0,
+      soundCh: data[o + 17] || 0,
+      soundAmp: data[o + 18] || 0,
+      bondMsgR: data[o + 19] || 0.5,
+      bondMsgG: data[o + 20] || 0.5,
+      bondMsgB: data[o + 21] || 0.5,
+      genome: {
+        species: genomes ? (gv(go + 0, species) | 0) : species,
+        cohesion: gv(go + 1),
+        metab: gv(go + 2),
+        efficiency: gv(go + 3),
+        repro_thresh: gv(go + 4),
+        mut_rate: gv(go + 5),
+        sense_radius: gv(go + 6),
+        cluster_affinity: gv(go + 7),
+        kin_aversion: gv(go + 8, 0.5),
+        wall_affinity: gv(go + 9),
+        prey_walling: gv(go + 10),
+        brainSlots: gv(go + 11),
+        digBias: gv(go + 12),
+      },
+    };
+  }
+  return rows;
 }
 
 class SnapshotClades {
@@ -290,7 +360,10 @@ export class WorkerWorldProxy {
 
     const seen = new Set();
     const next = [];
-    for (const src of snapshot.particles || []) {
+    const particleRows = snapshot.particleSlab
+      ? particleRowsFromSlab(snapshot.particleSlab)
+      : (snapshot.particles || []);
+    for (const src of particleRows) {
       let p = this._particleById.get(src.id);
       if (!p) {
         p = { id: src.id, dead: false };
