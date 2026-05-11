@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Expose population cap and refine visibility prefix`
+  current `main` HEAD after this pass: `Add long chemical navigation sensors`
 
 Recent useful commits:
 
-- current `main` HEAD - Expose population cap and refine visibility prefix
+- current `main` HEAD - Add long chemical navigation sensors
+- `bc9f618` - Expose population cap and refine visibility prefix
 - `ce31468` - Recycle worker particle slab buffers
 - `018f454` - Use typed worker particle slabs
 - `9a32014` - Layer worker snapshot payloads
@@ -140,6 +141,8 @@ Core systems:
 
 - particle genomes and CTRNN-like brains
 - food and decay chemistry fields
+- local chemical gradients plus longer-range radial food/decay smell sensors
+  that also gently feed inherited chemotaxis
 - mutagen field
 - sound channels
 - visual RGB signal channels
@@ -201,8 +204,18 @@ Important recent sensor state:
   - `motor.prev.x/motor.prev.y`
   - `motor.progress`
   - `motor.slip`
+- Damage sensors are at inputs 60-63:
+  - `damage.recent`
+  - `damage.dx/dy`
+  - `damage.age`
+- Long chemical sensors were appended after damage at inputs 64-71:
+  - `chem.food.long.dx/dy/strength/contrast`
+  - `chem.decay.long.dx/dy/strength/contrast`
+  These are radial field samples; they expose distant food/carcass gradients
+  through glass and mud because those materials transmit chemistry.
 - Old wall/mud slots remain stable.
-- CPU and GPU terrain/proprioception sensor paths are wired for parity.
+- CPU and GPU terrain/proprioception/damage/long-chem sensor paths are wired
+  for parity. GPU extras stride is now 52 floats.
 
 ## Recently shipped behavior
 
@@ -597,8 +610,8 @@ Predation and food pressure:
   event injuries write `recentDamage`, `damageDirX`, `damageDirY`, and
   `lastDamageTick` on particles. Brain inputs 60-63 are now
   `damage.recent`, `damage.dx`, `damage.dy`, and `damage.age`, and the GPU
-  extras stride is 44 with offsets 40-43 mirroring those signals. Recent
-  damage inside a named cluster can also trigger `cluster.alarm`.
+  extras offsets 40-43 mirror those signals. Recent damage inside a named
+  cluster can also trigger `cluster.alarm`.
 - Short event-vs-nibble comparison:
   `node tools\defense-soak.js --preset soup --ticks 1200 --cap 900 --start 500 --seed 0x51A11 --samples 0,600,1200 --sampleSize 32 --challengeTicks 180 --predatorRatio 0.35 --combat <mode> --json`
   was run for `nibble` and `event`. At tick 1200, nibble mode produced 653
@@ -720,6 +733,7 @@ Obstacle navigation:
   - recurrent brains
   - food concentration/gradient
   - direct neighbor/particle sensing
+  - longer-range radial food/decay field sensors
   - visual signals
   - sound fields
   - bond messages
@@ -729,8 +743,8 @@ Obstacle navigation:
   - proprioceptive feedback: self velocity, previous motor command, previous
     forward progress, and previous motor slip
 - Open risk:
-  - current brains may still lack enough planning memory, typed long-range
-    target vectors, or selection pressure for robust detours.
+  - current brains may still lack enough planning memory, obstacle-specific
+    role specialization, or selection pressure for robust detours.
 - Recent finding:
   - before this pass, particles could see typed glass/solid sensors but had no
     direct body-feedback channel for "I pushed and did not move forward."
@@ -745,6 +759,11 @@ Obstacle navigation:
     `lastHardContactX/Y`. This is deliberately not a pathfinder and not a
     glass-specific escape rule; it gives stuck organisms enough physical room
     and feedback to move away from an obstacle edge.
+  - latest long-smell fix: inputs 64-71 expose coarse food/decay field
+    direction, strength, and contrast at a larger radius, and the same signal
+    gently feeds the inherited chemotaxis force. This answers the "can they
+    smell food at useful range?" concern without encoding a route around
+    barriers.
 - Detour assay now exists:
   - `tools/detour-assay.js` builds a repeatable glass/solid/mud barrier arena
     with two gaps and food/scent behind the obstacle.
@@ -759,16 +778,20 @@ Obstacle navigation:
     crossing, goal reach, gap approach, closest goal/gap distance, survival,
     field/meat energy gain, movement speed, motor effort, cluster sample size,
     source bonds, and bond retention.
-  - Latest evidence: normal evolved soup/maze/planet cohorts still produced no
-    crossings in the harder arena. After widening the goal scent so it actually
-    reaches the start and adding an easy curriculum, crossings became possible
-    but rare; no tested cohort reached the goal. Intact clusters often survived
-    better, but they have not yet shown reliable detour solving. Current read:
-    the behavior is eligible, not yet selected.
+  - Latest evidence after long-smell sensors: a short 120-tick/240-evolve-tick
+    soup+planet suite still produced no crossings, but survival and closest
+    distance improved. A longer two-seed easy glass-detour suite (`soup`,
+    ticks 420, evolveTicks 840, cap 240, start 160, `--curriculum ladder`,
+    `--cohort all`) showed a real signal: founders crossed at 4.6% and reached
+    goal at 2.2%, while curriculum-evolved particles crossed at 23.6%,
+    approached gaps at 17.8%, survived at 72.4%, and reduced mean closest
+    goal/gap distance from 912.6/451.6 to 698.6/278.0. Current read: the
+    substrate is improving and curriculum selection now helps, but general
+    detour planning is still not solved.
 - Next validation:
-  - run the new `--curriculum gap-adjacent` and `--curriculum ladder` modes
-    across the same seeds as the easy scented arena
-  - distinguish "can sense target" from "can learn detour"
+  - repeat the longer easy-detour suite across more seeds and compare
+    `gap-adjacent` versus `ladder`
+  - run the same measurement at medium difficulty to see where behavior breaks
   - measure whether intact clusters distribute sensing/planning/locomotion
     roles better than disassembled members
   - tune movement economics only after using the new speed/motor telemetry to
@@ -1289,6 +1312,26 @@ Latest verification in the cluster-budding pass:
   - `node tools\detour-suite.js --presets soup --seeds 0x51A11 --ticks 30 --evolveTicks 36 --cap 140 --start 72 --replays particles --curriculum gap-adjacent --difficulty easy --combat event`
     passed and summarized founder vs curriculum-evolved particle replay.
   - `git diff --check` passed with only the repo's usual CRLF warnings.
+- Long chemical navigation verification:
+  - `node --check js\brain.js`, `node --check js\sim.js`,
+    `node --check js\gpu_pairforce.js`, and
+    `node --check tests\long-chem-sensors.test.js` passed.
+  - `node tests\run-all.js terrain-sensors.test.js long-chem-sensors.test.js detour-navigation.test.js`
+    passed, including an actionable long-food motor-output test.
+  - Short two-preset detour suite after sensors still showed no 120-tick
+    crossings, but improved survival/distance enough to justify a longer
+    probe.
+  - `node tools\detour-assay.js --preset soup --ticks 420 --cap 220 --start 160 --seed 0xD370A --barrier glass --difficulty easy --combat event --cohort all --json`
+    passed: 160 tracked, 6 crossed, 2 reached goal, crossRate 0.037,
+    goalRate 0.013.
+  - `node tools\detour-suite.js --presets soup --seeds 0xD370A,0xD370B --ticks 420 --evolveTicks 840 --cap 240 --start 160 --replays particles --curriculum ladder --difficulty easy --combat event --cohort all`
+    passed: founders crossed at 0.046 and goalRate 0.022; evolved crossed at
+    0.236, gapApproach 0.178, survival 0.724, with mean closest goal/gap
+    distances 698.6/278.0.
+  - GPU smoke passed:
+    `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 1 --warmup 100 --width 1200 --height 800 --port 9270 --gpu`;
+    GPU ready/enabled, no page errors.
+  - `npm test` passed all 24 test files after the long-chem pass.
 
 Core:
 
@@ -1299,7 +1342,7 @@ npm test
 Targeted:
 
 ```powershell
-node tests\run-all.js signal-transmission.test.js terrain-sensors.test.js
+node tests\run-all.js signal-transmission.test.js terrain-sensors.test.js long-chem-sensors.test.js
 node tests\run-all.js food-chemotaxis.test.js mud-terrain.test.js
 node tests\run-all.js predation-economy.test.js event-combat.test.js
 node tests\run-all.js baseline-soup.test.js baseline-maze.test.js

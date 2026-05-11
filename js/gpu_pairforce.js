@@ -36,7 +36,7 @@ import {
 const PARTICLE_STRIDE_F32 = 16;
 const RESULT_STRIDE_F32   = 30;       // forces+stats(12) + outputs(18); h stays GPU-resident
 const PAIR_RESULT_STRIDE_F32 = 20;    // forces+stats(12) + quadrant stats(8)
-const EXTRAS_STRIDE_F32   = 44;       // chem + sound + bondMsg + cluster + wallCarry + terrain + proprioception + damage
+const EXTRAS_STRIDE_F32   = 52;       // chem + sound + bondMsg + cluster + wallCarry + terrain + proprioception + damage + long chem
 const BRAIN_STRIDE_F32    = BRAIN_PACK_STRIDE;
 const STATE_STRIDE_F32    = N_HIDDEN_MAX + 8; // h state + GPU-only quadrant scratch
 const PARAMS_SIZE         = 48;
@@ -62,6 +62,8 @@ const READBACK_SLOTS      = 3;
 //   32..35: glass proximity n/s/e/w
 //   36..39: previous motor x/y, forward progress, slip
 //   40..43: recent damage, damage dx/dy, damage age
+//   44..47: longer-range food field dx/dy/strength/contrast
+//   48..51: longer-range decay field dx/dy/strength/contrast
 const EXTRAS_BOND_MSG_R_OFFSET = 10;
 const EXTRAS_BOND_MSG_G_OFFSET = 11;
 const EXTRAS_BOND_MSG_B_OFFSET = 12;
@@ -462,6 +464,14 @@ fn brain_forward(@builtin(global_invocation_id) id: vec3u) {
   inp[61] = extras[eo + 41u];     // damage source dx
   inp[62] = extras[eo + 42u];     // damage source dy
   inp[63] = extras[eo + 43u];     // damage age
+  inp[64] = extras[eo + 44u];     // long food dx
+  inp[65] = extras[eo + 45u];     // long food dy
+  inp[66] = extras[eo + 46u];     // long food strength
+  inp[67] = extras[eo + 47u];     // long food contrast
+  inp[68] = extras[eo + 48u];     // long decay dx
+  inp[69] = extras[eo + 49u];     // long decay dy
+  inp[70] = extras[eo + 50u];     // long decay strength
+  inp[71] = extras[eo + 51u];     // long decay contrast
 
   // Forward — compute new hidden state
   var h_new: array<f32, ${N_HIDDEN_MAX}>;

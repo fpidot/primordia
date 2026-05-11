@@ -29,8 +29,10 @@ await runTest('terrain-sensors: material sensor names append without moving old 
   assert('self.vx follows terrain sensors', SENSOR_NAMES[54] === 'self.vx');
   assert('motor.slip follows proprioception', SENSOR_NAMES[59] === 'motor.slip');
   assert('damage.recent is appended after motion feedback', SENSOR_NAMES[60] === 'damage.recent');
-  assert('damage.age is appended last', SENSOR_NAMES[63] === 'damage.age');
-  assert('input count includes terrain, proprioception, and damage sensors', N_INPUT === 64);
+  assert('damage.age keeps its prior index', SENSOR_NAMES[63] === 'damage.age');
+  assert('long food direction appended after damage sensors', SENSOR_NAMES[64] === 'chem.food.long.dx');
+  assert('long decay contrast appended last', SENSOR_NAMES[71] === 'chem.decay.long.contrast');
+  assert('input count includes terrain, proprioception, damage, and long chem sensors', N_INPUT === 72);
 });
 
 await runTest('terrain-sensors: gpu extras include typed directional material proximity', async () => {
@@ -60,4 +62,24 @@ await runTest('terrain-sensors: gpu extras include typed directional material pr
   assert('mud east sees mud', e[o + 25] > 0, `mud.e=${e[o + 25]}`);
   assert('solid west sees solid', e[o + 31] > 0, `solid.w=${e[o + 31]}`);
   assert('underfoot mud remains separate', e[o + 27] === 0, `terrain.mud=${e[o + 27]}`);
+});
+
+await runTest('terrain-sensors: long chemical sensors expose distant field direction', async () => {
+  const world = new World({ maxParticles: 4 });
+  const gx = 48;
+  const gy = 48;
+  const p = addQuietParticle(world, gx, gy);
+  p.genome.sense_radius = 60;
+
+  world.field[0][gy * GW + (gx + 12)] = 5;
+  world.field[1][(gy - 12) * GW + gx] = 7;
+
+  world._buildGpuExtras();
+  const e = world._extrasStaging;
+  const o = 0 * EXTRAS_STRIDE;
+
+  assert('long food dx points east', e[o + 44] > 0.15, `food.long.dx=${e[o + 44]}`);
+  assert('long food strength reports distant food', e[o + 46] > 0.5, `food.long.strength=${e[o + 46]}`);
+  assert('long decay dy points north', e[o + 49] < -0.15, `decay.long.dy=${e[o + 49]}`);
+  assert('long decay strength reports distant decay', e[o + 50] > 0.5, `decay.long.strength=${e[o + 50]}`);
 });

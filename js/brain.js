@@ -89,6 +89,14 @@ export const SENSOR_NAMES = [
   /* 61 */ 'damage.dx',                  // direction toward the most recent damage source
   /* 62 */ 'damage.dy',
   /* 63 */ 'damage.age',                 // time since damage, saturating over short windows
+  /* 64 */ 'chem.food.long.dx',          // coarse longer-range food field direction
+  /* 65 */ 'chem.food.long.dy',
+  /* 66 */ 'chem.food.long.strength',    // strongest sampled food at useful range
+  /* 67 */ 'chem.food.long.contrast',    // sampled food richer than current cell
+  /* 68 */ 'chem.decay.long.dx',         // longer-range decay/carcass direction
+  /* 69 */ 'chem.decay.long.dy',
+  /* 70 */ 'chem.decay.long.strength',
+  /* 71 */ 'chem.decay.long.contrast',
 ];
 export const N_INPUT = SENSOR_NAMES.length;
 

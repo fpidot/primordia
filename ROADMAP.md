@@ -138,6 +138,20 @@ heavier Planet starts are still a deliberate stress test.
    experience improves later crossing/goal rates, then compare against stronger
    crossing rewards, longer-range target direction or food-gradient reach, and
    movement-economy tuning without scripting a pathfinder.
+   Current long-smell update: brain inputs now append longer-range food and
+   decay field sensors (`chem.food.long.*`, `chem.decay.long.*`) after the
+   existing damage sensors. These are cheap radial chemical samples, not a
+   pathfinder: they report richer field direction, strength, and contrast at a
+   useful distance, and the same signal gently feeds the inherited chemotaxis
+   force alongside the older one-cell gradient. GPU brain parity is preserved
+   by expanding the extras stride to 52 floats. Validation now shows the
+   substrate can do more than merely survive: in a two-seed easy glass detour
+   suite (`soup`, ticks 420, evolveTicks 840, cap 240, start 160, ladder
+   curriculum), founder particles crossed at 4.6% and reached goal at 2.2%,
+   while curriculum-evolved particles crossed at 23.6%, approached gaps at
+   17.8%, survived at 72.4%, and cut mean closest goal/gap distances from
+   912.6/451.6 to 698.6/278.0. That is a real improvement signal, not yet
+   proof of general path planning.
    Latest glass/edge pinning update: solid, glass, and world-edge collisions
    now add generic hard-contact feedback plus a tiny tangent/escape nudge so
    agents pressing into a barrier can slide away and receive the same bodily

@@ -49,6 +49,7 @@ const R_CLOSE2 = R_CLOSE * R_CLOSE;
 export const K_REP = 1.8;            // short-range repulsion strength
 export const K_ATTR = 0.30;          // tent peak strength multiplier
 const K_FIELD = 4.5;          // gradient → acceleration scale
+const K_FIELD_LONG = 0.12;    // longer-range smell → gentle steering pressure
 const K_DRAG = 0.18;          // viscous drag (overdamped, Particle-Lenia style)
 export const MAX_V = 3.6;
 const K_MOTION_COST = 0.0014; // per-tick energy cost of |v|^2 (raised from 0.0008
@@ -271,6 +272,40 @@ function scanWallAndMudProximityInto(walls, gx, gy, out) {
   return out;
 }
 
+const LONG_CHEM_UX = new Float32Array([1, 0.7071, 0, -0.7071, -1, -0.7071, 0, 0.7071]);
+const LONG_CHEM_UY = new Float32Array([0, 0.7071, 1, 0.7071, 0, -0.7071, -1, -0.7071]);
+
+function sampleLongChemInto(field, gx, gy, radiusCells, out, offset, amountScale = 0.45) {
+  const rFar = clamp(radiusCells | 0, 4, 18);
+  const rNear = Math.max(2, (rFar * 0.5) | 0);
+  const rMid = Math.max(rNear + 1, Math.round(rFar * 0.82));
+  const center = field[gy * GW + gx] || 0;
+  let vx = 0, vy = 0, total = 0, mean = 0, best = 0, weightSum = 0;
+  for (let i = 0; i < 8; i++) {
+    const ux = LONG_CHEM_UX[i];
+    const uy = LONG_CHEM_UY[i];
+    for (let pass = 0; pass < 3; pass++) {
+      const rr = pass === 0 ? rNear : (pass === 1 ? rMid : rFar);
+      const w = pass === 0 ? 0.45 : (pass === 1 ? 0.75 : 1.0);
+      const sx = clamp(Math.round(gx + ux * rr), 0, GW - 1);
+      const sy = clamp(Math.round(gy + uy * rr), 0, GH - 1);
+      const v = field[sy * GW + sx] || 0;
+      const signal = Math.max(0, v - center * 0.20);
+      vx += signal * ux * w;
+      vy += signal * uy * w;
+      total += signal * w;
+      mean += v * w;
+      weightSum += w;
+      if (v > best) best = v;
+    }
+  }
+  const inv = total > 1e-6 ? 1 / total : 0;
+  out[offset + 0] = inv ? Math.tanh(vx * inv * 1.35) : 0;
+  out[offset + 1] = inv ? Math.tanh(vy * inv * 1.35) : 0;
+  out[offset + 2] = Math.tanh(best * amountScale);
+  out[offset + 3] = Math.tanh(((mean / Math.max(1, weightSum)) - center) * amountScale);
+}
+
 export function solidBlocksLineOfSight(walls, x0, y0, x1, y1) {
   const gx0 = clamp((x0 / CELL) | 0, 0, GW - 1);
   const gy0 = clamp((y0 / CELL) | 0, 0, GH - 1);
@@ -478,6 +513,7 @@ export class World {
     // Reusable scratch buffers for brain forward pass
     this._brainInput = new Float32Array(N_INPUT);
     this._brainOutput = new Float32Array(N_OUTPUT);
+    this._longChemScratch = new Float32Array(8);
 
     // Phase 2e — sound channels (low-res field, one per channel)
     this._soundFields = [];
@@ -1800,6 +1836,12 @@ export class World {
       const dfy1 = (f1[sIdx + GW] - f1[sIdx - GW]) * 0.5;
       ax += K_FIELD * (gSense[0] * dfx0 + gSense[1] * dfx1);
       ay += K_FIELD * (gSense[0] * dfy0 + gSense[1] * dfy1);
+      const longChemRadius = Math.round(R / CELL);
+      const longChem = this._longChemScratch;
+      sampleLongChemInto(f0, sgx, sgy, longChemRadius, longChem, 0, 0.45);
+      sampleLongChemInto(f1, sgx, sgy, longChemRadius, longChem, 4, 0.32);
+      ax += K_FIELD_LONG * (gSense[0] * longChem[0] + gSense[1] * longChem[4]);
+      ay += K_FIELD_LONG * (gSense[0] * longChem[1] + gSense[1] * longChem[5]);
 
       // ── Brain: build sensor input, run forward pass, apply outputs ──
       const out = this._brainOutput;
@@ -1923,6 +1965,14 @@ export class World {
         inp[61] = damageFresh > 0.001 ? (p.damageDirX || 0) : 0;
         inp[62] = damageFresh > 0.001 ? (p.damageDirY || 0) : 0;
         inp[63] = damageFresh > 0.001 ? Math.tanh(damageAge / 30) : 0;
+        inp[64] = longChem[0];
+        inp[65] = longChem[1];
+        inp[66] = longChem[2];
+        inp[67] = longChem[3];
+        inp[68] = longChem[4];
+        inp[69] = longChem[5];
+        inp[70] = longChem[6];
+        inp[71] = longChem[7];
         g.brain.forward(inp, out);
       }
 
@@ -2782,6 +2832,9 @@ export class World {
       extras[o + 41] = damageFresh > 0.001 ? (p.damageDirX || 0) : 0;
       extras[o + 42] = damageFresh > 0.001 ? (p.damageDirY || 0) : 0;
       extras[o + 43] = damageFresh > 0.001 ? Math.tanh(damageAge / 30) : 0;
+      const longChemRadius = Math.round((p.genome?.sense_radius || 48) / CELL);
+      sampleLongChemInto(f0, sgx, sgy, longChemRadius, extras, o + 44, 0.45);
+      sampleLongChemInto(f1, sgx, sgy, longChemRadius, extras, o + 48, 0.32);
     }
   }
 
