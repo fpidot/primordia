@@ -305,8 +305,8 @@ Other scale steps:
 
 - Reduce worker snapshot pressure with diff/static layers, typed particle
   slabs, transfer pooling, and on-demand full-detail inspection. Field/wall
-  cadence splitting and typed particle slabs are shipped; transfer pooling and
-  on-demand full-detail inspection remain.
+  cadence splitting, typed particle slabs, and particle slab buffer recycling
+  are shipped; on-demand full-detail inspection remains.
 - Reach command parity for worker mode: live import/copy/duplication and richer
   genome/card detail without bloating every snapshot.
 - User-facing population/work budgets. A first `Sim budget` slider now exposes

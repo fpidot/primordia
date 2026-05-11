@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Use typed worker particle slabs`
+  current `main` HEAD after this pass: `Recycle worker particle slab buffers`
 
 Recent useful commits:
 
-- current `main` HEAD - Use typed worker particle slabs
+- current `main` HEAD - Recycle worker particle slab buffers
+- `018f454` - Use typed worker particle slabs
 - `9a32014` - Layer worker snapshot payloads
 - `0bd782c` - Add detour curriculum ladder
 - `d8d6cb0` - Add worker snapshot simulation mode
@@ -389,6 +390,9 @@ Performance reality:
   main-thread proxy rehydrates those slabs into the same particle objects the
   renderer, UI, and audio systems already expect. Object snapshots remain the
   default outside worker mode for compatibility.
+- Rehydrated particle slab buffers are returned to the worker and reused for
+  later slabs when capacity fits. `workerLayers.workerStats` reports
+  `particleBuffersReused` and `particleBuffersAllocated`.
 - A first user-facing work-budget control is now in the Run panel. In
   compatibility mode it adjusts the per-frame sim-step budget from the previous
   hard-coded 12 ms default; in worker mode the same setting is sent to the
@@ -426,6 +430,13 @@ Performance reality:
     layered worker smoke in this thread was about 9 ticks/sec. Transfer-byte
     accounting increased because particle slabs are now real transferable
     buffers; the intended win is lower structured-clone object churn.
+- Local particle-buffer recycling measurements from this pass:
+  - worker soup, 3s, speed 2/workBudget 12: 36 snapshots, 27 dynamic-only
+    snapshots, 136 particle buffers reused, 8 allocated, no page errors.
+  - worker dense low-zoom maze, seed `0xC0FFEE`, speed 4/workBudget 12: 56
+    snapshots, 29 dynamic-only snapshots, 136 particle buffers reused, 88
+    allocated while population grew through larger slab capacities, about
+    15.8 ticks/sec, frame `step` about 0.011 ms, no page errors.
 - Caveat: this is a responsiveness win, not yet a raw sim-throughput win.
   Dense worker tick rate is still constrained by worker CPU cost plus snapshot
   clone/transfer pressure, and the dense maze worker smoke still showed one
@@ -434,9 +445,9 @@ Performance reality:
 Next performance target:
 
 - Priority order after the worker preview:
-  1. Continue shrinking snapshot pressure: field/wall cadence splitting and
-     typed particle slabs are shipped; next reuse transferable buffers and
-     request full genome/card detail on demand.
+  1. Continue shrinking snapshot pressure: field/wall cadence splitting, typed
+     particle slabs, and particle slab buffer recycling are shipped; next
+     request full genome/card detail on demand and run longer worker soaks.
   2. Restore worker command parity for live imports, duplication, and cluster
      builder actions.
   3. Keep population/work budgets user-facing for dense long soaks.
@@ -1199,6 +1210,22 @@ Latest verification in the cluster-budding pass:
     passed in compatibility mode with no page errors.
   - `npm test` passed all 22 test files after the typed particle slab pass.
   - `git diff --check` passed with only the repo's usual CRLF warnings.
+- Worker particle slab buffer recycling verification:
+  - `node --check js\snapshot.js`, `node --check js\sim_worker.js`,
+    `node --check js\worker_runtime.js`, and
+    `node --check tests\worker-snapshot.test.js` passed.
+  - `npm test -- worker-snapshot.test.js` passed.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 2 --warmup 200 --width 1200 --height 800 --port 9261 --worker --workBudget 12`
+    passed with no page errors and reported 136 particle buffers reused / 8
+    allocated.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset maze --seconds 5 --speed 4 --seed 0xC0FFEE --profile --zoom 0.35 --port 9262 --worker --workBudget 12`
+    passed with no page errors, about 15.8 ticks/sec, frame `step` about 0.011
+    ms, and 136 particle buffers reused / 88 allocated.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9263`
+    passed in compatibility mode with no page errors.
+  - `npm test` passed all 22 test files after the particle buffer recycling
+    pass.
+  - `git diff --check` passed with only the repo's usual CRLF warnings.
 - Detour curriculum verification:
   - `node --check tools\detour-assay.js`, `node --check tools\detour-suite.js`,
     and `node --check tests\detour-navigation.test.js` passed.
@@ -1292,8 +1319,9 @@ git log --oneline -5
 - visuals: tune the small red blood-drop attack flash if it reads too loud or
   too subtle during real runs
 - performance: keep profiling Planet and Maze long runs; after field/wall
-  layering and typed particle slabs, the next structural target is transferable
-  buffer reuse and on-demand full-detail inspection for worker mode
+  layering, typed particle slabs, and particle slab buffer recycling, the next
+  structural target is on-demand full-detail inspection for worker mode plus
+  longer soaks to see whether allocation counters stabilize
 - agency: run repeated post-topology `--replay both` evidence with the new
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use

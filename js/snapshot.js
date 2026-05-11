@@ -121,12 +121,20 @@ function particleObjectView(p) {
   };
 }
 
-function buildParticleSlab(particles, addTransfer) {
+function buildParticleSlab(particles, addTransfer, takeBuffer = null) {
   const n = particles.length;
-  const ids = addTransfer(new Uint32Array(n));
-  const data = addTransfer(new Float32Array(n * PARTICLE_STRIDE));
-  const bonds = addTransfer(new Int32Array(n * SNAPSHOT_MAX_BONDS));
-  const genomes = addTransfer(new Float32Array(n * PARTICLE_GENOME_STRIDE));
+  const makeArray = (Ctor, length, kind) => {
+    const bytes = length * Ctor.BYTES_PER_ELEMENT;
+    const buffer = takeBuffer ? takeBuffer(kind, bytes) : null;
+    return buffer && buffer.byteLength >= bytes
+      ? new Ctor(buffer, 0, length)
+      : new Ctor(length);
+  };
+  const ids = addTransfer(makeArray(Uint32Array, n, 'particleIds'));
+  const data = addTransfer(makeArray(Float32Array, n * PARTICLE_STRIDE, 'particleData'));
+  const bonds = addTransfer(makeArray(Int32Array, n * SNAPSHOT_MAX_BONDS, 'particleBonds'));
+  const genomes = addTransfer(makeArray(Float32Array, n * PARTICLE_GENOME_STRIDE, 'particleGenomes'));
+  bonds.fill(0);
   for (let i = 0; i < n; i++) {
     const p = particles[i];
     const o = i * PARTICLE_STRIDE;
@@ -199,12 +207,12 @@ export function buildWorldSnapshot(world, opts = {}) {
   const addTransfer = (array) => {
     if (!array) return array;
     transfer.push(array.buffer);
-    transferBytes += array.byteLength || 0;
+    transferBytes += array.buffer?.byteLength || array.byteLength || 0;
     return array;
   };
   const useParticleSlab = opts.particleFormat === 'slab';
   const particlePayload = useParticleSlab
-    ? buildParticleSlab(world.particles, addTransfer)
+    ? buildParticleSlab(world.particles, addTransfer, opts.takeParticleBuffer || null)
     : world.particles.map(particleObjectView);
 
   const clusters = (world._clusters || []).map(c => ({

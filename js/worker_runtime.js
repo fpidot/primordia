@@ -314,6 +314,25 @@ export class WorkerWorldProxy {
     }
   }
 
+  _releaseParticleSlabBuffers(slab) {
+    if (!slab) return;
+    const buffers = [];
+    const add = (kind, array) => {
+      if (array && array.buffer && array.buffer.byteLength > 0) {
+        buffers.push({ kind, buffer: array.buffer });
+      }
+    };
+    add('particleIds', slab.ids);
+    add('particleData', slab.data);
+    add('particleBonds', slab.bonds);
+    add('particleGenomes', slab.genomes);
+    if (!buffers.length) return;
+    this.worker.postMessage(
+      { type: 'releaseBuffers', payload: { buffers } },
+      buffers.map(item => item.buffer),
+    );
+  }
+
   waitForSnapshot(timeoutMs = 1500) {
     return new Promise(resolve => {
       const waiter = (value) => {
@@ -421,6 +440,7 @@ export class WorkerWorldProxy {
       lastLayers: layers,
       workerStats: snapshot.worker?.snapshotStats || null,
     };
+    this._releaseParticleSlabBuffers(snapshot.particleSlab);
   }
 
   setRunState({ paused, speed, workBudgetMs, snapshotIntervalMs, fieldSnapshotIntervalMs, wallSnapshotIntervalMs } = {}) {

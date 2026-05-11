@@ -21,13 +21,47 @@ let forceSnapshot = true;
 let profileResetRequested = false;
 let activePreset = 'soup';
 let presetInitCount = PRESET_COUNTS.soup || 1800;
+const particleBufferPool = {
+  particleIds: [],
+  particleData: [],
+  particleBonds: [],
+  particleGenomes: [],
+};
 const snapshotStats = {
   total: 0,
   fieldLayers: 0,
   wallLayers: 0,
   dynamicOnly: 0,
   transferBytes: 0,
+  particleBuffersReused: 0,
+  particleBuffersAllocated: 0,
 };
+
+function takeParticleBuffer(kind, byteLength) {
+  const pool = particleBufferPool[kind];
+  if (!pool) return null;
+  for (let i = 0; i < pool.length; i++) {
+    const buffer = pool[i];
+    if (buffer && buffer.byteLength >= byteLength) {
+      pool.splice(i, 1);
+      snapshotStats.particleBuffersReused++;
+      return buffer;
+    }
+  }
+  snapshotStats.particleBuffersAllocated++;
+  return null;
+}
+
+function releaseParticleBuffers(buffers = []) {
+  for (const item of buffers) {
+    const kind = item && item.kind;
+    const buffer = item && item.buffer;
+    const pool = particleBufferPool[kind];
+    if (!pool || !buffer || !buffer.byteLength) continue;
+    if (pool.length >= 4) continue;
+    pool.push(buffer);
+  }
+}
 
 function hashSeed(value) {
   if (value == null || value === '') return null;
@@ -83,6 +117,7 @@ function postSnapshot() {
   const { snapshot, transfer } = buildWorldSnapshot(world, {
     resetProfile: profileResetRequested,
     particleFormat: 'slab',
+    takeParticleBuffer,
     includeFields,
     includeWalls,
     includeWallMeta: includeWalls,
@@ -209,6 +244,9 @@ onmessage = async (evt) => {
       case 'fromWorldTemplateJSON':
         world.fromWorldTemplateJSON(payload.data);
         forceSnapshot = true;
+        break;
+      case 'releaseBuffers':
+        releaseParticleBuffers(payload.buffers);
         break;
       default:
         break;

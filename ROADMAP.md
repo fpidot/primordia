@@ -386,9 +386,14 @@ heavier Planet starts are still a deliberate stress test.
    roughly 13 ticks/sec on this machine while frame `step` stayed around 0.017
    ms and page errors stayed at zero. Transfer-byte accounting is higher
    because particle slabs are now counted as transferred buffers; the intended
-   win is lower structured-clone object churn. Next performance work should
-   add double-buffered transfer pools and on-demand full-detail inspection so
-   live cards do not force full genomes into every frame.
+   win is lower structured-clone object churn. Latest recycling update: after
+   the proxy rehydrates particle slabs, it returns those buffers to the worker
+   for reuse. A dense maze worker smoke reused 136 slab buffers, allocated 88
+   during population growth, reached about 15.8 ticks/sec, and kept render
+   thread `step` around 0.011 ms with no page errors. Next performance work
+   should focus on on-demand full-detail inspection and longer worker soaks;
+   deeper buffer pooling can follow if allocation counters remain high after
+   populations stabilize.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful
