@@ -40,12 +40,13 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add worker snapshot simulation mode`
+  current `main` HEAD after this pass: `Add detour curriculum ladder`
 
 Recent useful commits:
 
-- current `main` HEAD - Add worker snapshot simulation mode
-- previous `main` HEAD - Instrument detour navigation and hard contacts
+- current `main` HEAD - Add detour curriculum ladder
+- `d8d6cb0` - Add worker snapshot simulation mode
+- `1b633cf` - Instrument detour navigation and hard contacts
 - `16de08f` - Extend detour assay to evolved cohorts
 - `d10a01c` - Add detour navigation assay
 - `e1b460f` - Track regional behavior outcomes
@@ -675,8 +676,9 @@ Obstacle navigation:
     with two gaps and food/scent behind the obstacle.
   - `--evolveTicks` lets a source population soak before replay;
     `--evolveInArena` soaks the source population directly inside the challenge
-    world; `--difficulty easy|medium|hard` changes gap generosity;
-    `--cohort mixed|elite|random|all` controls particle replay; and
+    world; `--curriculum gap-adjacent|ladder` runs training-only gap worlds
+    before the final controlled replay; `--difficulty easy|medium|hard` changes
+    gap generosity; `--cohort mixed|elite|random|all` controls particle replay; and
     `--replay particles|clusters-intact|clusters-disassembled` compares loose
     cells against intact/disassembled organism cohorts.
   - `tools/detour-suite.js` runs preset/seed/replay matrices and summarizes
@@ -690,8 +692,8 @@ Obstacle navigation:
     better, but they have not yet shown reliable detour solving. Current read:
     the behavior is eligible, not yet selected.
 - Next validation:
-  - run a direct gap-adjacent curriculum and compare against the easy scented
-    arena
+  - run the new `--curriculum gap-adjacent` and `--curriculum ladder` modes
+    across the same seeds as the easy scented arena
   - distinguish "can sense target" from "can learn detour"
   - measure whether intact clusters distribute sensing/planning/locomotion
     roles better than disassembled members
@@ -1136,6 +1138,17 @@ Latest verification in the cluster-budding pass:
   - Final post-waiter-queue smokes also passed with no page errors: worker soup
     about 47.5 FPS and compatibility soup about 15.2 FPS on this loaded run.
   - `git diff --check` passed with only the repo's usual CRLF warnings.
+- Detour curriculum verification:
+  - `node --check tools\detour-assay.js`, `node --check tools\detour-suite.js`,
+    and `node --check tests\detour-navigation.test.js` passed.
+  - `npm test -- detour-navigation.test.js` passed with the new curriculum
+    stage contract test.
+  - `npm test` passed all 22 test files after the detour curriculum pass.
+  - `node tools\detour-assay.js --preset soup --evolveTicks 24 --curriculum ladder --ticks 20 --cap 120 --start 64 --seed 0xD370D --barrier glass --combat event --cohort mixed`
+    passed and reported four curriculum stages consuming 24 evolution ticks.
+  - `node tools\detour-suite.js --presets soup --seeds 0x51A11 --ticks 30 --evolveTicks 36 --cap 140 --start 72 --replays particles --curriculum gap-adjacent --difficulty easy --combat event`
+    passed and summarized founder vs curriculum-evolved particle replay.
+  - `git diff --check` passed with only the repo's usual CRLF warnings.
 
 Core:
 
@@ -1218,14 +1231,15 @@ git log --oneline -5
 - visuals: tune the small red blood-drop attack flash if it reads too loud or
   too subtle during real runs
 - performance: keep profiling Planet and Maze long runs; the next structural
-  target remains worker/snapshot architecture if sim-step cost keeps dominating;
-  the new `Sim budget` slider is only the first user-facing budget control
+  target is shrinking worker snapshot payloads/diffing after the first
+  worker/snapshot preview; the new `Sim budget` slider is now a user-facing
+  work budget in both compatibility and worker modes
 - agency: run repeated post-topology `--replay both` evidence with the new
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use
 - agency: run longer detour-navigation comparisons for founder controls,
-  evolved soup/maze/planet cohorts, direct gap-adjacent curricula, and intact
-  vs disassembled clusters
+  evolved soup/maze/planet cohorts, `gap-adjacent`/`ladder` curricula, and
+  intact vs disassembled clusters
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization
 

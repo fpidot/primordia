@@ -80,6 +80,7 @@ node tools/detour-assay.js --ticks 600 --cap 600 --start 320 --seed 0xD370A --ba
 node tools/detour-assay.js --evolveTicks 1200 --ticks 600 --cap 900 --start 320 --seed 0x51A11 --barrier glass --combat event --cohort elite
 node tools/detour-suite.js --presets soup,maze,planet --seeds 0x51A11,0xA11CE --ticks 180 --evolveTicks 420 --cap 600 --start 320 --replays particles,clusters-intact,clusters-disassembled --combat event
 node tools/detour-suite.js --presets soup,planet --seeds 0x51A11,0xA11CE --ticks 220 --evolveTicks 650 --evolveInArena --difficulty easy --combat event
+node tools/detour-suite.js --presets soup,planet --seeds 0x51A11,0xA11CE --ticks 220 --evolveTicks 900 --curriculum ladder --difficulty medium --combat event
 ```
 
 The detour assay creates a controlled vertical obstacle with two gaps, places a
@@ -95,7 +96,10 @@ the challenge world; `--difficulty easy|medium|hard` changes gap generosity;
 cells with intact/disassembled organism cohorts; and
 `--cohort mixed|elite|random|all` chooses which live particles enter particle
 replay. `--noScent`, `--scentRadiusCells`, and `--scentAmount` control whether
-the goal signal actually reaches the start area.
+the goal signal actually reaches the start area. `--curriculum gap-adjacent`
+or `--curriculum ladder` makes the source population evolve through
+training-only gap worlds before the final controlled replay, so you can test
+whether easier obstacle experiences improve later detour behavior.
 
 ## Browser timing probe
 

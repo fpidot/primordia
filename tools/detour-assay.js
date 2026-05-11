@@ -273,6 +273,162 @@ function focusCohortNearStart(world, cohort, arena, opts = {}) {
   }
 }
 
+function parseCurriculum(raw) {
+  const s = String(raw || 'none').toLowerCase();
+  if (s === 'gap' || s === 'near-gap' || s === 'gap-adjacent') return 'gap-adjacent';
+  if (s === 'ladder' || s === 'staged') return 'ladder';
+  return 'none';
+}
+
+function splitStageTicks(totalTicks, weights) {
+  const total = Math.max(0, Number(totalTicks) | 0);
+  if (total <= 0) return [];
+  const sum = weights.reduce((a, b) => a + b, 0) || 1;
+  const ticks = weights.map(w => Math.max(0, Math.floor(total * w / sum)));
+  let used = ticks.reduce((a, b) => a + b, 0);
+  for (let i = ticks.length - 1; used < total && i >= 0; i = (i - 1 + ticks.length) % ticks.length) {
+    ticks[i]++;
+    used++;
+  }
+  return ticks;
+}
+
+function curriculumPlan(kind, totalTicks, opts = {}) {
+  const baseDifficulty = String(opts.difficulty || 'medium').toLowerCase();
+  if (kind === 'gap-adjacent') {
+    const [ticks] = splitStageTicks(totalTicks, [1]);
+    return ticks ? [{
+      name: 'gap-adjacent',
+      ticks,
+      difficulty: 'easy',
+      gapCells: Math.max(18, Number(opts.gapCells) || 22),
+      thickness: 1,
+      gap: 'upper',
+      startDistance: 44,
+      goalDistance: 72,
+      localGoal: true,
+      localScentRadiusCells: 58,
+      localFoodRadiusCells: 8,
+    }] : [];
+  }
+  if (kind !== 'ladder') return [];
+  const ticks = splitStageTicks(totalTicks, [0.22, 0.26, 0.26, 0.26]);
+  const stages = [
+    {
+      name: 'mouth',
+      difficulty: 'easy',
+      gapCells: 28,
+      thickness: 1,
+      gap: 'upper',
+      startDistance: 34,
+      goalDistance: 48,
+      localGoal: true,
+      localScentRadiusCells: 44,
+      localFoodRadiusCells: 7,
+    },
+    {
+      name: 'near-gap',
+      difficulty: 'easy',
+      gapCells: 22,
+      thickness: 2,
+      gap: 'lower',
+      startDistance: 68,
+      goalDistance: 92,
+      localGoal: true,
+      localScentRadiusCells: 70,
+      localFoodRadiusCells: 8,
+    },
+    {
+      name: 'offset-gap',
+      difficulty: 'medium',
+      gapCells: 16,
+      thickness: 2,
+      gap: 'upper',
+      startDistance: 124,
+      startYOffset: -70,
+      goalDistance: 130,
+      localGoal: true,
+      localScentRadiusCells: 96,
+      localFoodRadiusCells: 9,
+    },
+    {
+      name: 'full-start',
+      difficulty: baseDifficulty === 'hard' ? 'hard' : 'medium',
+      gapCells: Number.isFinite(Number(opts.gapCells)) ? Number(opts.gapCells) : undefined,
+      thickness: Number.isFinite(Number(opts.thickness)) ? Number(opts.thickness) : 2,
+      fullStart: true,
+      localGoal: false,
+    },
+  ];
+  return stages
+    .map((stage, i) => ({ ...stage, ticks: ticks[i] || 0 }))
+    .filter(stage => stage.ticks > 0);
+}
+
+function applyCurriculumStage(world, baseOpts, stage) {
+  const stageOpts = {
+    ...baseOpts,
+    difficulty: stage.difficulty || baseOpts.difficulty,
+    gapCells: Number.isFinite(stage.gapCells) ? stage.gapCells : baseOpts.gapCells,
+    thickness: Number.isFinite(stage.thickness) ? stage.thickness : baseOpts.thickness,
+  };
+  const arena = buildDetourArena(world, stageOpts);
+  const gapCell = stage.gap === 'lower' ? arena.gapB : arena.gapA;
+  const gapY = (gapCell + 0.5) * CELL;
+  const startX = stage.fullStart
+    ? W * 0.28
+    : clamp(arena.barrierX - (stage.startDistance || 64), 16, arena.barrierX - 14);
+  const startY = stage.fullStart
+    ? H * 0.5
+    : clamp(gapY + (stage.startYOffset || 0), 16, H - 16);
+  const goalX = stage.localGoal
+    ? clamp(arena.barrierX + (stage.goalDistance || 96), arena.barrierX + 12, W - 16)
+    : arena.goalX;
+  const goalY = stage.localGoal ? gapY : arena.goalY;
+
+  if (stage.localGoal) {
+    if (baseOpts.scent !== false) {
+      addGoalScent(world, goalX, goalY, Math.max(8, stage.localScentRadiusCells || 60),
+        Number(baseOpts.scentAmount) || 2.2);
+    }
+    addFoodPatch(world, goalX, goalY, Math.max(3, stage.localFoodRadiusCells || 8),
+      Number(baseOpts.foodAmount) || 5.5);
+  }
+
+  focusCohortNearStart(world, world.particles.filter(p => p && !p.dead), arena, { startX, startY });
+  return {
+    name: stage.name,
+    ticks: stage.ticks,
+    difficulty: arena.difficulty,
+    gapCells: arena.gapCells,
+    thickness: stageOpts.thickness,
+    startX: round(startX),
+    startY: round(startY),
+    goalX: round(goalX),
+    goalY: round(goalY),
+    gapY: round(gapY),
+    barrierCells: arena.barrierCells,
+  };
+}
+
+async function runSourceSteps(world, ticks) {
+  for (let t = 0; t < ticks; t++) await world.step();
+}
+
+async function runDetourCurriculum(world, opts, totalTicks) {
+  const kind = parseCurriculum(opts.curriculum);
+  const plan = curriculumPlan(kind, totalTicks, opts);
+  const summaries = [];
+  for (const stage of plan) {
+    const summary = applyCurriculumStage(world, opts, stage);
+    await runSourceSteps(world, stage.ticks);
+    summary.endTick = world.tick;
+    summary.endPopulation = world.particles.filter(p => p && !p.dead).length;
+    summaries.push(summary);
+  }
+  return summaries;
+}
+
 function sampleFromParticle(p) {
   return {
     sourceId: p.id,
@@ -497,6 +653,7 @@ export async function runDetourAssay(opts = {}) {
   const cohortMode = opts.cohort || 'mixed';
   const replayMode = parseReplayMode(opts.replay);
   const evolveInArena = opts.evolveInArena === true;
+  const curriculum = parseCurriculum(opts.curriculum);
   const cohortEnergyOpt = Number(opts.cohortEnergy);
   const challengeOpts = {
     ...opts,
@@ -510,11 +667,16 @@ export async function runDetourAssay(opts = {}) {
   try {
     const sourceWorld = new World({ maxParticles: cap, combatMode });
     initPreset(sourceWorld, presetName, start);
-    if (evolveInArena) {
-      const sourceArena = buildDetourArena(sourceWorld, opts);
-      focusCohortNearStart(sourceWorld, sourceWorld.particles.filter(p => !p.dead), sourceArena, opts);
+    let curriculumStages = [];
+    if (curriculum !== 'none' && evolveTicks > 0) {
+      curriculumStages = await runDetourCurriculum(sourceWorld, opts, evolveTicks);
+    } else {
+      if (evolveInArena) {
+        const sourceArena = buildDetourArena(sourceWorld, opts);
+        focusCohortNearStart(sourceWorld, sourceWorld.particles.filter(p => !p.dead), sourceArena, opts);
+      }
+      await runSourceSteps(sourceWorld, evolveTicks);
     }
-    for (let t = 0; t < evolveTicks; t++) await sourceWorld.step();
 
     let sampled = null;
     let selectedSamples = [];
@@ -602,11 +764,14 @@ export async function runDetourAssay(opts = {}) {
       ticks,
       evolveTicks,
       evolveInArena,
+      arenaTraining: evolveInArena || curriculum !== 'none',
       cap,
       start,
       combatMode,
       cohortMode,
       replayMode,
+      curriculum,
+      curriculumStages,
       arena,
       tracked: records.length,
       alive: alive.length,
@@ -649,6 +814,7 @@ async function main() {
     combatMode: readArgOrPos('combat', 'nibble', 5),
     barrier: readArgOrPos('barrier', 'glass', 4),
     difficulty: readArg('difficulty', 'medium'),
+    curriculum: readArg('curriculum', 'none'),
     evolveTicks: readNumberArg('evolveTicks', 0, 6),
     cohort: readArgOrPos('cohort', 'mixed', 7),
     replay: readArgOrPos('replay', 'particles', 8),

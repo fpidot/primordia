@@ -130,10 +130,14 @@ heavier Planet starts are still a deliberate stress test.
    goal. Arena evolution improved survival and sometimes calmed speed, but did
    not yet produce reliable gap discovery. Current conclusion: the substrate
    can be crossed, but selection/planning pressure is still insufficient.
-   Next structural experiments should test a direct gap-adjacent curriculum,
-   stronger reward for crossing/goal reaching, longer-range target direction
-   or food-gradient reach, and movement-economy tuning without scripting a
-   pathfinder.
+   Current curriculum update: the detour assay/suite now support
+   `--curriculum gap-adjacent` and `--curriculum ladder`. These are
+   training-only source-world stages that move from near-gap food to the normal
+   start/goal geometry before the usual controlled replay. Next structural
+   experiments should use that ladder to test whether easier obstacle
+   experience improves later crossing/goal rates, then compare against stronger
+   crossing rewards, longer-range target direction or food-gradient reach, and
+   movement-economy tuning without scripting a pathfinder.
    Latest glass/edge pinning update: solid, glass, and world-edge collisions
    now add generic hard-contact feedback plus a tiny tangent/escape nudge so
    agents pressing into a barrier can slide away and receive the same bodily

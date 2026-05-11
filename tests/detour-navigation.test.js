@@ -109,3 +109,32 @@ await runTest('detour-navigation: source population can evolve inside arena', as
     `tracked=${result.tracked}`);
   assertInRange('arena-evolved survivalRate', result.survivalRate, 0, 1);
 });
+
+await runTest('detour-navigation: curriculum stages train through easier gap worlds', async () => {
+  const result = await runDetourAssay({
+    preset: 'soup',
+    evolveTicks: 12,
+    curriculum: 'ladder',
+    ticks: 8,
+    cap: 80,
+    start: 40,
+    seed: 0xD370D,
+    barrier: 'glass',
+    combatMode: 'event',
+    cohort: 'mixed',
+  });
+
+  assert('curriculum mode is reported', result.curriculum === 'ladder',
+    `curriculum=${result.curriculum}`);
+  assert('curriculum counts as arena training', result.arenaTraining === true,
+    `arenaTraining=${result.arenaTraining}`);
+  assert('multiple curriculum stages are reported', result.curriculumStages.length >= 2,
+    `stages=${result.curriculumStages.length}`);
+  const totalStageTicks = result.curriculumStages.reduce((sum, s) => sum + s.ticks, 0);
+  assert('curriculum consumes evolve ticks', totalStageTicks === 12,
+    `stageTicks=${totalStageTicks}`);
+  assert('curriculum stage positions are finite',
+    result.curriculumStages.every(s => Number.isFinite(s.startX) && Number.isFinite(s.goalX)),
+    JSON.stringify(result.curriculumStages));
+  assertInRange('curriculum survivalRate', result.survivalRate, 0, 1);
+});

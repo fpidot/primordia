@@ -239,6 +239,7 @@ Near steps:
 - Use `tools/detour-assay.js` and `tools/detour-suite.js` for repeated
   food-behind-obstacle comparisons: founder controls, `--evolveTicks`
   soup/maze/planet cohorts, `--evolveInArena` challenge-world evolution,
+  `--curriculum gap-adjacent|ladder` training worlds,
   `mixed|elite|random|all` particle cohorts, and intact vs disassembled
   cluster replay.
 - Use the movement telemetry (`meanSpeed`, speed-cap fraction, motor effort,
@@ -332,8 +333,8 @@ Other scale steps:
 5. Attack flash. Shipped as a small red droplet.
 6. Detour-navigation assay. Shipped controlled barrier/food-goal tool,
    evolved-cohort replay, intact/disassembled cluster replay, arena evolution,
-   easier curricula, goal scent, gap metrics, and movement telemetry. Latest
-   evidence says crossings are possible but not yet selected into a reliable
-   detour/goal-reaching behavior.
+   gap-adjacent/ladder curricula, goal scent, gap metrics, and movement
+   telemetry. Latest evidence says crossings are possible but not yet selected
+   into a reliable detour/goal-reaching behavior.
 7. Decide whether torus topology or a small bounded fishbowl prototype is the
    better next topology/physics experiment.
