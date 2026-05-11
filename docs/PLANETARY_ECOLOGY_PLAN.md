@@ -20,6 +20,8 @@ What is working:
   with bonds removed.
 - Topology now has a modest measurable payoff through bond-message
   reinforcement and defensive guard power.
+- Worker/snapshot preview mode now decouples render/UI responsiveness from the
+  main simulation tick loop for dense browser runs.
 
 What is still holding back interesting behavior:
 
@@ -285,16 +287,25 @@ Next steps:
 
 Goal: let richer worlds run long enough for evolution to matter.
 
-Next structural target:
+Current structural target:
 
-- Worker/snapshot architecture so UI/render FPS stays responsive while the sim
-  advances on its own budget.
+- First worker/snapshot architecture is implemented behind `?worker=1`.
+  It runs `World` in a module worker, posts compact render/UI snapshots, and
+  accepts core run-state, preset, brush, save/export, terrain-template, and
+  profiling commands. It is a responsiveness win, not yet a raw sim-throughput
+  win: dense maze browser profiling keeps frame step time near zero and render
+  around 5-6 ms/frame, while worker-side tick throughput is still limited by
+  simulation cost and snapshot payload.
 
 Other scale steps:
 
+- Reduce worker snapshot pressure with diff/static layers, typed particle
+  slabs, transfer pooling, and on-demand full-detail inspection.
+- Reach command parity for worker mode: live import/copy/duplication and richer
+  genome/card detail without bloating every snapshot.
 - User-facing population/work budgets. A first `Sim budget` slider now exposes
-  the per-frame sim-step time budget; worker/snapshot architecture is still
-  the bigger responsiveness fix.
+  the per-frame sim-step time budget in compatibility mode and the worker slice
+  budget in worker mode.
 - Chunked spatial ecology: only active regions get full simulation cadence.
 - Lower-write CPU pair-loop redesign if GPU readback remains limiting.
 - GPU work only when readback and parity risks are contained.

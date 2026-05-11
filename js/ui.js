@@ -170,11 +170,17 @@ export class UI {
     this.helpModalEl.classList.add('hidden');
   }
 
-  applyPreset(name) {
+  async applyPreset(name) {
     const fn = PRESETS[name];
     if (!fn) return;
     const count = Math.min(this.world.maxParticles || 5000, this.presetInitCount | 0);
-    fn(this.world, count);
+    try {
+      if (this.world.applyPreset) await this.world.applyPreset(name, count);
+      else fn(this.world, count);
+    } catch (err) {
+      console.error('preset failed', err);
+      return;
+    }
     this.activePreset = name;
     this.chart.data.length = 0;
     this._lastClustersSig = null;
@@ -246,6 +252,7 @@ export class UI {
     if (barrierEl) {
       barrierEl.addEventListener('change', () => {
         this.world.bondBarrier = barrierEl.checked;
+        if (this.world.setBondBarrier) this.world.setBondBarrier(barrierEl.checked);
       });
     }
 
@@ -286,6 +293,10 @@ export class UI {
     // GPU toggle — wired but currently informational; compute pipelines arrive in 4c.
     this._gpuEl = document.getElementById('ui-gpu');
     this._gpuStatusEl = document.getElementById('ui-gpu-status');
+    if (this.world.isWorkerProxy) {
+      this._gpuEl.disabled = true;
+      this._gpuStatusEl.textContent = 'worker mode · CPU sim in worker';
+    }
     this._gpuEl.addEventListener('change', () => {
       const checked = this._gpuEl.checked;
       const result = window.__primordia?.gpu?.setEnabled(checked);
@@ -1273,8 +1284,12 @@ export class UI {
     const score = this._lastComplexity ? this._lastComplexity.total : 0;
     if (score < wd.threshold) {
       // Reseed
-      const fn = PRESETS[this.activePreset] || PRESETS.soup;
-      fn(this.world, Math.min(this.world.maxParticles || 5000, this.presetInitCount | 0));
+      const count = Math.min(this.world.maxParticles || 5000, this.presetInitCount | 0);
+      if (this.world.applyPreset) this.world.applyPreset(this.activePreset || 'soup', count);
+      else {
+        const fn = PRESETS[this.activePreset] || PRESETS.soup;
+        fn(this.world, count);
+      }
       this.chart.data.length = 0;
       this.world.clades.pushEvent(this.world.tick, 'crash',
         `watchdog reseed · complexity ${score.toFixed(2)} < ${wd.threshold.toFixed(2)}`,
@@ -1551,8 +1566,17 @@ export class UI {
 
   // ────────────────────────────── Persistence
 
-  save() {
-    const data = this.world.toJSON();
+  async save() {
+    let data;
+    try {
+      data = this.world.toJSONAsync
+        ? await this.world.toJSONAsync()
+        : this.world.toJSON();
+    } catch (err) {
+      console.error('save snapshot failed', err);
+      this.flashButton('btn-save', 'Save failed');
+      return;
+    }
     let json;
     try {
       json = JSON.stringify(data);
@@ -1627,18 +1651,22 @@ export class UI {
     }
   }
 
-  exportFile() {
+  async exportFile() {
     try {
-      const data = this.world.toJSON();
+      const data = this.world.toJSONAsync
+        ? await this.world.toJSONAsync()
+        : this.world.toJSON();
       this.downloadJSON(data, `primordia-tick${this.world.tick}.json`);
     } catch (err) {
       console.error('export failed', err);
     }
   }
 
-  exportWorldTemplate() {
+  async exportWorldTemplate() {
     try {
-      const data = this.world.toWorldTemplateJSON();
+      const data = this.world.toWorldTemplateJSONAsync
+        ? await this.world.toWorldTemplateJSONAsync()
+        : this.world.toWorldTemplateJSON();
       this.downloadJSON(data, `primordia-terrain-t${this.world.tick}.json`);
       this.flashButton('btn-export-template', 'Exported');
     } catch (err) {
@@ -1697,6 +1725,10 @@ export class UI {
   }
 
   spawnCladeTemplate(template, x = this.camera.x, y = this.camera.y, count = 16, flashId = 'btn-import-clade') {
+    if (!this.world.addParticle) {
+      if (flashId) this.flashButton(flashId, 'Main sim only');
+      return 0;
+    }
     const genomeJSON = template && (template.meanGenome || template.founderGenome || template.genome);
     if (!genomeJSON) {
       if (flashId) this.flashButton(flashId, 'Bad file');
@@ -1832,6 +1864,10 @@ export class UI {
 
   duplicateSpecimen(p, x = this.camera.x, y = this.camera.y) {
     if (!p || !p.genome) return null;
+    if (!this.world.addParticle) {
+      this.flashButton('btn-import-specimen', 'Main sim only');
+      return null;
+    }
     const clade = p.cladeId ? this.world.clades.clades.get(p.cladeId) : null;
     const genome = genomeFromJSON(genomeToJSON(p.genome));
     const energy = Math.max(3, Math.min(18, Number.isFinite(p.energy) ? p.energy : 6));
@@ -1862,6 +1898,10 @@ export class UI {
   }
 
   spawnSpecimenTemplate(specimen, x = this.camera.x, y = this.camera.y, flashId = 'btn-import-specimen') {
+    if (!this.world.addParticle) {
+      if (flashId) this.flashButton(flashId, 'Main sim only');
+      return null;
+    }
     const src = specimen && specimen.particle ? specimen.particle : specimen;
     if (!src || !src.genome) {
       if (flashId) this.flashButton(flashId, 'Bad file');
@@ -1919,6 +1959,10 @@ export class UI {
   }
 
   spawnClusterTemplate(cluster, x = this.camera.x, y = this.camera.y, flashId = 'btn-import-cluster') {
+    if (!this.world.addParticle) {
+      if (flashId) this.flashButton(flashId, 'Main sim only');
+      return 0;
+    }
     const members = cluster && Array.isArray(cluster.members) ? cluster.members : [];
     if (!members.length) {
       if (flashId) this.flashButton(flashId, 'Bad file');

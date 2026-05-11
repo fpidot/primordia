@@ -91,11 +91,13 @@ const url = String(readArg('url', 'http://localhost:8765/'));
 const preset = String(readArg('preset', positional[0] || 'maze'));
 const seconds = Math.max(1, Number(readArg('seconds', positional[1] || 8)) || 8);
 const speed = Math.max(0.25, Number(readArg('speed', positional[2] || 4)) || 4);
+const workBudget = Math.max(1, Number(readArg('workBudget', readArg('budget', 12))) || 12);
 const warmup = Math.max(0, Number(readArg('warmup', 1000)) || 0);
 const seedArg = readArg('seed', null);
 const wantGpu = !!readArg('gpu', false);
 const gpuFull = !!readArg('gpuFull', false);
 const gpuPairOnly = readArg('gpuPairOnly', null);
+const wantWorker = !!readArg('worker', false);
 const profileEvery = Math.max(0, Number(readArg('profileEvery', readArg('profileEveryTicks', 0))) | 0);
 const wantProfile = !!readArg('profile', false) || profileEvery > 0;
 const zoomArg = readArg('zoom', null);
@@ -103,6 +105,13 @@ const width = Math.max(320, Number(readArg('width', 1440)) || 1440);
 const height = Math.max(320, Number(readArg('height', 1000)) || 1000);
 const port = Math.max(1024, Number(readArg('port', positional[3] || 9225)) || 9225);
 const headless = readArg('headed', false) ? false : true;
+const benchUrl = wantWorker
+  ? (() => {
+      const u = new URL(url);
+      u.searchParams.set('worker', '1');
+      return u.toString();
+    })()
+  : url;
 
 const exe = browserPath();
 if (!exe) {
@@ -154,7 +163,7 @@ try {
     }
     if (pageErrors.length > 12) pageErrors.splice(0, pageErrors.length - 12);
   }, 50);
-  await cdp.call('Page.navigate', { url });
+  await cdp.call('Page.navigate', { url: benchUrl });
   await new Promise(resolve => setTimeout(resolve, 1500));
 
   const expression = `
@@ -163,6 +172,7 @@ try {
       if (!app) throw new Error('window.__primordia missing');
       const { world, renderer, ui, camera, chart, PRESETS, gpu, frameProfile } = app;
       if (!PRESETS['${preset}']) throw new Error('unknown preset ${preset}');
+      if (world.ready) await world.ready;
       const seedValue = ${seedArg == null ? 'null' : JSON.stringify(String(seedArg))};
       if (seedValue != null) {
         let seed = Number(seedValue);
@@ -180,7 +190,12 @@ try {
           };
         })();
       }
-      PRESETS['${preset}'](world);
+      if (world.applyPreset) {
+        await world.applyPreset('${preset}', undefined, seedValue);
+        await new Promise(resolve => setTimeout(resolve, 120));
+      } else {
+        PRESETS['${preset}'](world);
+      }
       chart.data.length = 0;
       camera.fit();
       const zoomValue = ${zoomArg == null ? 'null' : JSON.stringify(String(zoomArg))};
@@ -193,7 +208,11 @@ try {
       }
       ui.refreshStats();
       ui.speed = ${speed};
+      ui.workBudgetMs = ${workBudget};
       ui.paused = false;
+      if (world.setRunState) {
+        world.setRunState({ paused: ui.paused, speed: ui.speed, workBudgetMs: ui.workBudgetMs || 12 });
+      }
       const wantProfile = ${wantProfile ? 'true' : 'false'};
       const profileEvery = ${profileEvery};
       if (wantProfile) {
@@ -214,7 +233,10 @@ try {
         world.setGPUPairOnly(gpuPairOnlyArg !== 'false' && gpuPairOnlyArg !== '0');
       }
       let gpuReady = false;
-      if (wantGpu) {
+      if (world.isWorkerProxy) {
+        gpuReady = false;
+        if (gpu) gpu.setEnabled(false);
+      } else if (wantGpu) {
         const deadline = performance.now() + 5000;
         while (performance.now() < deadline && !world._gpu) {
           await new Promise(requestAnimationFrame);
@@ -288,6 +310,9 @@ try {
       }
       const elapsed = performance.now() - start;
       ui.paused = true;
+      if (world.setRunState) {
+        world.setRunState({ paused: true, speed: ui.speed, workBudgetMs: ui.workBudgetMs || 12 });
+      }
       const profile = wantProfile ? {
         sim: world.profileSnapshot ? world.profileSnapshot() : null,
         render: renderer && renderer.profileSummary ? renderer.profileSummary() : null,
@@ -297,6 +322,10 @@ try {
       return {
         preset: '${preset}',
         seed: seedValue,
+        workerMode: !!world.isWorkerProxy,
+        workerSnapshots: world._snapshotCount || 0,
+        workerStatus: world._workerStatus || null,
+        workBudgetMs: ui.workBudgetMs || 12,
         requestedGpu: wantGpu,
         gpuReady,
         gpuEnabled: world.isGPUEnabled(),

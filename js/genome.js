@@ -239,7 +239,7 @@ export function genomeToJSON(g) {
     prey_preference: g.prey_preference ? Array.from(g.prey_preference) : null,
     wall_affinity: g.wall_affinity ?? 0,
     prey_walling: g.prey_walling ?? 0,
-    brain: g.brain ? brainToJSON(g.brain) : null,
+    brain: g.brain && g.brain.enabled && g.brain.W_ih ? brainToJSON(g.brain) : null,
   };
 }
 export function genomeFromJSON(o) {

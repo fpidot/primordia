@@ -10,8 +10,12 @@ import { PRESETS } from './presets.js';
 import { gpu } from './gpu.js';
 import { GPUPairForce } from './gpu_pairforce.js';
 import { audioHum } from './audio.js';
+import { WorkerWorldProxy, workerModeFromLocation } from './worker_runtime.js';
 
-const world = new World({ combatMode: 'event' });
+const workerMode = workerModeFromLocation();
+const world = workerMode
+  ? new WorkerWorldProxy({ preset: 'soup', count: 1800, paused: false })
+  : new World({ combatMode: 'event' });
 const bgCanvas = document.getElementById('canvas-bg');
 const fgCanvas = document.getElementById('canvas-fg');
 const camera = new Camera();
@@ -40,8 +44,16 @@ new ResizeObserver(() => {
 }).observe(stage);
 
 // Seed world with the default preset
-PRESETS.soup(world);
-ui.refreshStats();
+if (!workerMode) {
+  PRESETS.soup(world);
+  ui.refreshStats();
+} else {
+  world.ready.then(() => {
+    document.getElementById('hint').textContent =
+      'worker mode · simulation runs off the main thread · add ?worker=0 for compatibility mode';
+    ui.refreshStats();
+  });
+}
 
 // ─────────────────────────────────────────────── animation loop
 
@@ -51,6 +63,7 @@ let fpsAcc = 0;
 let fpsFrames = 0;
 let statsTimer = 0;
 let chartTimer = 0;
+let lastChartTick = -1;
 const STEP_FRAME_BUDGET_MS = 12;
 const MAX_STEP_BACKLOG = 12;
 const frameProfile = {
@@ -87,7 +100,13 @@ async function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
 
-  if (!ui.paused) {
+  if (workerMode) {
+    world.setRunState({
+      paused: ui.paused,
+      speed: ui.speed,
+      workBudgetMs: ui.workBudgetMs,
+    });
+  } else if (!ui.paused) {
     acc += ui.speed;
     if (acc > MAX_STEP_BACKLOG) acc = MAX_STEP_BACKLOG;
     let steps = 0;
@@ -108,8 +127,9 @@ async function frame(now) {
   audioHum.tick(world, dt, camera);
   mark('audio');
 
-  if (!ui.paused && world.tick % 4 === 0) {
+  if (!ui.paused && world.tick !== lastChartTick && world.tick % 4 === 0) {
     chart.push(world.tick, world.populationBySpecies());
+    lastChartTick = world.tick;
   }
 
   statsTimer += dt;
@@ -148,7 +168,7 @@ requestAnimationFrame(frame);
 
 // Kick off WebGPU init in the background. Once ready, build the pair-force
 // kernel and attach it to the world. The UI toggle drives whether step() uses it.
-gpu.init().then(ok => {
+if (!workerMode) gpu.init().then(ok => {
   if (ok && gpu.device) {
     try {
       const kernel = new GPUPairForce(gpu.device, {
@@ -166,5 +186,6 @@ gpu.init().then(ok => {
   }
   ui.onGPUStatusChange?.(gpu.describe());
 });
+else ui.onGPUStatusChange?.({ available: false, enabled: false, status: 'worker mode · CPU sim in worker', errors: [] });
 
-window.__primordia = { world, renderer, ui, camera, chart, gpu, audioHum, PRESETS, frameProfile };
+window.__primordia = { world, renderer, ui, camera, chart, gpu, audioHum, PRESETS, frameProfile, workerMode };

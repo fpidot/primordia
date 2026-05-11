@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Instrument detour navigation and hard contacts`
+  current `main` HEAD after this pass: `Add worker snapshot simulation mode`
 
 Recent useful commits:
 
-- current `main` HEAD - Instrument detour navigation and hard contacts
+- current `main` HEAD - Add worker snapshot simulation mode
+- previous `main` HEAD - Instrument detour navigation and hard contacts
 - `16de08f` - Extend detour assay to evolved cohorts
 - `d10a01c` - Add detour navigation assay
 - `e1b460f` - Track regional behavior outcomes
@@ -160,6 +161,8 @@ Core systems:
 - import/export for particles, species/clades, clusters, and sterile worlds
 - CPU simulation path
 - WebGPU pair-force/brain path with CPU fallback
+- optional worker-owned simulation path behind `?worker=1`, with compact
+  snapshots back to the main thread for render/UI/audio/inspection
 - browser and Node regression/bench tooling
 
 Terrain semantics:
@@ -371,21 +374,43 @@ Performance reality:
   map waits/cooldowns and population-trajectory divergence. The app therefore
   keeps full GPU as the default mode, with pair-only available through the
   bench/API for further testing.
-- The likely next big win is now structural: decouple sim from render with a
-  worker/snapshot architecture or expose explicit population/work budgets for
-  dense long soaks.
-- A first user-facing work-budget control is now in the Run panel. It adjusts
-  the per-frame sim-step budget from the previous hard-coded 12 ms default.
-  This is not the full worker/snapshot fix, but it makes the tradeoff explicit
-  while the worker design is being built.
+- Worker/snapshot preview mode is implemented behind `?worker=1`. The worker
+  owns `World`, advances on its own slice budget, and posts compact snapshots
+  for render/UI/audio/inspection. The compatibility path remains the default.
+- A first user-facing work-budget control is now in the Run panel. In
+  compatibility mode it adjusts the per-frame sim-step budget from the previous
+  hard-coded 12 ms default; in worker mode the same setting is sent to the
+  worker slice budget.
+- Current worker command coverage: run/pause/speed, one-step, preset, brushes,
+  clear field, mutagen storm, exterminate species, bond barrier, profiling,
+  save/export, load, and sterile terrain import/export. Live specimen/clade/
+  cluster duplicate/import spawning is intentionally still main-thread only
+  until worker command parity is added.
+- Local worker measurements from this pass:
+  - worker soup, 2s, speed 1: about 49.8 FPS, 27 snapshots, no page errors.
+  - compatibility soup, 2s, same shape: about 23.9 FPS/ticks/sec, no page
+    errors.
+  - worker soup stress, speed 4/workBudget 24: about 50.1 FPS, render around
+    4.9 ms/frame, frame step near zero after particle genome snapshot slimming.
+  - dense low-zoom maze, seed `0xC0FFEE`, speed 4/workBudget 12: worker mode
+    about 45.6 FPS with frame `step` around 0.015 ms and render around 5.65
+    ms/frame; compatibility mode about 20.2 FPS with frame `step` around 38
+    ms and render around 5.79 ms/frame.
+- Caveat: this is a responsiveness win, not yet a raw sim-throughput win.
+  Dense worker tick rate is still constrained by worker CPU cost plus snapshot
+  clone/transfer pressure, and the dense maze worker smoke still showed one
+  large stall likely from preset/snapshot or wall-cache work.
 
 Next performance target:
 
-- Priority order from the latest compute discussion:
-  1. Worker/snapshot architecture so UI/render FPS can stay responsive while sim
-     ticks run as fast as the budget allows.
-  2. User-facing population/work budgets for dense long soaks.
-  3. Further GPU work only after a targeted plan reduces map-wait/cooldown and
+- Priority order after the worker preview:
+  1. Shrink snapshot pressure: split static wall/field layers from high-cadence
+     particle snapshots, move particles toward typed slabs, reuse transferable
+     buffers, and request full genome/card detail on demand.
+  2. Restore worker command parity for live imports, duplication, and cluster
+     builder actions.
+  3. Keep population/work budgets user-facing for dense long soaks.
+  4. Further GPU work only after a targeted plan reduces map-wait/cooldown and
      readback pressure.
 - Continue pair-only GPU benchmarking only if a targeted change addresses
   map-wait/cooldown behavior; the first smaller-readback pass is not enough by
@@ -1089,6 +1114,28 @@ Latest verification in the cluster-budding pass:
     founder/evolved particle crossing was roughly 0.017/0.007, soup
     disassembled-cluster replay reached 0.053, intact clusters did not cross,
     and no cohort reached the goal.
+- Worker/snapshot verification:
+  - `node --check js\snapshot.js`, `node --check js\sim_worker.js`,
+    `node --check js\worker_runtime.js`, `node --check js\main.js`,
+    `node --check js\ui.js`, `node --check js\genome.js`,
+    `node --check tools\bench-browser.js`, and
+    `node --check tests\worker-snapshot.test.js` passed.
+  - `npm test -- worker-snapshot.test.js` passed.
+  - `npm test` passed all 22 test files after the worker/snapshot pass.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9245 --worker`
+    passed with no page errors: worker mode true, 27 snapshots, active worker,
+    about 49.8 FPS, max frame about 32.2 ms.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9246`
+    passed with no page errors in compatibility mode: about 23.9
+    FPS/ticks-per-second.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset maze --seconds 5 --speed 4 --seed 0xC0FFEE --profile --zoom 0.35 --port 9247 --worker --workBudget 12`
+    passed with no page errors: worker mode about 45.6 FPS, frame step about
+    0.015 ms, render about 5.65 ms/frame.
+  - Matching compatibility dense maze profile passed with no page errors at
+    about 20.2 FPS, frame step about 38 ms, render about 5.79 ms/frame.
+  - Final post-waiter-queue smokes also passed with no page errors: worker soup
+    about 47.5 FPS and compatibility soup about 15.2 FPS on this loaded run.
+  - `git diff --check` passed with only the repo's usual CRLF warnings.
 
 Core:
 
@@ -1120,6 +1167,7 @@ Browser/GPU smoke:
 node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 6 --speed 4 --gpu --port 9336
 node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 8 --speed 4 --seed 0xC0FFEE --gpu --port 9336
 node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 5 --speed 4 --seed 0xC0FFEE --profile --zoom 0.35 --port 9338
+node tools\bench-browser.js --url http://localhost:8765/ --preset maze --seconds 5 --speed 4 --seed 0xC0FFEE --profile --zoom 0.35 --worker --workBudget 12 --port 9339
 ```
 
 CPU browser comparison:

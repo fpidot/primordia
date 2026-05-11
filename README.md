@@ -7,7 +7,14 @@ A browser-based artificial-life simulation: per-particle evolving genomes + chem
 ```sh
 python -m http.server 8765
 # open http://localhost:8765/
+# optional preview: http://localhost:8765/?worker=1
 ```
+
+`?worker=1` runs the simulation inside a module worker and sends compact
+snapshots back to the UI/render thread. It is a preview path for dense long
+runs: core presets, brushes, saving/exporting, sterile terrain export, and
+inspection work there, while live copy/import spawning is still main-thread
+only.
 
 ## Run tests
 
@@ -100,6 +107,7 @@ node tools/bench-browser.js maze 6 4 9230 --gpu
 node tools/bench-browser.js --preset maze --seconds 8 --speed 4 --seed 0xC0FFEE --gpu
 node tools/bench-browser.js --preset maze --seconds 10 --speed 4 --seed 0xC0FFEE --gpu --gpuPairOnly
 node tools/bench-browser.js --preset maze --seconds 75 --speed 4 --seed 0xC0FFEE --profile --profileEvery 300 --zoom 0.35
+node tools/bench-browser.js --preset maze --seconds 5 --speed 4 --seed 0xC0FFEE --profile --zoom 0.35 --worker --workBudget 12
 ```
 
 The browser probe launches Chrome/Edge through the DevTools protocol and
@@ -108,7 +116,9 @@ adaptive GPU cooldown telemetry. Use `--seed` for CPU/GPU comparisons that
 start from the same preset state; use `--gpuPairOnly` to test the experimental
 smaller-readback GPU pair-force mode; use `--profileEvery` for long-run
 degradation windows; use `--profile` and `--zoom` to inspect sim/render/frame
-costs and low-zoom LOD behavior.
+costs and low-zoom LOD behavior. Use `--worker` to benchmark the worker-owned
+simulation path; `--workBudget` controls how much wall-clock time each worker
+slice may spend advancing ticks before it posts another snapshot.
 
 ## Preset population
 
@@ -123,6 +133,9 @@ mutagen cracks. Planet defaults to 720 particles; raise the initial-population
 slider when you want a heavier stress ecology.
 
 ## Architecture
+
+Worker preview files: `js/sim_worker.js`, `js/snapshot.js`, and
+`js/worker_runtime.js`.
 
 - `js/sim.js` — particle pair-force, bond network, energy economy, wall types
 - `js/brain.js` — variable-size CTRNN controller, mutation, crossover

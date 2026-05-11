@@ -354,6 +354,20 @@ heavier Planet starts are still a deliberate stress test.
    the per-frame sim-step time budget, and vitals/bench telemetry reports mean
    speed, velocity-cap fraction, motor effort, and high-speed fraction so
    movement economics can be measured during performance and agency tests.
+   Latest worker/snapshot update: preview worker mode is implemented behind
+   `?worker=1` and `tools/bench-browser.js --worker`. The worker owns `World`,
+   advances on a tunable slice budget, and posts compact snapshots for render,
+   UI, audio, wall inspection, ranking panels, save/export, terrain export, and
+   profiling. In local browser smoke, worker soup held about 50 FPS while
+   advancing snapshots without page errors; a dense low-zoom maze comparison
+   moved frame `step` cost from roughly 38 ms in compatibility mode to about
+   0.02 ms in worker mode, with render still around 5-6 ms. Caveat: this first
+   worker pass is a responsiveness win, not yet a raw sim-throughput win; dense
+   worker tick rate is limited by worker CPU time plus snapshot/clone pressure.
+   Next performance work should shrink snapshot payloads, split static wall and
+   field layers from high-cadence particle slabs, reuse transferable buffers,
+   add on-demand full-detail inspection, and restore worker command parity for
+   live import/copy/duplication before treating worker mode as the default.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful
