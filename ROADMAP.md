@@ -372,6 +372,17 @@ heavier Planet starts are still a deliberate stress test.
    field layers from high-cadence particle slabs, reuse transferable buffers,
    add on-demand full-detail inspection, and restore worker command parity for
    live import/copy/duplication before treating worker mode as the default.
+   Latest layered-snapshot update: worker mode now sends frequent dynamic
+   particle/cluster snapshots while refreshing larger field layers at a slower
+   cadence and wall layers only on a throttled terrain-change cadence. Browser
+   bench reports `workerLayers` so transfer pressure is visible. In a seeded
+   low-zoom maze worker smoke, 44 snapshots included 14 field layers, 16 wall
+   layers, and 22 dynamic-only snapshots, transferring about 19 MB rather than
+   roughly 50 MB if every snapshot had carried all typed layers. Frame `step`
+   remained about 0.017 ms with no page errors. Next performance work should
+   move particle snapshots toward typed slabs or double-buffered transfer pools
+   and add on-demand full-detail inspection so live cards do not force full
+   genomes into every frame.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful

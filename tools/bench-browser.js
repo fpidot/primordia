@@ -92,6 +92,8 @@ const preset = String(readArg('preset', positional[0] || 'maze'));
 const seconds = Math.max(1, Number(readArg('seconds', positional[1] || 8)) || 8);
 const speed = Math.max(0.25, Number(readArg('speed', positional[2] || 4)) || 4);
 const workBudget = Math.max(1, Number(readArg('workBudget', readArg('budget', 12))) || 12);
+const fieldSnapshotInterval = Math.max(80, Number(readArg('fieldSnapshotInterval', readArg('fieldInterval', 500))) || 500);
+const wallSnapshotInterval = Math.max(80, Number(readArg('wallSnapshotInterval', readArg('wallInterval', 240))) || 240);
 const warmup = Math.max(0, Number(readArg('warmup', 1000)) || 0);
 const seedArg = readArg('seed', null);
 const wantGpu = !!readArg('gpu', false);
@@ -211,7 +213,13 @@ try {
       ui.workBudgetMs = ${workBudget};
       ui.paused = false;
       if (world.setRunState) {
-        world.setRunState({ paused: ui.paused, speed: ui.speed, workBudgetMs: ui.workBudgetMs || 12 });
+        world.setRunState({
+          paused: ui.paused,
+          speed: ui.speed,
+          workBudgetMs: ui.workBudgetMs || 12,
+          fieldSnapshotIntervalMs: ${fieldSnapshotInterval},
+          wallSnapshotIntervalMs: ${wallSnapshotInterval},
+        });
       }
       const wantProfile = ${wantProfile ? 'true' : 'false'};
       const profileEvery = ${profileEvery};
@@ -311,7 +319,13 @@ try {
       const elapsed = performance.now() - start;
       ui.paused = true;
       if (world.setRunState) {
-        world.setRunState({ paused: true, speed: ui.speed, workBudgetMs: ui.workBudgetMs || 12 });
+        world.setRunState({
+          paused: true,
+          speed: ui.speed,
+          workBudgetMs: ui.workBudgetMs || 12,
+          fieldSnapshotIntervalMs: ${fieldSnapshotInterval},
+          wallSnapshotIntervalMs: ${wallSnapshotInterval},
+        });
       }
       const profile = wantProfile ? {
         sim: world.profileSnapshot ? world.profileSnapshot() : null,
@@ -325,7 +339,10 @@ try {
         workerMode: !!world.isWorkerProxy,
         workerSnapshots: world._snapshotCount || 0,
         workerStatus: world._workerStatus || null,
+        workerLayers: world._workerLayerStats || null,
         workBudgetMs: ui.workBudgetMs || 12,
+        fieldSnapshotIntervalMs: ${fieldSnapshotInterval},
+        wallSnapshotIntervalMs: ${wallSnapshotInterval},
         requestedGpu: wantGpu,
         gpuReady,
         gpuEnabled: world.isGPUEnabled(),

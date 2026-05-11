@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add detour curriculum ladder`
+  current `main` HEAD after this pass: `Layer worker snapshot payloads`
 
 Recent useful commits:
 
-- current `main` HEAD - Add detour curriculum ladder
+- current `main` HEAD - Layer worker snapshot payloads
+- `0bd782c` - Add detour curriculum ladder
 - `d8d6cb0` - Add worker snapshot simulation mode
 - `1b633cf` - Instrument detour navigation and hard contacts
 - `16de08f` - Extend detour assay to evolved cohorts
@@ -378,6 +379,11 @@ Performance reality:
 - Worker/snapshot preview mode is implemented behind `?worker=1`. The worker
   owns `World`, advances on its own slice budget, and posts compact snapshots
   for render/UI/audio/inspection. The compatibility path remains the default.
+- Worker snapshots are now layered. Lightweight particle/cluster/UI snapshots
+  can arrive at the normal cadence, while field typed arrays refresh on a
+  slower field cadence and wall typed arrays/meta refresh immediately after
+  terrain changes only up to a wall cadence. Browser bench reports the layer
+  counts and transferred bytes as `workerLayers`.
 - A first user-facing work-budget control is now in the Run panel. In
   compatibility mode it adjusts the per-frame sim-step budget from the previous
   hard-coded 12 ms default; in worker mode the same setting is sent to the
@@ -397,6 +403,15 @@ Performance reality:
     about 45.6 FPS with frame `step` around 0.015 ms and render around 5.65
     ms/frame; compatibility mode about 20.2 FPS with frame `step` around 38
     ms and render around 5.79 ms/frame.
+- Local layered-snapshot measurements from this pass:
+  - worker soup, 3s, speed 2/workBudget 12: 30 snapshots, 10 field layers, 3
+    wall layers, 20 dynamic-only snapshots, about 12.8 MB transferred, about
+    47.2 FPS, no page errors.
+  - worker dense low-zoom maze, seed `0xC0FFEE`, speed 4/workBudget 12: 44
+    snapshots, 14 field layers, 16 wall layers, 22 dynamic-only snapshots,
+    about 19.1 MB transferred, about 49.6 FPS, frame `step` about 0.017 ms, no
+    page errors. If every snapshot had carried all typed field/wall layers, the
+    same shape would have been roughly 50 MB of typed-array transfer.
 - Caveat: this is a responsiveness win, not yet a raw sim-throughput win.
   Dense worker tick rate is still constrained by worker CPU cost plus snapshot
   clone/transfer pressure, and the dense maze worker smoke still showed one
@@ -405,8 +420,8 @@ Performance reality:
 Next performance target:
 
 - Priority order after the worker preview:
-  1. Shrink snapshot pressure: split static wall/field layers from high-cadence
-     particle snapshots, move particles toward typed slabs, reuse transferable
+  1. Continue shrinking snapshot pressure: field/wall cadence splitting is
+     shipped; next move particles toward typed slabs, reuse transferable
      buffers, and request full genome/card detail on demand.
   2. Restore worker command parity for live imports, duplication, and cluster
      builder actions.
@@ -1138,6 +1153,22 @@ Latest verification in the cluster-budding pass:
   - Final post-waiter-queue smokes also passed with no page errors: worker soup
     about 47.5 FPS and compatibility soup about 15.2 FPS on this loaded run.
   - `git diff --check` passed with only the repo's usual CRLF warnings.
+- Layered worker snapshot verification:
+  - `node --check js\snapshot.js`, `node --check js\sim_worker.js`,
+    `node --check js\worker_runtime.js`, `node --check tools\bench-browser.js`,
+    and `node --check tests\worker-snapshot.test.js` passed.
+  - `npm test -- worker-snapshot.test.js` passed with the new dynamic-layer
+    omission regression.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 2 --warmup 200 --width 1200 --height 800 --port 9255 --worker --workBudget 12`
+    passed with no page errors and reported 20 dynamic-only snapshots out of
+    30.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset maze --seconds 5 --speed 4 --seed 0xC0FFEE --profile --zoom 0.35 --port 9256 --worker --workBudget 12`
+    passed with no page errors and reported 22 dynamic-only snapshots out of
+    44, frame `step` about 0.017 ms, render about 4.65 ms/frame.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9257`
+    passed in compatibility mode with no page errors.
+  - `npm test` passed all 22 test files after the layered snapshot pass.
+  - `git diff --check` passed with only the repo's usual CRLF warnings.
 - Detour curriculum verification:
   - `node --check tools\detour-assay.js`, `node --check tools\detour-suite.js`,
     and `node --check tests\detour-navigation.test.js` passed.
@@ -1230,10 +1261,10 @@ git log --oneline -5
   soup/maze for daughter buds, topology, wall work, attacks, and brain slots
 - visuals: tune the small red blood-drop attack flash if it reads too loud or
   too subtle during real runs
-- performance: keep profiling Planet and Maze long runs; the next structural
-  target is shrinking worker snapshot payloads/diffing after the first
-  worker/snapshot preview; the new `Sim budget` slider is now a user-facing
-  work budget in both compatibility and worker modes
+- performance: keep profiling Planet and Maze long runs; after field/wall
+  layered snapshots, the next structural target is typed particle slabs,
+  transferable buffer reuse, and on-demand full-detail inspection for worker
+  mode
 - agency: run repeated post-topology `--replay both` evidence with the new
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use

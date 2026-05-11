@@ -172,6 +172,10 @@ export class WorkerWorldProxy {
     this._meanGenome = emptyMeanGenome();
     this._profile = null;
     this._snapshotCount = 0;
+    this._fieldSnapshotCount = 0;
+    this._wallSnapshotCount = 0;
+    this._dynamicOnlySnapshotCount = 0;
+    this._snapshotTransferBytes = 0;
     this._requestId = 1;
     this._pending = new Map();
     this._snapshotWaiters = [];
@@ -192,6 +196,8 @@ export class WorkerWorldProxy {
       speed: opts.speed ?? 1,
       workBudgetMs: opts.workBudgetMs ?? 12,
       snapshotIntervalMs: opts.snapshotIntervalMs ?? 80,
+      fieldSnapshotIntervalMs: opts.fieldSnapshotIntervalMs ?? 500,
+      wallSnapshotIntervalMs: opts.wallSnapshotIntervalMs ?? 240,
       seed: opts.seed ?? null,
     });
   }
@@ -259,17 +265,28 @@ export class WorkerWorldProxy {
     this._lastSnapshotAt = performance.now();
     this.tick = snapshot.tick || 0;
     this.maxParticles = snapshot.maxParticles || this.maxParticles;
-    this.field = [snapshot.field0 || this.field[0], snapshot.field1 || this.field[1]];
-    this.mutagen = snapshot.mutagen || this.mutagen;
-    this.walls = snapshot.walls || this.walls;
-    this.habitatRegions = snapshot.habitatRegions || [];
-    this._wallCount = snapshot._wallCount || 0;
-    this._wallsVersion = snapshot._wallsVersion || 0;
+    const layers = snapshot.worker?.layers || {};
+    if (snapshot.field0 && snapshot.field1) {
+      this.field = [snapshot.field0, snapshot.field1];
+      this._fieldSnapshotCount++;
+    }
+    if (snapshot.mutagen) this.mutagen = snapshot.mutagen;
+    if (snapshot.walls) {
+      this.walls = snapshot.walls;
+      this._wallSnapshotCount++;
+    }
+    if (layers.fields === false && layers.walls === false) this._dynamicOnlySnapshotCount++;
+    this._snapshotTransferBytes += snapshot.worker?.transferBytes || 0;
+    if (Array.isArray(snapshot.habitatRegions)) this.habitatRegions = snapshot.habitatRegions;
+    if (Number.isFinite(snapshot._wallCount)) this._wallCount = snapshot._wallCount;
+    if (Number.isFinite(snapshot._wallsVersion)) this._wallsVersion = snapshot._wallsVersion;
     this._attackFlashEvents = snapshot._attackFlashEvents || [];
     this._wallSoundEvents = snapshot._wallSoundEvents || [];
     this._deathSoundEvents = snapshot._deathSoundEvents || [];
-    this._wallMeta.clear();
-    for (const row of snapshot.wallMeta || []) this._wallMeta.set(row[0] | 0, row);
+    if (Array.isArray(snapshot.wallMeta)) {
+      this._wallMeta.clear();
+      for (const row of snapshot.wallMeta || []) this._wallMeta.set(row[0] | 0, row);
+    }
 
     const seen = new Set();
     const next = [];
@@ -322,16 +339,27 @@ export class WorkerWorldProxy {
     this.clades.apply(snapshot.clades || {});
     this._workerStatus = snapshot.worker?.paused ? 'paused worker' : 'active worker';
     this._workerSnapshot = snapshot.worker || {};
+    this._workerLayerStats = {
+      snapshots: this._snapshotCount,
+      fieldSnapshots: this._fieldSnapshotCount,
+      wallSnapshots: this._wallSnapshotCount,
+      dynamicOnlySnapshots: this._dynamicOnlySnapshotCount,
+      transferBytes: this._snapshotTransferBytes,
+      lastLayers: layers,
+      workerStats: snapshot.worker?.snapshotStats || null,
+    };
   }
 
-  setRunState({ paused, speed, workBudgetMs, snapshotIntervalMs } = {}) {
+  setRunState({ paused, speed, workBudgetMs, snapshotIntervalMs, fieldSnapshotIntervalMs, wallSnapshotIntervalMs } = {}) {
     const payload = {
       paused: !!paused,
       speed: Number.isFinite(speed) ? speed : 1,
       workBudgetMs: Number.isFinite(workBudgetMs) ? workBudgetMs : 12,
       snapshotIntervalMs: Number.isFinite(snapshotIntervalMs) ? snapshotIntervalMs : 80,
+      fieldSnapshotIntervalMs: Number.isFinite(fieldSnapshotIntervalMs) ? fieldSnapshotIntervalMs : 500,
+      wallSnapshotIntervalMs: Number.isFinite(wallSnapshotIntervalMs) ? wallSnapshotIntervalMs : 240,
     };
-    const sig = `${payload.paused}|${payload.speed}|${payload.workBudgetMs}|${payload.snapshotIntervalMs}`;
+    const sig = `${payload.paused}|${payload.speed}|${payload.workBudgetMs}|${payload.snapshotIntervalMs}|${payload.fieldSnapshotIntervalMs}|${payload.wallSnapshotIntervalMs}`;
     if (sig === this._runStateSig) return;
     this._runStateSig = sig;
     this._send('runState', payload);

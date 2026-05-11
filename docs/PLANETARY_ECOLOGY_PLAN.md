@@ -296,12 +296,15 @@ Current structural target:
   profiling commands. It is a responsiveness win, not yet a raw sim-throughput
   win: dense maze browser profiling keeps frame step time near zero and render
   around 5-6 ms/frame, while worker-side tick throughput is still limited by
-  simulation cost and snapshot payload.
+  simulation cost and snapshot payload. The first layered-snapshot pass now
+  refreshes particle/cluster state frequently while sending field and wall
+  typed-array layers on slower cadences.
 
 Other scale steps:
 
 - Reduce worker snapshot pressure with diff/static layers, typed particle
-  slabs, transfer pooling, and on-demand full-detail inspection.
+  slabs, transfer pooling, and on-demand full-detail inspection. Field/wall
+  cadence splitting is shipped; particle slab/pool work remains.
 - Reach command parity for worker mode: live import/copy/duplication and richer
   genome/card detail without bloating every snapshot.
 - User-facing population/work budgets. A first `Sim budget` slider now exposes

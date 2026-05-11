@@ -111,7 +111,7 @@ node tools/bench-browser.js maze 6 4 9230 --gpu
 node tools/bench-browser.js --preset maze --seconds 8 --speed 4 --seed 0xC0FFEE --gpu
 node tools/bench-browser.js --preset maze --seconds 10 --speed 4 --seed 0xC0FFEE --gpu --gpuPairOnly
 node tools/bench-browser.js --preset maze --seconds 75 --speed 4 --seed 0xC0FFEE --profile --profileEvery 300 --zoom 0.35
-node tools/bench-browser.js --preset maze --seconds 5 --speed 4 --seed 0xC0FFEE --profile --zoom 0.35 --worker --workBudget 12
+node tools/bench-browser.js --preset maze --seconds 5 --speed 4 --seed 0xC0FFEE --profile --zoom 0.35 --worker --workBudget 12 --fieldInterval 500 --wallInterval 240
 ```
 
 The browser probe launches Chrome/Edge through the DevTools protocol and
@@ -122,7 +122,10 @@ smaller-readback GPU pair-force mode; use `--profileEvery` for long-run
 degradation windows; use `--profile` and `--zoom` to inspect sim/render/frame
 costs and low-zoom LOD behavior. Use `--worker` to benchmark the worker-owned
 simulation path; `--workBudget` controls how much wall-clock time each worker
-slice may spend advancing ticks before it posts another snapshot.
+slice may spend advancing ticks before it posts another snapshot. Worker
+bench output includes layer counts; `--fieldInterval` and `--wallInterval`
+control how often larger field/terrain buffers are refreshed relative to
+lighter particle/cluster snapshots.
 
 ## Preset population
 

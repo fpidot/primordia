@@ -88,6 +88,9 @@ function sparseWallMeta(world) {
 }
 
 export function buildWorldSnapshot(world, opts = {}) {
+  const includeFields = opts.includeFields !== false;
+  const includeWalls = opts.includeWalls !== false;
+  const includeWallMeta = opts.includeWallMeta !== false && includeWalls;
   if (typeof world.updateClusters === 'function') world.updateClusters();
   const particles = world.particles.map(p => ({
     id: p.id,
@@ -153,10 +156,18 @@ export function buildWorldSnapshot(world, opts = {}) {
     ? tracker.attractionMatrix(world)
     : { matrix: new Array(NUM_SPECIES).fill(0).map(() => new Array(NUM_SPECIES).fill(0)), counts: new Array(NUM_SPECIES).fill(0) };
 
-  const field0 = Float32Array.from(world.field[0]);
-  const field1 = Float32Array.from(world.field[1]);
-  const mutagen = Float32Array.from(world.mutagen);
-  const walls = Uint8Array.from(world.walls);
+  const transfer = [];
+  let transferBytes = 0;
+  const addTransfer = (array) => {
+    if (!array) return array;
+    transfer.push(array.buffer);
+    transferBytes += array.byteLength || 0;
+    return array;
+  };
+  const field0 = includeFields ? addTransfer(Float32Array.from(world.field[0])) : null;
+  const field1 = includeFields ? addTransfer(Float32Array.from(world.field[1])) : null;
+  const mutagen = includeFields ? addTransfer(Float32Array.from(world.mutagen)) : null;
+  const walls = includeWalls ? addTransfer(Uint8Array.from(world.walls)) : null;
 
   const snapshot = {
     kind: 'primordia.world-snapshot.v1',
@@ -164,12 +175,12 @@ export function buildWorldSnapshot(world, opts = {}) {
     maxParticles: world.maxParticles || 0,
     particles,
     clusters,
-    field0,
-    field1,
-    mutagen,
-    walls,
-    wallMeta: sparseWallMeta(world),
-    habitatRegions: (world.habitatRegions || []).map(r => ({ ...r })),
+    ...(includeFields ? { field0, field1, mutagen } : {}),
+    ...(includeWalls ? {
+      walls,
+      wallMeta: includeWallMeta ? sparseWallMeta(world) : [],
+      habitatRegions: (world.habitatRegions || []).map(r => ({ ...r })),
+    } : {}),
     _wallCount: world._wallCount || 0,
     _wallsVersion: world._wallsVersion || 0,
     _attackFlashEvents: cloneEvents(world._attackFlashEvents, 64),
@@ -211,13 +222,13 @@ export function buildWorldSnapshot(world, opts = {}) {
     },
     worker: {
       snapshotAt: Date.now(),
+      layers: {
+        fields: includeFields,
+        walls: includeWalls,
+        wallMeta: includeWallMeta,
+      },
+      transferBytes,
     },
   };
-  const transfer = [
-    field0.buffer,
-    field1.buffer,
-    mutagen.buffer,
-    walls.buffer,
-  ];
   return { snapshot, transfer };
 }

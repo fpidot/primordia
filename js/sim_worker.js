@@ -9,13 +9,25 @@ let paused = false;
 let speed = 1;
 let workBudgetMs = 12;
 let snapshotIntervalMs = 80;
+let fieldSnapshotIntervalMs = 500;
+let wallSnapshotIntervalMs = 240;
 let acc = 0;
 let lastLoopT = performance.now();
 let lastSnapshotT = 0;
+let lastFieldSnapshotT = 0;
+let lastWallSnapshotT = 0;
+let lastWallsVersion = -1;
 let forceSnapshot = true;
 let profileResetRequested = false;
 let activePreset = 'soup';
 let presetInitCount = PRESET_COUNTS.soup || 1800;
+const snapshotStats = {
+  total: 0,
+  fieldLayers: 0,
+  wallLayers: 0,
+  dynamicOnly: 0,
+  transferBytes: 0,
+};
 
 function hashSeed(value) {
   if (value == null || value === '') return null;
@@ -56,19 +68,47 @@ function applyPreset(name = activePreset, count = presetInitCount, seed = null) 
   const requested = Number.isFinite(Number(count)) ? Number(count) : defaultCount;
   presetInitCount = Math.max(0, Math.min(world.maxParticles || 5000, requested | 0));
   withSeed(seed, () => fn(world, presetInitCount));
+  lastFieldSnapshotT = 0;
+  lastWallSnapshotT = 0;
+  lastWallsVersion = -1;
   forceSnapshot = true;
 }
 
 function postSnapshot() {
-  const { snapshot, transfer } = buildWorldSnapshot(world, { resetProfile: profileResetRequested });
+  const now = performance.now();
+  const wallsVersion = world._wallsVersion || 0;
+  const includeFields = forceSnapshot || now - lastFieldSnapshotT >= fieldSnapshotIntervalMs;
+  const wallsChanged = wallsVersion !== lastWallsVersion;
+  const includeWalls = forceSnapshot || (wallsChanged && now - lastWallSnapshotT >= wallSnapshotIntervalMs);
+  const { snapshot, transfer } = buildWorldSnapshot(world, {
+    resetProfile: profileResetRequested,
+    includeFields,
+    includeWalls,
+    includeWallMeta: includeWalls,
+  });
   profileResetRequested = false;
+  if (includeFields) {
+    lastFieldSnapshotT = now;
+    snapshotStats.fieldLayers++;
+  }
+  if (includeWalls) {
+    lastWallSnapshotT = now;
+    lastWallsVersion = wallsVersion;
+    snapshotStats.wallLayers++;
+  }
+  if (!includeFields && !includeWalls) snapshotStats.dynamicOnly++;
+  snapshotStats.total++;
+  snapshotStats.transferBytes += snapshot.worker?.transferBytes || 0;
   snapshot.worker = {
     ...snapshot.worker,
     paused,
     speed,
     workBudgetMs,
     snapshotIntervalMs,
+    fieldSnapshotIntervalMs,
+    wallSnapshotIntervalMs,
     activePreset,
+    snapshotStats: { ...snapshotStats },
   };
   postMessage({ type: 'snapshot', snapshot }, transfer);
   lastSnapshotT = performance.now();
@@ -110,6 +150,8 @@ onmessage = async (evt) => {
         speed = Number.isFinite(payload.speed) ? payload.speed : speed;
         workBudgetMs = Number.isFinite(payload.workBudgetMs) ? payload.workBudgetMs : workBudgetMs;
         snapshotIntervalMs = Number.isFinite(payload.snapshotIntervalMs) ? payload.snapshotIntervalMs : snapshotIntervalMs;
+        fieldSnapshotIntervalMs = Number.isFinite(payload.fieldSnapshotIntervalMs) ? payload.fieldSnapshotIntervalMs : fieldSnapshotIntervalMs;
+        wallSnapshotIntervalMs = Number.isFinite(payload.wallSnapshotIntervalMs) ? payload.wallSnapshotIntervalMs : wallSnapshotIntervalMs;
         forceSnapshot = true;
         break;
       case 'runState':
@@ -117,6 +159,8 @@ onmessage = async (evt) => {
         speed = Number.isFinite(payload.speed) ? payload.speed : speed;
         workBudgetMs = Number.isFinite(payload.workBudgetMs) ? payload.workBudgetMs : workBudgetMs;
         snapshotIntervalMs = Number.isFinite(payload.snapshotIntervalMs) ? payload.snapshotIntervalMs : snapshotIntervalMs;
+        fieldSnapshotIntervalMs = Number.isFinite(payload.fieldSnapshotIntervalMs) ? payload.fieldSnapshotIntervalMs : fieldSnapshotIntervalMs;
+        wallSnapshotIntervalMs = Number.isFinite(payload.wallSnapshotIntervalMs) ? payload.wallSnapshotIntervalMs : wallSnapshotIntervalMs;
         break;
       case 'stepOnce':
         await world.step();
