@@ -269,6 +269,7 @@ export class WorkerWorldProxy {
       fieldSnapshotIntervalMs: opts.fieldSnapshotIntervalMs ?? 500,
       wallSnapshotIntervalMs: opts.wallSnapshotIntervalMs ?? 240,
       seed: opts.seed ?? null,
+      maxParticles: this.maxParticles,
     });
   }
 
@@ -456,6 +457,14 @@ export class WorkerWorldProxy {
     if (sig === this._runStateSig) return;
     this._runStateSig = sig;
     this._send('runState', payload);
+  }
+
+  setMaxParticles(maxParticles) {
+    const requested = Number(maxParticles);
+    if (!Number.isFinite(requested)) return this.maxParticles;
+    this.maxParticles = Math.max(1, Math.min(20000, requested | 0));
+    this._send('setMaxParticles', { maxParticles: this.maxParticles });
+    return this.maxParticles;
   }
 
   step() { this._send('stepOnce'); return this.waitForSnapshot(); }

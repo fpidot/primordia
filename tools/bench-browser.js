@@ -92,6 +92,10 @@ const preset = String(readArg('preset', positional[0] || 'maze'));
 const seconds = Math.max(1, Number(readArg('seconds', positional[1] || 8)) || 8);
 const speed = Math.max(0.25, Number(readArg('speed', positional[2] || 4)) || 4);
 const workBudget = Math.max(1, Number(readArg('workBudget', readArg('budget', 12))) || 12);
+const maxParticlesArg = readArg('maxParticles', readArg('populationCap', readArg('cap', null)));
+const maxParticles = maxParticlesArg == null
+  ? null
+  : Math.max(1, Math.floor(Number(maxParticlesArg) || 0));
 const fieldSnapshotInterval = Math.max(80, Number(readArg('fieldSnapshotInterval', readArg('fieldInterval', 500))) || 500);
 const wallSnapshotInterval = Math.max(80, Number(readArg('wallSnapshotInterval', readArg('wallInterval', 240))) || 240);
 const warmup = Math.max(0, Number(readArg('warmup', 1000)) || 0);
@@ -175,6 +179,11 @@ try {
       const { world, renderer, ui, camera, chart, PRESETS, gpu, frameProfile } = app;
       if (!PRESETS['${preset}']) throw new Error('unknown preset ${preset}');
       if (world.ready) await world.ready;
+      const maxParticles = ${maxParticles == null ? 'null' : maxParticles};
+      if (maxParticles != null) {
+        if (typeof world.setMaxParticles === 'function') await world.setMaxParticles(maxParticles);
+        else world.maxParticles = maxParticles;
+      }
       const seedValue = ${seedArg == null ? 'null' : JSON.stringify(String(seedArg))};
       if (seedValue != null) {
         let seed = Number(seedValue);
@@ -337,6 +346,7 @@ try {
         preset: '${preset}',
         seed: seedValue,
         workerMode: !!world.isWorkerProxy,
+        maxParticles: world.maxParticles || 0,
         workerSnapshots: world._snapshotCount || 0,
         workerStatus: world._workerStatus || null,
         workerLayers: world._workerLayerStats || null,

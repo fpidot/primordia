@@ -108,6 +108,15 @@ function applyPreset(name = activePreset, count = presetInitCount, seed = null) 
   forceSnapshot = true;
 }
 
+function setMaxParticles(maxParticles) {
+  const requested = Number(maxParticles);
+  if (!Number.isFinite(requested)) return;
+  if (typeof world.setMaxParticles === 'function') world.setMaxParticles(requested);
+  else world.maxParticles = Math.max(1, Math.min(20000, requested | 0));
+  presetInitCount = Math.min(presetInitCount, world.maxParticles || presetInitCount);
+  forceSnapshot = true;
+}
+
 function postSnapshot() {
   const now = performance.now();
   const wallsVersion = world._wallsVersion || 0;
@@ -197,6 +206,9 @@ onmessage = async (evt) => {
         snapshotIntervalMs = Number.isFinite(payload.snapshotIntervalMs) ? payload.snapshotIntervalMs : snapshotIntervalMs;
         fieldSnapshotIntervalMs = Number.isFinite(payload.fieldSnapshotIntervalMs) ? payload.fieldSnapshotIntervalMs : fieldSnapshotIntervalMs;
         wallSnapshotIntervalMs = Number.isFinite(payload.wallSnapshotIntervalMs) ? payload.wallSnapshotIntervalMs : wallSnapshotIntervalMs;
+        break;
+      case 'setMaxParticles':
+        setMaxParticles(payload.maxParticles);
         break;
       case 'stepOnce':
         await world.step();

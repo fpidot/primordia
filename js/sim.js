@@ -501,8 +501,7 @@ export class World {
     this._solidWallVersion = -1;
     this._solidWallIndices = [];
     this._solidHashVersion = -1;
-    this._solidHash = new Uint16Array(HW * HH);
-    this._solidHashPrefix = new Uint32Array((HW + 1) * (HH + 1));
+    this._solidHashPrefix = new Uint32Array((GW + 1) * (GH + 1));
 
     // Bonded clusters — recomputed periodically via union-find on the bond
     // graph. Clusters of size ≥ MIN_NAMED_CLUSTER get a name + flag label.
@@ -709,6 +708,21 @@ export class World {
   _cellBirthLimit() {
     return Math.max(1, this.maxParticles - this._clusterBudReserve());
   }
+  setMaxParticles(maxParticles) {
+    const requested = Number(maxParticles);
+    if (!Number.isFinite(requested)) return this.maxParticles;
+    const cap = clamp(requested | 0, 1, 20000);
+    this.maxParticles = cap;
+    const needed = Math.max(cap, this.particles.length + this.births.length);
+    if (this.cellNext.length < needed) this.cellNext = new Int32Array(needed);
+    if (this._extrasStaging && this._extrasStaging.length < cap * EXTRAS_STRIDE) {
+      this._extrasStaging = null;
+    }
+    if (this._gpu && this._gpu.maxParticles && cap > this._gpu.maxParticles) {
+      this.setGPUEnabled(false);
+    }
+    return this.maxParticles;
+  }
   _solidWalls() {
     if (this._solidWallVersion === this._wallsVersion) return this._solidWallIndices;
     const out = this._solidWallIndices;
@@ -725,29 +739,18 @@ export class World {
     if (this._profileCounters) {
       this._profileCounters.solidHashBuilds = (this._profileCounters.solidHashBuilds || 0) + 1;
     }
-    const h = this._solidHash;
     const prefix = this._solidHashPrefix;
-    h.fill(0);
     prefix.fill(0);
     const walls = this.walls;
+    const pw = GW + 1;
     for (let gy = 0; gy < GH; gy++) {
-      const hy = ((gy * CELL) / HASH_CELL) | 0;
-      const row = gy * GW;
-      for (let gx = 0; gx < GW; gx++) {
-        if (walls[row + gx] !== WALL_SOLID) continue;
-        const hx = ((gx * CELL) / HASH_CELL) | 0;
-        h[hy * HW + hx]++;
-      }
-    }
-    const pw = HW + 1;
-    for (let hy = 0; hy < HH; hy++) {
       let rowSum = 0;
-      const srcRow = hy * HW;
-      const dstRow = (hy + 1) * pw;
-      const prevRow = hy * pw;
-      for (let hx = 0; hx < HW; hx++) {
-        rowSum += h[srcRow + hx];
-        prefix[dstRow + hx + 1] = prefix[prevRow + hx + 1] + rowSum;
+      const row = gy * GW;
+      const dstRow = (gy + 1) * pw;
+      const prevRow = gy * pw;
+      for (let gx = 0; gx < GW; gx++) {
+        if (walls[row + gx] === WALL_SOLID) rowSum++;
+        prefix[dstRow + gx + 1] = prefix[prevRow + gx + 1] + rowSum;
       }
     }
     this._solidHashVersion = version;
@@ -760,15 +763,11 @@ export class World {
     const maxGX = gx0 > gx1 ? gx0 : gx1;
     const minGY = gy0 < gy1 ? gy0 : gy1;
     const maxGY = gy0 > gy1 ? gy0 : gy1;
-    const hx0 = Math.max(0, Math.min(HW - 1, ((minGX * CELL) / HASH_CELL) | 0));
-    const hx1 = Math.max(0, Math.min(HW - 1, ((maxGX * CELL) / HASH_CELL) | 0));
-    const hy0 = Math.max(0, Math.min(HH - 1, ((minGY * CELL) / HASH_CELL) | 0));
-    const hy1 = Math.max(0, Math.min(HH - 1, ((maxGY * CELL) / HASH_CELL) | 0));
-    const pw = HW + 1;
-    const x0 = hx0;
-    const y0 = hy0;
-    const x1 = hx1 + 1;
-    const y1 = hy1 + 1;
+    const pw = GW + 1;
+    const x0 = Math.max(0, Math.min(GW - 1, minGX));
+    const x1 = Math.max(0, Math.min(GW - 1, maxGX)) + 1;
+    const y0 = Math.max(0, Math.min(GH - 1, minGY));
+    const y1 = Math.max(0, Math.min(GH - 1, maxGY)) + 1;
     const p = this._solidHashPrefix;
     return (p[y1 * pw + x1] - p[y0 * pw + x1] - p[y1 * pw + x0] + p[y0 * pw + x0]) > 0;
   }
@@ -3489,6 +3488,7 @@ export class World {
     return {
       version: 2,
       tick: this.tick,
+      maxParticles: this.maxParticles,
       walls: Array.from(this.walls),
       habitatRegions: this.habitatRegions || [],
       field0: Array.from(this.field[0]),
@@ -3606,6 +3606,7 @@ export class World {
   fromJSON(data) {
     this.reset();
     this.tick = data.tick || 0;
+    if (data.maxParticles) this.setMaxParticles(data.maxParticles | 0);
     if (data.walls) {
       this.walls.set(data.walls);
       let wc = 0;
@@ -3713,6 +3714,7 @@ export class World {
       // If no clades data was provided (old save), register as fresh clade
       if (!data.clades) this.clades.registerNewParticle(p, null, this.tick);
     }
+    this.setMaxParticles(this.maxParticles);
   }
 }
 

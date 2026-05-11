@@ -59,6 +59,7 @@ export class UI {
     // Watchdog state
     this.watchdog = { enabled: false, interval: 2000, threshold: 0.25, lastFired: 0 };
     this.activePreset = 'soup';
+    this.populationCap = this.world.maxParticles || 5000;
     this.presetInitCount = PRESET_COUNTS.soup || 1800;
 
     this.bindPanelTabs();
@@ -217,6 +218,32 @@ export class UI {
       });
     }
 
+    const popCapSlider = document.getElementById('ui-pop-cap');
+    const popCapVal = document.getElementById('ui-pop-cap-val');
+    const presetPop = document.getElementById('ui-preset-pop');
+    const presetPopVal = document.getElementById('ui-preset-pop-val');
+    const syncPresetPopMax = () => {
+      if (!presetPop || !presetPopVal) return;
+      const cap = this.world.maxParticles || this.populationCap || 5000;
+      presetPop.max = String(cap);
+      if (this.presetInitCount > cap) this.presetInitCount = cap;
+      presetPop.value = String(Math.min(cap, this.presetInitCount));
+      presetPopVal.textContent = presetPop.value;
+    };
+    if (popCapSlider && popCapVal) {
+      const initialCap = this.world.maxParticles || this.populationCap || 5000;
+      popCapSlider.value = String(initialCap);
+      popCapVal.textContent = String(initialCap);
+      popCapSlider.addEventListener('input', () => {
+        const cap = Math.max(1, parseInt(popCapSlider.value, 10) || initialCap);
+        this.populationCap = cap;
+        if (this.world.setMaxParticles) this.world.setMaxParticles(cap);
+        else this.world.maxParticles = cap;
+        popCapVal.textContent = String(cap);
+        syncPresetPopMax();
+      });
+    }
+
     const sizeSlider = document.getElementById('ui-brush-size');
     const sizeVal = document.getElementById('ui-brush-size-val');
     sizeSlider.addEventListener('input', () => {
@@ -311,12 +338,8 @@ export class UI {
       this.world.setGPUEnabled(checked);
     });
 
-    const presetPop = document.getElementById('ui-preset-pop');
-    const presetPopVal = document.getElementById('ui-preset-pop-val');
     if (presetPop && presetPopVal) {
-      presetPop.max = String(this.world.maxParticles || 5000);
-      presetPop.value = String(Math.min(this.world.maxParticles || 5000, this.presetInitCount));
-      presetPopVal.textContent = presetPop.value;
+      syncPresetPopMax();
       presetPop.addEventListener('input', () => {
         this.presetInitCount = Math.max(0, parseInt(presetPop.value, 10) || 0);
         presetPopVal.textContent = String(this.presetInitCount);
@@ -899,6 +922,7 @@ export class UI {
       </div>`;
     }
     html += `<div class="row-stat"><span></span><span>total</span><span class="num">${total}</span></div>`;
+    html += `<div class="row-stat"><span></span><span>cap</span><span class="num">${this.world.maxParticles || this.populationCap || 0}</span></div>`;
     html += `<div class="row-stat"><span></span><span>born</span><span class="num">${this.world.totalBorn}</span></div>`;
     html += `<div class="row-stat"><span></span><span>died</span><span class="num">${this.world.totalDied}</span></div>`;
 

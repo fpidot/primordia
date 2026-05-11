@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Recycle worker particle slab buffers`
+  current `main` HEAD after this pass: `Expose population cap and refine visibility prefix`
 
 Recent useful commits:
 
-- current `main` HEAD - Recycle worker particle slab buffers
+- current `main` HEAD - Expose population cap and refine visibility prefix
+- `ce31468` - Recycle worker particle slab buffers
 - `018f454` - Use typed worker particle slabs
 - `9a32014` - Layer worker snapshot payloads
 - `0bd782c` - Add detour curriculum ladder
@@ -296,9 +297,17 @@ CPU:
 - CPU bench now supports `--profileEvery`, which records rolling phase windows,
   population/cluster/wall metrics, and line-of-sight counters. The current CPU
   path uses 48px radius-aware neighbor hash scans plus a prefix-sum solid-wall
-  visibility grid before exact line walks. A same-tick particle-pair
-  line-of-sight cache was tested and removed because Map overhead outweighed
-  saved queries in the seeded maze probe.
+  visibility grid before exact line walks. The latest pass made that prefix
+  grid operate at terrain-cell precision instead of particle-hash-cell
+  precision, reducing false positive exact line walks. A same-tick
+  particle-pair line-of-sight cache was tested and removed because Map
+  overhead outweighed saved queries in the seeded browser maze probe.
+- Population cap is now a first-class app, worker, save/load, and benchmark
+  control. The Run panel defaults to 1800 particles, preserving the Fresh Soup
+  start size while preventing the default app from silently growing toward the
+  old 5000 cap. The UI slider can still raise the cap to 5000 for stress
+  testing. Browser bench accepts `--maxParticles`, `--cap`, or
+  `--populationCap`.
 - Vitals, CPU bench, and profile windows now expose movement telemetry:
   `meanSpeed`, `meanSpeedCapFrac`, `meanMotorEffort`, and `highSpeedFrac`.
   This was added after user testing suggested particles often appeared to run
@@ -397,11 +406,11 @@ Performance reality:
   compatibility mode it adjusts the per-frame sim-step budget from the previous
   hard-coded 12 ms default; in worker mode the same setting is sent to the
   worker slice budget.
-- Current worker command coverage: run/pause/speed, one-step, preset, brushes,
-  clear field, mutagen storm, exterminate species, bond barrier, profiling,
-  save/export, load, and sterile terrain import/export. Live specimen/clade/
-  cluster duplicate/import spawning is intentionally still main-thread only
-  until worker command parity is added.
+- Current worker command coverage: run/pause/speed/work budget, population cap,
+  one-step, preset, brushes, clear field, mutagen storm, exterminate species,
+  bond barrier, profiling, save/export, load, and sterile terrain import/export.
+  Live specimen/clade/cluster duplicate/import spawning is intentionally still
+  main-thread only until worker command parity is added.
 - Local worker measurements from this pass:
   - worker soup, 2s, speed 1: about 49.8 FPS, 27 snapshots, no page errors.
   - compatibility soup, 2s, same shape: about 23.9 FPS/ticks/sec, no page
@@ -437,6 +446,26 @@ Performance reality:
     snapshots, 29 dynamic-only snapshots, 136 particle buffers reused, 88
     allocated while population grew through larger slab capacities, about
     15.8 ticks/sec, frame `step` about 0.011 ms, no page errors.
+- Local population-cap / terrain-prefix measurements from this pass:
+  - pre-change long worker reference, dense low-zoom maze, seed `0xC0FFEE`,
+    speed 4/workBudget 12/max 5000, 75s: about 50 FPS but only 18
+    ticks/sec; population reached ~2748 and the final rolling sim window spent
+    about 71 ms/tick in agents plus ~4.9 ms/tick in fields.
+  - with `--maxParticles 1500` before the terrain-prefix refinement, the same
+    75s shape held 50 FPS and improved to 23.5 ticks/sec, population ~1447,
+    but late agent windows still climbed into the low/mid 30 ms/tick range.
+  - a same-tick line-of-sight Map cache reduced exact line walks, but the 75s
+    browser run slowed to 21.3 ticks/sec and late agents rose above 40
+    ms/tick, so the cache was removed.
+  - after the terrain-cell prefix refinement, `--maxParticles 1500`, same 75s
+    shape: 50 FPS, 1824 ticks, 24.3 ticks/sec, population ~1442, late rolling
+    agent window ~28.7 ms/tick, render ~3.5 ms/frame, no page errors.
+  - new default app cap 1800, same shape for 60s without `--maxParticles`:
+    50 FPS, 1244 ticks, 20.7 ticks/sec, population ~1731, no page errors.
+  - high-cap 5000 still slows once population passes ~2500; a 60s run reached
+    18.7 ticks/sec, population ~2515, and late agents ~58 ms/tick. The
+    remaining bottleneck is therefore raw sim/agent/visibility scaling, not
+    rendering or worker snapshot transfer.
 - Caveat: this is a responsiveness win, not yet a raw sim-throughput win.
   Dense worker tick rate is still constrained by worker CPU cost plus snapshot
   clone/transfer pressure, and the dense maze worker smoke still showed one
@@ -446,12 +475,17 @@ Next performance target:
 
 - Priority order after the worker preview:
   1. Continue shrinking snapshot pressure: field/wall cadence splitting, typed
-     particle slabs, and particle slab buffer recycling are shipped; next
-     request full genome/card detail on demand and run longer worker soaks.
+     particle slabs, particle slab buffer recycling, and user-facing population
+     caps are shipped; next request full genome/card detail on demand and run
+     longer worker soaks.
   2. Restore worker command parity for live imports, duplication, and cluster
      builder actions.
-  3. Keep population/work budgets user-facing for dense long soaks.
-  4. Further GPU work only after a targeted plan reduces map-wait/cooldown and
+  3. Attack the remaining worker sim bottleneck directly: agent/neighbor/
+     visibility scaling after population stabilizes, ideally through lower-
+     overhead pair batching, better visibility rejection, or a GPU path that
+     avoids the current readback/cooldown trap.
+  4. Keep population/work budgets user-facing for dense long soaks.
+  5. Further GPU work only after a targeted plan reduces map-wait/cooldown and
      readback pressure.
 - Continue pair-only GPU benchmarking only if a targeted change addresses
   map-wait/cooldown behavior; the first smaller-readback pass is not enough by
@@ -1226,6 +1260,24 @@ Latest verification in the cluster-budding pass:
   - `npm test` passed all 22 test files after the particle buffer recycling
     pass.
   - `git diff --check` passed with only the repo's usual CRLF warnings.
+- Population-cap / visibility-prefix verification:
+  - `node --check js\sim.js`, `node --check js\ui.js`,
+    `node --check js\main.js`, `node --check js\worker_runtime.js`,
+    `node --check js\sim_worker.js`, and
+    `node --check tools\bench-browser.js` passed.
+  - `node tests\run-all.js population-cap.test.js worker-snapshot.test.js signal-transmission.test.js`
+    passed.
+  - `node tests\run-all.js signal-transmission.test.js terrain-sensors.test.js population-cap.test.js`
+    passed after the terrain-prefix change.
+  - `npm test` passed all 23 test files after the full population-cap /
+    terrain-prefix pass.
+  - `git diff --check` passed with only the repo's usual CRLF warnings.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset maze --seconds 75 --speed 4 --seed 0xC0FFEE --profile --profileEvery 300 --zoom 0.35 --port 9264 --worker --workBudget 12 --maxParticles 1500`
+    passed with no page errors: 50 FPS, 1824 ticks, 24.3 ticks/sec,
+    population ~1442.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset maze --seconds 60 --speed 4 --seed 0xC0FFEE --profile --profileEvery 300 --zoom 0.35 --port 9264 --worker --workBudget 12`
+    passed with the new default 1800 cap: 50 FPS, 1244 ticks, 20.7
+    ticks/sec, population ~1731, no page errors.
 - Detour curriculum verification:
   - `node --check tools\detour-assay.js`, `node --check tools\detour-suite.js`,
     and `node --check tests\detour-navigation.test.js` passed.
@@ -1319,9 +1371,10 @@ git log --oneline -5
 - visuals: tune the small red blood-drop attack flash if it reads too loud or
   too subtle during real runs
 - performance: keep profiling Planet and Maze long runs; after field/wall
-  layering, typed particle slabs, and particle slab buffer recycling, the next
-  structural target is on-demand full-detail inspection for worker mode plus
-  longer soaks to see whether allocation counters stabilize
+  layering, typed particle slabs, particle slab buffer recycling, population
+  cap control, and terrain-cell visibility prefixing, the next usability target
+  is on-demand full-detail inspection for worker mode; the next raw-speed target
+  is agent/neighbor/visibility scaling after population stabilizes
 - agency: run repeated post-topology `--replay both` evidence with the new
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use

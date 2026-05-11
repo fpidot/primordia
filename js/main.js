@@ -12,10 +12,16 @@ import { GPUPairForce } from './gpu_pairforce.js';
 import { audioHum } from './audio.js';
 import { WorkerWorldProxy, workerModeFromLocation } from './worker_runtime.js';
 
+const DEFAULT_APP_MAX_PARTICLES = 1800;
 const workerMode = workerModeFromLocation();
 const world = workerMode
-  ? new WorkerWorldProxy({ preset: 'soup', count: 1800, paused: false })
-  : new World({ combatMode: 'event' });
+  ? new WorkerWorldProxy({
+      preset: 'soup',
+      count: 1800,
+      paused: false,
+      maxParticles: DEFAULT_APP_MAX_PARTICLES,
+    })
+  : new World({ combatMode: 'event', maxParticles: DEFAULT_APP_MAX_PARTICLES });
 const bgCanvas = document.getElementById('canvas-bg');
 const fgCanvas = document.getElementById('canvas-fg');
 const camera = new Camera();

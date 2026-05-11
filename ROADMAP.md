@@ -390,10 +390,28 @@ heavier Planet starts are still a deliberate stress test.
    the proxy rehydrates particle slabs, it returns those buffers to the worker
    for reuse. A dense maze worker smoke reused 136 slab buffers, allocated 88
    during population growth, reached about 15.8 ticks/sec, and kept render
-   thread `step` around 0.011 ms with no page errors. Next performance work
-   should focus on on-demand full-detail inspection and longer worker soaks;
-   deeper buffer pooling can follow if allocation counters remain high after
-   populations stabilize.
+   thread `step` around 0.011 ms with no page errors. Latest population-budget
+   update: the Run panel now exposes a `Population cap` slider; the app
+   defaults to 1800 live particles, preserves the old Fresh Soup start size,
+   and can still be raised to 5000 for stress runs. `World`, worker mode,
+   save/load, and `tools/bench-browser.js` all now understand explicit
+   max-particle changes (`--maxParticles`, `--cap`, or `--populationCap`).
+   Solid line-of-sight rejection now uses a grid-cell prefix table instead of
+   the older particle-hash-cell prefix, reducing false positive exact line
+   walks without adding Map overhead. A tested same-tick line-of-sight Map
+   cache was rejected because it reduced walks but made the measured browser
+   run slower. Current measurements on this machine: default worker low-zoom
+   maze, seed `0xC0FFEE`, speed 4/workBudget 12, 60s: 50 FPS, 1244 ticks,
+   20.7 ticks/sec, population ~1731, no page errors. The same shape with
+   `--maxParticles 1500` for 75s reached 1824 ticks, 24.3 ticks/sec,
+   population ~1442, and still held 50 FPS; late render stayed under
+   4 ms/frame while the worker sim remained the bottleneck. A high-cap 5000
+   60s run still slowed once population passed ~2500, so the raw remaining
+   bottleneck is agent/neighbor/visibility work, not drawing or snapshots.
+   Next performance work should focus on on-demand full-detail inspection and
+   worker command parity for usability, then a deeper sim-side attack on
+   pair/visibility batching or GPU compute before increasing default caps or
+   world size again.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful
