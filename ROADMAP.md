@@ -53,18 +53,17 @@ quarries, decay pockets, sparse global food, and mutagen cracks. The goal is
 not a prettier maze; it is persistent niche pressure that can make navigation,
 construction, predation defense, communication, cluster reproduction, and brain
 capacity matter at the same time. Current validation now includes regional
-occupancy, movement, clade-turnover, survival/death/escape telemetry, and
-behavior deltas for feeding, wall work, predation, event combat, plus a
-repeatable detour-navigation assay. Next validation target: longer
-soup/maze/planet contrasts and evolved-cohort detour comparisons. First short
-validation on seed `0xC1A0C0` created 4733 solid, 2789 glass, 6749 mud, 3085
-rich-food, 2460 decay, and 789 mutagen cells. Planet's first-click default is
-720 particles, while the population slider can still push it higher. A 600-tick
-cap-900 event-combat CPU probe stayed viable at 865 particles, produced 11
-clusters, 673 digs, 500 deposits, 59 wall carriers, 506 attacks, and 290
-somatic cluster-cell births, but no daughter buds yet. A two-second browser
-smoke at the 720-body default reached 19.5 FPS with no page errors on this
-machine; heavier Planet starts are still a deliberate stress test.
+occupancy, movement, clade-turnover, survival/death/escape telemetry, behavior
+deltas for feeding, wall work, predation, event combat, plus a repeatable
+detour-navigation assay and multi-seed detour suite. First short validation on
+seed `0xC1A0C0` created 4733 solid, 2789 glass, 6749 mud, 3085 rich-food, 2460
+decay, and 789 mutagen cells. Planet's first-click default is 720 particles,
+while the population slider can still push it higher. A 600-tick cap-900
+event-combat CPU probe stayed viable at 865 particles, produced 11 clusters,
+673 digs, 500 deposits, 59 wall carriers, 506 attacks, and 290 somatic
+cluster-cell births, but no daughter buds yet. A two-second browser smoke at
+the 720-body default reached 19.5 FPS with no page errors on this machine;
+heavier Planet starts are still a deliberate stress test.
 
 0. **Keep the experience inspectable and legible.**
    Improve cluster and wall rendering in zoom-aware vector passes: organic
@@ -114,14 +113,32 @@ machine; heavier Planet starts are still a deliberate stress test.
    motion, giving evolution generic feedback for glass, solid, world-edge,
    crowding, mud, and other impediments. Current validation tool:
    `tools/detour-assay.js` now creates a repeatable glass/solid/mud barrier
-   arena with two gaps and a food goal behind the obstacle, can optionally soak
-   the source population first via `--evolveTicks`, can choose
-   `mixed|elite|random|all` cohorts, and reports crossing, goal approach,
-   survival, field/meat energy gains, motor slip, and stuck samples. Short
-   founder/evolved smokes run cleanly but do not yet show reliable crossing;
-   the next question is whether longer evolved cohorts, Planet niches, intact
-   cluster replay, or stronger target/detour pressure produce "go around, then
-   turn back toward the goal" behavior.
+   arena with two gaps and a food/scent goal behind the obstacle, can soak the
+   source population via `--evolveTicks` or directly inside the challenge world
+   with `--evolveInArena`, can choose `mixed|elite|random|all` particle
+   cohorts, and can replay `particles`, `clusters-intact`, or
+   `clusters-disassembled`. `tools/detour-suite.js` runs those comparisons
+   across preset/seed matrices. Reported metrics now include crossing, goal
+   reach, gap approach, closest goal/gap distance, survival, field/meat energy
+   gains, motor slip, stuck samples, cluster bond retention, and movement
+   telemetry. Latest read: normal evolved soup/maze/planet cohorts produced no
+   crossings in the harder arena. After widening the goal scent and adding an
+   easy curriculum, crossings became possible but still weak: founder/evolved
+   particle cohorts reached roughly 0.7-1.8% crossing in short samples, one
+   soup disassembled-cluster control reached about 5.3%, intact clusters often
+   survived better but did not yet solve the detour, and no cohort reached the
+   goal. Arena evolution improved survival and sometimes calmed speed, but did
+   not yet produce reliable gap discovery. Current conclusion: the substrate
+   can be crossed, but selection/planning pressure is still insufficient.
+   Next structural experiments should test a direct gap-adjacent curriculum,
+   stronger reward for crossing/goal reaching, longer-range target direction
+   or food-gradient reach, and movement-economy tuning without scripting a
+   pathfinder.
+   Latest glass/edge pinning update: solid, glass, and world-edge collisions
+   now add generic hard-contact feedback plus a tiny tangent/escape nudge so
+   agents pressing into a barrier can slide away and receive the same bodily
+   "my thrust failed" signal for glass, solid, edge, crowding, or future
+   physics impediments.
    Transmission rule is now explicit for direct particle/signal perception:
    solid blocks line-of-sight interactions, while glass and mud transmit them.
    GPU parity is maintained by packing a solid-wall visibility grid into the
@@ -333,7 +350,10 @@ machine; heavier Planet starts are still a deliberate stress test.
    worker/snapshot architecture first, explicit user-facing population/work
    budgets second, broader GPU compute third. Faster hardware helps, but the
    durable fix is to decouple render responsiveness from sim ticks and make the
-   sim budget visible/tunable.
+   sim budget visible/tunable. Current UI now exposes a `Sim budget` slider for
+   the per-frame sim-step time budget, and vitals/bench telemetry reports mean
+   speed, velocity-cap fraction, motor effort, and high-speed fraction so
+   movement economics can be measured during performance and agency tests.
 5. **Improve listenability.**
    Keep the organism-driven music, but reduce harsh density, soften hostile
    events, add light dynamics, and make audio state follow meaningful

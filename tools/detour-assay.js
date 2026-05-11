@@ -8,10 +8,12 @@
 import { pathToFileURL } from 'node:url';
 import { mulberry32 } from '../tests/harness.js';
 import {
-  World, W, H, GW, GH, CELL,
+  World, W, H, GW, GH, CELL, MAX_V,
   WALL_MEMBRANE, WALL_POROUS, WALL_SOLID,
 } from '../js/sim.js';
+import { cloneGenome } from '../js/genome.js';
 import { PRESETS, PRESET_COUNTS } from '../js/presets.js';
+import { sampleClusterCohort } from './defense-soak.js';
 
 const RAW_ARGS = process.argv.slice(2);
 const USE_POSITIONAL_ARGS = RAW_ARGS.length > 0 && RAW_ARGS.every(arg => !arg.startsWith('--'));
@@ -35,6 +37,13 @@ function readArgOrPos(name, fallback, position = -1) {
 
 function hasFlag(name) {
   return process.argv.includes(`--${name}`);
+}
+
+function readNumberArg(name, fallback, position = -1) {
+  const raw = readArgOrPos(name, '', position);
+  if (raw === '') return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function round(v, n = 3) {
@@ -66,12 +75,41 @@ function addFoodPatch(world, x, y, radiusCells, amount) {
   }
 }
 
+function addGoalScent(world, x, y, radiusCells, amount) {
+  const cx = clamp(Math.floor(x / CELL), 0, GW - 1);
+  const cy = clamp(Math.floor(y / CELL), 0, GH - 1);
+  const r = Math.max(1, radiusCells | 0);
+  const r2 = r * r;
+  let cells = 0;
+  for (let gy = Math.max(0, cy - r); gy <= Math.min(GH - 1, cy + r); gy++) {
+    for (let gx = Math.max(0, cx - r); gx <= Math.min(GW - 1, cx + r); gx++) {
+      const dx = gx - cx;
+      const dy = gy - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > r2) continue;
+      const idx = gy * GW + gx;
+      if (world.walls[idx] === WALL_SOLID) continue;
+      const fall = 1 - Math.sqrt(d2) / r;
+      const add = amount * fall * fall;
+      if (add <= 0) continue;
+      world.field[0][idx] = Math.max(world.field[0][idx], add);
+      cells++;
+    }
+  }
+  return cells;
+}
+
 export function buildDetourArena(world, opts = {}) {
   const barrier = wallTypeForName(opts.barrier || 'glass');
+  const difficulty = String(opts.difficulty || 'medium').toLowerCase();
+  const diff = difficulty === 'easy' ? 'easy' : difficulty === 'hard' ? 'hard' : 'medium';
   const barrierGx = clamp(Number(opts.barrierGx) || Math.floor(GW * 0.52), 8, GW - 9);
-  const gapCells = Math.max(2, Number(opts.gapCells) || 8);
-  const gapA = clamp(Number(opts.gapA) || Math.floor(GH * 0.34), 8, GH - 9);
-  const gapB = clamp(Number(opts.gapB) || Math.floor(GH * 0.66), 8, GH - 9);
+  const defaultGapCells = diff === 'easy' ? 16 : diff === 'hard' ? 8 : 12;
+  const defaultGapA = diff === 'easy' ? 0.45 : diff === 'hard' ? 0.34 : 0.40;
+  const defaultGapB = diff === 'easy' ? 0.55 : diff === 'hard' ? 0.66 : 0.60;
+  const gapCells = Math.max(2, Number(opts.gapCells) || defaultGapCells);
+  const gapA = clamp(Number(opts.gapA) || Math.floor(GH * defaultGapA), 8, GH - 9);
+  const gapB = clamp(Number(opts.gapB) || Math.floor(GH * defaultGapB), 8, GH - 9);
   const thickness = Math.max(1, Number(opts.thickness) || 2);
   const yMin = 8;
   const yMax = GH - 9;
@@ -105,6 +143,11 @@ export function buildDetourArena(world, opts = {}) {
 
   const goalX = Number(opts.goalX) || W * 0.76;
   const goalY = Number(opts.goalY) || H * 0.5;
+  const scentAmount = Number(opts.scentAmount) || 2.2;
+  const scentRadiusCells = Math.max(12, Number(opts.scentRadiusCells) || 220);
+  const scentCells = opts.scent === false
+    ? 0
+    : addGoalScent(world, goalX, goalY, scentRadiusCells, scentAmount);
   addFoodPatch(world, goalX, goalY, Math.max(3, Number(opts.foodRadiusCells) || 12),
     Number(opts.foodAmount) || 5.5);
   addFoodPatch(world, W * 0.27, H * 0.5, Math.max(2, Number(opts.startFoodRadiusCells) || 5),
@@ -137,6 +180,7 @@ export function buildDetourArena(world, opts = {}) {
 
   return {
     barrier: opts.barrier || 'glass',
+    difficulty: diff,
     barrierGx,
     barrierX: (barrierGx + 0.5) * CELL,
     gapCells,
@@ -144,6 +188,9 @@ export function buildDetourArena(world, opts = {}) {
     gapB,
     barrierCells,
     openGapCells,
+    scentCells,
+    scentRadiusCells: opts.scent === false ? 0 : scentRadiusCells,
+    scentAmount: opts.scent === false ? 0 : scentAmount,
     goalX,
     goalY,
   };
@@ -190,20 +237,157 @@ function selectCohort(world, startCount, mode = 'mixed') {
   return picked;
 }
 
+function frozenCloneGenome(sample, freezeReproduction = true) {
+  const g = cloneGenome(sample.genome);
+  if (freezeReproduction) g.repro_thresh = 9999;
+  return g;
+}
+
+function cohortEnergy(sample, opts = {}) {
+  return Number.isFinite(opts.cohortEnergy)
+    ? opts.cohortEnergy
+    : Math.max(3, Math.min(10, sample.energy || 4));
+}
+
+function startPose(i, n, arena, opts = {}) {
+  const cx = Number(opts.startX) || W * 0.28;
+  const cy = Number(opts.startY) || H * 0.5;
+  const a = (i / Math.max(1, n)) * Math.PI * 2;
+  const r = 8 + (i % 9) * 3;
+  return {
+    x: clamp(cx + Math.cos(a) * r, 2, arena.barrierX - 14),
+    y: clamp(cy + Math.sin(a) * r, 2, H - 2),
+  };
+}
+
 function focusCohortNearStart(world, cohort, arena, opts = {}) {
   const ps = cohort && cohort.length ? cohort : world.particles.filter(p => !p.dead);
   const targetN = ps.length;
-  const cx = Number(opts.startX) || W * 0.28;
-  const cy = Number(opts.startY) || H * 0.5;
   for (let i = 0; i < targetN; i++) {
     const p = ps[i];
-    const a = (i / Math.max(1, targetN)) * Math.PI * 2;
-    const r = 8 + (i % 9) * 3;
-    p.x = clamp(cx + Math.cos(a) * r, 2, arena.barrierX - 14);
-    p.y = clamp(cy + Math.sin(a) * r, 2, H - 2);
+    const pose = startPose(i, targetN, arena, opts);
+    p.x = pose.x;
+    p.y = pose.y;
     p.vx = 0;
     p.vy = 0;
   }
+}
+
+function sampleFromParticle(p) {
+  return {
+    sourceId: p.id,
+    species: p.species,
+    energy: p.energy || 0,
+    age: p.age || 0,
+    genome: p.genome,
+    slots: p.genome?.brain?.enabledCount?.() || 0,
+  };
+}
+
+function placeParticleSamples(world, samples, arena, opts = {}) {
+  const cohortParticles = [];
+  for (let i = 0; i < samples.length; i++) {
+    const sample = samples[i];
+    const pose = startPose(i, samples.length, arena, opts);
+    const p = world.addParticle(
+      pose.x,
+      pose.y,
+      frozenCloneGenome(sample, opts.freezeReproduction !== false),
+      cohortEnergy(sample, opts),
+    );
+    if (!p) continue;
+    p.vx = 0;
+    p.vy = 0;
+    p.age = sample.age || 0;
+    cohortParticles.push(p);
+  }
+  return { cohortParticles, clusterGroups: [] };
+}
+
+function meanDispersion(particles) {
+  const live = particles.filter(p => p && !p.dead);
+  if (live.length <= 1) return 0;
+  let cx = 0;
+  let cy = 0;
+  for (const p of live) { cx += p.x; cy += p.y; }
+  cx /= live.length;
+  cy /= live.length;
+  let sum = 0;
+  for (const p of live) sum += Math.hypot(p.x - cx, p.y - cy);
+  return sum / live.length;
+}
+
+function placeClusterSamples(world, cohort, arena, opts = {}) {
+  const intact = opts.replay === 'clusters-intact';
+  const cohortParticles = [];
+  const clusterGroups = [];
+  const clusters = cohort?.clusters || [];
+  const cx = Number(opts.startX) || W * 0.28;
+  const cy = Number(opts.startY) || H * 0.5;
+  const ring = Math.max(10, Math.min(70, Math.sqrt(Math.max(1, cohort?.particleCount || 1)) * 5));
+
+  for (let ci = 0; ci < clusters.length; ci++) {
+    const source = clusters[ci];
+    const a = (ci / Math.max(1, clusters.length)) * Math.PI * 2;
+    const baseX = clamp(cx + Math.cos(a) * ring, 16, arena.barrierX - 16);
+    const baseY = clamp(cy + Math.sin(a) * ring, 16, H - 16);
+    const scale = Math.min(1, 54 / Math.max(1, source.radius || source.spread || 1));
+    const local = new Map();
+    const group = {
+      sourceId: source.sourceId,
+      name: source.name,
+      organismGeneration: source.organismGeneration,
+      startCount: 0,
+      startBondCount: intact ? (source.bonds || []).length : 0,
+      members: [],
+      bondPairs: [],
+      initialDispersion: 1,
+    };
+
+    for (const member of source.members || []) {
+      const p = world.addParticle(
+        clamp(baseX + member.dx * scale, 1, arena.barrierX - 14),
+        clamp(baseY + member.dy * scale, 1, H - 1),
+        frozenCloneGenome(member, opts.freezeReproduction !== false),
+        cohortEnergy(member, opts),
+      );
+      if (!p) continue;
+      p.vx = 0;
+      p.vy = 0;
+      p.age = member.age || 0;
+      p.organismRootId = source.organismRootId || source.sourceId || p.id;
+      p.organismGeneration = Math.max(1, source.organismGeneration || 1);
+      local.set(member.localId, p);
+      cohortParticles.push(p);
+      group.members.push(p);
+    }
+
+    if (intact) {
+      for (const [aId, bId] of source.bonds || []) {
+        const pa = local.get(aId);
+        const pb = local.get(bId);
+        if (!pa || !pb || pa === pb) continue;
+        if (!pa.bonds.includes(pb.id)) pa.bonds.push(pb.id);
+        if (!pb.bonds.includes(pa.id)) pb.bonds.push(pa.id);
+        group.bondPairs.push([pa, pb]);
+      }
+    }
+
+    group.startCount = group.members.length;
+    group.initialDispersion = Math.max(1, meanDispersion(group.members));
+    if (group.startCount > 0) clusterGroups.push(group);
+  }
+
+  world._clustersTick = -10000;
+  world.updateClusters();
+  return { cohortParticles, clusterGroups };
+}
+
+function nearestGapDistance(x, y, arena) {
+  const gx = arena.barrierX;
+  const gapAy = (arena.gapA + 0.5) * CELL;
+  const gapBy = (arena.gapB + 0.5) * CELL;
+  return Math.min(Math.hypot(x - gx, y - gapAy), Math.hypot(x - gx, y - gapBy));
 }
 
 function initTrackers(world, arena, selectedIds = null) {
@@ -217,6 +401,7 @@ function initTrackers(world, arena, selectedIds = null) {
       startY: p.y,
       maxX: p.x,
       minGoalDistance: Math.hypot(p.x - arena.goalX, p.y - arena.goalY),
+      minGapDistance: nearestGapDistance(p.x, p.y, arena),
       crossed: false,
       reachedGoal: false,
       nearBarrierSamples: 0,
@@ -237,6 +422,8 @@ function updateTrackers(world, arena, tracked) {
     rec.maxX = Math.max(rec.maxX, p.x);
     const goalDistance = Math.hypot(p.x - arena.goalX, p.y - arena.goalY);
     rec.minGoalDistance = Math.min(rec.minGoalDistance, goalDistance);
+    const gapDistance = nearestGapDistance(p.x, p.y, arena);
+    rec.minGapDistance = Math.min(rec.minGapDistance, gapDistance);
     if (p.x > arena.barrierX + 10) rec.crossed = true;
     if (goalDistance < 18) rec.reachedGoal = true;
     const nearBarrier = p.x < arena.barrierX && Math.abs(p.x - arena.barrierX) < 28;
@@ -246,6 +433,55 @@ function updateTrackers(world, arena, tracked) {
     }
     if ((p.lastMotorSlip || 0) > 0.55 && (p.lastMotorProgress || 0) < 0.08) rec.stuckSamples++;
   }
+}
+
+function summarizeClusterGroups(groups) {
+  if (!groups.length) {
+    return {
+      cohortClusters: 0,
+      clustersAliveAny: 0,
+      clusterAnySurvival: 0,
+      clustersMajorityAlive: 0,
+      clusterMajoritySurvival: 0,
+      meanMemberSurvival: 0,
+      meanBondRetention: 0,
+      meanDispersionRatio: 0,
+    };
+  }
+  let aliveAny = 0;
+  let majorityAlive = 0;
+  let memberSurvival = 0;
+  let bondRetention = 0;
+  let dispersionRatio = 0;
+  for (const g of groups) {
+    const liveMembers = g.members.filter(p => p && !p.dead);
+    if (liveMembers.length > 0) aliveAny++;
+    if (liveMembers.length >= Math.ceil(g.startCount * 0.5)) majorityAlive++;
+    memberSurvival += liveMembers.length / Math.max(1, g.startCount);
+    let retained = 0;
+    for (const [a, b] of g.bondPairs) {
+      if (!a.dead && !b.dead && a.bonds.includes(b.id) && b.bonds.includes(a.id)) retained++;
+    }
+    bondRetention += g.startBondCount ? retained / g.startBondCount : 0;
+    dispersionRatio += meanDispersion(liveMembers) / Math.max(1, g.initialDispersion);
+  }
+  return {
+    cohortClusters: groups.length,
+    clustersAliveAny: aliveAny,
+    clusterAnySurvival: round(aliveAny / groups.length),
+    clustersMajorityAlive: majorityAlive,
+    clusterMajoritySurvival: round(majorityAlive / groups.length),
+    meanMemberSurvival: round(memberSurvival / groups.length),
+    meanBondRetention: round(bondRetention / groups.length),
+    meanDispersionRatio: round(dispersionRatio / groups.length),
+  };
+}
+
+function parseReplayMode(raw) {
+  const value = String(raw || 'particles').toLowerCase();
+  if (value === 'intact' || value === 'cluster-intact') return 'clusters-intact';
+  if (value === 'disassembled' || value === 'cluster-disassembled') return 'clusters-disassembled';
+  return value === 'clusters-intact' || value === 'clusters-disassembled' ? value : 'particles';
 }
 
 export async function runDetourAssay(opts = {}) {
@@ -259,17 +495,53 @@ export async function runDetourAssay(opts = {}) {
   const sampleEvery = Math.max(1, Number(opts.sampleEvery) || 6);
   const combatMode = opts.combatMode === 'event' ? 'event' : 'nibble';
   const cohortMode = opts.cohort || 'mixed';
+  const replayMode = parseReplayMode(opts.replay);
+  const evolveInArena = opts.evolveInArena === true;
+  const cohortEnergyOpt = Number(opts.cohortEnergy);
+  const challengeOpts = {
+    ...opts,
+    replay: replayMode,
+    freezeReproduction: opts.freezeReproduction !== false,
+    cohortEnergy: Number.isFinite(cohortEnergyOpt) ? cohortEnergyOpt : NaN,
+  };
 
   const prevRandom = Math.random;
   Math.random = mulberry32(seed >>> 0);
   try {
-    const world = new World({ maxParticles: cap, combatMode });
-    initPreset(world, presetName, start);
-    for (let t = 0; t < evolveTicks; t++) await world.step();
-    const cohort = selectCohort(world, start, cohortMode);
+    const sourceWorld = new World({ maxParticles: cap, combatMode });
+    initPreset(sourceWorld, presetName, start);
+    if (evolveInArena) {
+      const sourceArena = buildDetourArena(sourceWorld, opts);
+      focusCohortNearStart(sourceWorld, sourceWorld.particles.filter(p => !p.dead), sourceArena, opts);
+    }
+    for (let t = 0; t < evolveTicks; t++) await sourceWorld.step();
+
+    let sampled = null;
+    let selectedSamples = [];
+    if (replayMode === 'particles') {
+      selectedSamples = selectCohort(sourceWorld, start, cohortMode).map(sampleFromParticle);
+    } else {
+      sampled = sampleClusterCohort(sourceWorld, Math.max(8, Number(opts.clusterBudget) || start),
+        (seed ^ evolveTicks ^ 0xD370C105) >>> 0, {
+          clusterMinSize: Math.max(2, Number(opts.clusterMinSize) || 8),
+          clusterMaxClusters: Math.max(1, Number(opts.clusterMaxClusters) || 4),
+        });
+    }
+
+    const world = new World({
+      maxParticles: Math.max(cap, selectedSamples.length + (sampled?.particleCount || 0) + 16),
+      combatMode,
+      clusterBudding: false,
+    });
+    world.reset();
     const arena = buildDetourArena(world, opts);
-    const selectedIds = opts.focusStart !== false ? new Set(cohort.map(p => p.id)) : null;
-    if (opts.focusStart !== false) focusCohortNearStart(world, cohort, arena, opts);
+    const placed = replayMode === 'particles'
+      ? placeParticleSamples(world, selectedSamples, arena, challengeOpts)
+      : placeClusterSamples(world, sampled, arena, challengeOpts);
+    if (opts.focusStart === false && replayMode === 'particles') {
+      focusCohortNearStart(world, placed.cohortParticles, arena, opts);
+    }
+    const selectedIds = new Set(placed.cohortParticles.map(p => p.id));
     const tracked = initTrackers(world, arena, selectedIds);
 
     for (let t = 0; t < ticks; t++) {
@@ -283,17 +555,26 @@ export async function runDetourAssay(opts = {}) {
     const alive = records.filter(r => liveById.has(r.id));
     let crossed = 0;
     let reachedGoal = 0;
+    let approachedGap = 0;
     let minGoalSum = 0;
+    let minGapSum = 0;
     let maxXSum = 0;
     let stuckSamples = 0;
     let nearBarrierSamples = 0;
     let nearBarrierSlipSamples = 0;
     let fieldEnergyGain = 0;
     let predationEnergyGain = 0;
+    let speedSum = 0;
+    let speedCapFracSum = 0;
+    let motorEffortSum = 0;
+    let idleAlive = 0;
+    let highSpeedAlive = 0;
     for (const r of records) {
       if (r.crossed) crossed++;
       if (r.reachedGoal) reachedGoal++;
+      if (r.minGapDistance < 60) approachedGap++;
       minGoalSum += r.minGoalDistance;
+      minGapSum += r.minGapDistance;
       maxXSum += r.maxX;
       stuckSamples += r.stuckSamples;
       nearBarrierSamples += r.nearBarrierSamples;
@@ -302,6 +583,15 @@ export async function runDetourAssay(opts = {}) {
       if (p) {
         fieldEnergyGain += (p.fieldEnergyGain || 0) - r.fieldEnergyStart;
         predationEnergyGain += (p.predationEnergyGain || 0) - r.predationEnergyStart;
+        const speed = Math.hypot(p.vx || 0, p.vy || 0);
+        const cap = MAX_V * (0.5 + Math.min(1, (p.energy || 0) * 0.15) * 0.5);
+        const capFrac = cap > 0 ? speed / cap : 0;
+        const motor = Math.min(1, Math.hypot(p.lastMotorX || 0, p.lastMotorY || 0));
+        speedSum += speed;
+        speedCapFracSum += capFrac;
+        motorEffortSum += motor;
+        if (speed < 0.25) idleAlive++;
+        if (capFrac > 0.8) highSpeedAlive++;
       }
     }
     const denom = Math.max(1, records.length);
@@ -311,10 +601,12 @@ export async function runDetourAssay(opts = {}) {
       seed: opts.seed ?? '0xD370A',
       ticks,
       evolveTicks,
+      evolveInArena,
       cap,
       start,
       combatMode,
       cohortMode,
+      replayMode,
       arena,
       tracked: records.length,
       alive: alive.length,
@@ -322,13 +614,25 @@ export async function runDetourAssay(opts = {}) {
       reachedGoal,
       crossRate: round(crossed / denom),
       goalRate: round(reachedGoal / denom),
+      gapApproachRate: round(approachedGap / denom),
       survivalRate: round(alive.length / denom),
       meanMinGoalDistance: round(minGoalSum / denom),
+      meanMinGapDistance: round(minGapSum / denom),
       meanMaxX: round(maxXSum / denom),
       meanFieldEnergyGainAlive: round(fieldEnergyGain / liveDenom),
       meanPredationEnergyGainAlive: round(predationEnergyGain / liveDenom),
+      meanSpeedAlive: round(speedSum / liveDenom),
+      meanSpeedCapFracAlive: round(speedCapFracSum / liveDenom),
+      meanMotorEffortAlive: round(motorEffortSum / liveDenom),
+      idleAliveRate: round(idleAlive / liveDenom),
+      highSpeedAliveRate: round(highSpeedAlive / liveDenom),
       stuckSamplesPerTracked: round(stuckSamples / denom),
       nearBarrierSlipRate: nearBarrierSamples ? round(nearBarrierSlipSamples / nearBarrierSamples) : 0,
+      sourcePopulation: sourceWorld.particles.filter(p => p && !p.dead).length,
+      sourceClusters: sourceWorld._clusters?.length || 0,
+      clusterSampleParticles: sampled?.particleCount || 0,
+      clusterSampleBonds: sampled?.bondCount || 0,
+      ...summarizeClusterGroups(placed.clusterGroups),
     };
   } finally {
     Math.random = prevRandom;
@@ -344,10 +648,23 @@ async function main() {
     seed: readArgOrPos('seed', '0xD370A', 3),
     combatMode: readArgOrPos('combat', 'nibble', 5),
     barrier: readArgOrPos('barrier', 'glass', 4),
-    evolveTicks: Number(readArgOrPos('evolveTicks', 0, 6)),
+    difficulty: readArg('difficulty', 'medium'),
+    evolveTicks: readNumberArg('evolveTicks', 0, 6),
     cohort: readArgOrPos('cohort', 'mixed', 7),
-    gapCells: Number(readArg('gapCells', 8)),
+    replay: readArgOrPos('replay', 'particles', 8),
+    clusterBudget: readNumberArg('clusterBudget', 64),
+    clusterMaxClusters: readNumberArg('clusterMaxClusters', 4),
+    clusterMinSize: readNumberArg('clusterMinSize', 8),
+    cohortEnergy: readNumberArg('cohortEnergy', NaN),
+    evolveInArena: hasFlag('evolveInArena'),
+    scent: !hasFlag('noScent'),
+    scentAmount: readNumberArg('scentAmount', 2.2),
+    scentRadiusCells: readNumberArg('scentRadiusCells', 220),
+    gapCells: readNumberArg('gapCells', NaN),
+    gapA: readNumberArg('gapA', NaN),
+    gapB: readNumberArg('gapB', NaN),
     thickness: Number(readArg('thickness', 2)),
+    freezeReproduction: !hasFlag('allowRepro'),
     focusStart: !hasFlag('scatter'),
   });
   console.log(JSON.stringify(result, null, 2));

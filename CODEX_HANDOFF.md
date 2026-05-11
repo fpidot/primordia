@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Extend detour assay to evolved cohorts`
+  current `main` HEAD after this pass: `Instrument detour navigation and hard contacts`
 
 Recent useful commits:
 
-- current `main` HEAD - Extend detour assay to evolved cohorts
+- current `main` HEAD - Instrument detour navigation and hard contacts
+- `16de08f` - Extend detour assay to evolved cohorts
 - `d10a01c` - Add detour navigation assay
 - `e1b460f` - Track regional behavior outcomes
 - `e8c25b5` - Track habitat survival telemetry
@@ -213,6 +214,8 @@ Inspection and UI:
 - full event-combat attacks queue a small red blood-drop flash at the attack
   site; this is cosmetic-only and separate from evolved visual signals
 - current best/top panels can copy/export/view/chase, though polish remains open
+- the Run panel has a `Sim budget` slider that controls the per-frame sim-step
+  time budget, useful when trading dense-run responsiveness against tick rate
 - stable, energy-rich bonded clusters can occasionally bud a daughter cluster:
   the daughter inherits mutated member genomes, rough parent-relative positions,
   selected parent bond topology, and starts internally bonded; the parent
@@ -249,6 +252,10 @@ Environment:
   stress tests.
 - Planet registers four named basins and a central crossing so bench output can
   report where organisms are actually concentrating.
+- Solid, glass, and world-edge contacts now provide generic hard-contact
+  feedback and a tiny tangent/escape slip, so particles pressing into barriers
+  are less likely to pin there until death and receive bodily feedback that
+  thrust failed to produce forward motion.
 - Future world generation still needs editable sterile-world tools, thicker
   walls, isolation/protection motifs, raw materials, reusable challenge worlds,
   and migration/lineage-turnover telemetry between regions.
@@ -285,6 +292,12 @@ CPU:
   visibility grid before exact line walks. A same-tick particle-pair
   line-of-sight cache was tested and removed because Map overhead outweighed
   saved queries in the seeded maze probe.
+- Vitals, CPU bench, and profile windows now expose movement telemetry:
+  `meanSpeed`, `meanSpeedCapFrac`, `meanMotorEffort`, and `highSpeedFrac`.
+  This was added after user testing suggested particles often appeared to run
+  near maximum speed. Early probes show median speed is moderate, while the
+  fast tail can be large; motor output is usually much lower than velocity,
+  meaning pair forces, fields, and body interactions often drive motion.
 
 GPU:
 
@@ -361,6 +374,10 @@ Performance reality:
 - The likely next big win is now structural: decouple sim from render with a
   worker/snapshot architecture or expose explicit population/work budgets for
   dense long soaks.
+- A first user-facing work-budget control is now in the Run panel. It adjusts
+  the per-frame sim-step budget from the previous hard-coded 12 ms default.
+  This is not the full worker/snapshot fix, but it makes the tradeoff explicit
+  while the worker design is being built.
 
 Next performance target:
 
@@ -623,22 +640,38 @@ Obstacle navigation:
     "glass is blocked" or "edge ahead." A particle that pushes into glass,
     solid, a world edge, crowding, or any future physics impediment receives
     the same kind of bodily mismatch signal.
+  - latest fix: hard contact with solid, glass, or the world edge now also
+    applies a small generic rebound plus tangent slip, and stores
+    `lastHardContactX/Y`. This is deliberately not a pathfinder and not a
+    glass-specific escape rule; it gives stuck organisms enough physical room
+    and feedback to move away from an obstacle edge.
 - Detour assay now exists:
   - `tools/detour-assay.js` builds a repeatable glass/solid/mud barrier arena
-    with two gaps and food behind the obstacle.
-  - `--evolveTicks` lets a source population soak before the arena is reset into
-    the controlled detour challenge, and `--cohort mixed|elite|random|all`
-    controls which live particles are replayed.
-  - It tracks crossing, goal reach, survival, mean closest approach to the
-    goal, field/meat energy gain, motor slip near the barrier, and stuck
-    samples.
-  - Short founder smokes run cleanly but do not yet show reliable crossing, so
-    treat this as an evidence tool, not a solved behavior.
+    with two gaps and food/scent behind the obstacle.
+  - `--evolveTicks` lets a source population soak before replay;
+    `--evolveInArena` soaks the source population directly inside the challenge
+    world; `--difficulty easy|medium|hard` changes gap generosity;
+    `--cohort mixed|elite|random|all` controls particle replay; and
+    `--replay particles|clusters-intact|clusters-disassembled` compares loose
+    cells against intact/disassembled organism cohorts.
+  - `tools/detour-suite.js` runs preset/seed/replay matrices and summarizes
+    crossing, goal reach, gap approach, closest goal/gap distance, survival,
+    field/meat energy gain, movement speed, motor effort, cluster sample size,
+    source bonds, and bond retention.
+  - Latest evidence: normal evolved soup/maze/planet cohorts still produced no
+    crossings in the harder arena. After widening the goal scent so it actually
+    reaches the start and adding an easy curriculum, crossings became possible
+    but rare; no tested cohort reached the goal. Intact clusters often survived
+    better, but they have not yet shown reliable detour solving. Current read:
+    the behavior is eligible, not yet selected.
 - Next validation:
-  - run longer evolved-cohort comparisons across soup, maze, and Planet
+  - run a direct gap-adjacent curriculum and compare against the easy scented
+    arena
   - distinguish "can sense target" from "can learn detour"
   - measure whether intact clusters distribute sensing/planning/locomotion
     roles better than disassembled members
+  - tune movement economics only after using the new speed/motor telemetry to
+    avoid mistaking body/field drift for chosen full-throttle behavior
 
 Communication:
 
@@ -1031,6 +1064,31 @@ Latest verification in the cluster-budding pass:
     produced the same smoke result: 112 tracked, 88 alive, 0 crossed, 0 reached
     goal, survival rate 0.786, mean closest goal distance 956.828, and field/meat
     gains 2.461/0.584 among survivors.
+- Detour-suite, hard-contact, and movement-telemetry verification:
+  - `node --check js\sim.js`, `node --check js\ui.js`,
+    `node --check tools\bench-cpu.js`, `node --check tools\detour-assay.js`,
+    and `node --check tools\detour-suite.js` passed.
+  - `npm test -- proprioception.test.js detour-navigation.test.js` passed after
+    adding the generic tangent-escape regression.
+  - `npm test -- detour-navigation.test.js baseline-soup.test.js` passed after
+    the detour-suite/movement telemetry update.
+  - `node tools\bench-cpu.js --preset soup --ticks 80 --cap 240 --start 160 --seed 0x51A11 --combat event --profileEvery 40`
+    passed and reported movement telemetry (`meanSpeed=0.824`,
+    `meanSpeedCapFrac=0.277`, `meanMotorEffort=0.104`,
+    `highSpeedFrac=0.030`) in the final vitals.
+  - `npm test` passed all 21 test files after this pass.
+  - `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 2 --speed 1 --warmup 200 --width 1200 --height 800 --port 9240`
+    passed with no page errors: 24.7 FPS/ticks-per-second, population 1820
+    after 50 ticks.
+  - `git diff --check` passed with only the repo's usual CRLF warnings.
+  - Multi-seed detour evidence before the easy/scent change found zero
+    crossings across soup/maze/planet founder, evolved-particle, intact-cluster,
+    and disassembled-cluster replays.
+  - Easy arena plus widened scent made crossings possible but weak. In a
+    two-seed soup/planet sample with `--evolveInArena --difficulty easy`, soup
+    founder/evolved particle crossing was roughly 0.017/0.007, soup
+    disassembled-cluster replay reached 0.053, intact clusters did not cross,
+    and no cohort reached the goal.
 
 Core:
 
@@ -1112,13 +1170,14 @@ git log --oneline -5
 - visuals: tune the small red blood-drop attack flash if it reads too loud or
   too subtle during real runs
 - performance: keep profiling Planet and Maze long runs; the next structural
-  target remains worker/snapshot architecture if sim-step cost keeps dominating
+  target remains worker/snapshot architecture if sim-step cost keeps dominating;
+  the new `Sim budget` slider is only the first user-facing budget control
 - agency: run repeated post-topology `--replay both` evidence with the new
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use
 - agency: run longer detour-navigation comparisons for founder controls,
-  evolved soup/maze/planet cohorts, and eventually intact vs disassembled
-  clusters
+  evolved soup/maze/planet cohorts, direct gap-adjacent curricula, and intact
+  vs disassembled clusters
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization
 

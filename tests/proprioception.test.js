@@ -53,3 +53,23 @@ await runTest('proprioception: glass and world edge report failed forward motion
   assert('edge-blocked thrust has high slip', q.lastMotorSlip > 0.9, `slip=${q.lastMotorSlip}`);
   assert('edge-blocked thrust lacks forward progress', q.lastMotorProgress <= 0.01, `progress=${q.lastMotorProgress}`);
 });
+
+await runTest('proprioception: glass contact provides generic tangent escape', async () => {
+  const world = new World({ maxParticles: 8 });
+  const gx = 24;
+  for (let gy = 10; gy <= 40; gy++) world.walls[gy * GW + gx + 1] = WALL_MEMBRANE;
+  world._wallCount = 31;
+  world._wallsVersion++;
+  const startY = 24 * CELL + CELL * 0.5;
+  const p = world.addParticle(gx * CELL + CELL - 0.1, startY, eastMotorGenome(), 12);
+  p.vx = 0; p.vy = 0;
+
+  for (let i = 0; i < 24; i++) await world.step();
+
+  assert('hard contact is remembered generically', Math.abs(p.lastHardContactX) > 0,
+    `lastHardContactX=${p.lastHardContactX}`);
+  assert('glass-pinned particle slips along the surface', Math.abs(p.y - startY) > 1.0,
+    `dy=${(p.y - startY).toFixed(3)}`);
+  assert('particle remains on near side of glass while escaping tangent',
+    p.x < (gx + 1) * CELL, `x=${p.x.toFixed(3)}`);
+});

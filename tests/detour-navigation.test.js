@@ -35,6 +35,8 @@ await runTest('detour-navigation: arena builds a glass barrier with two open gap
     `wall=${world.walls[gapIdx]}`);
   assert('goal food patch exists', world.field[0][goalIdx] > 0,
     `food=${world.field[0][goalIdx]}`);
+  assert('goal scent exists', arena.scentCells > arena.openGapCells,
+    `scentCells=${arena.scentCells}`);
   assert('start and goal regions exposed', world.habitatRegions.length === 2,
     `regions=${world.habitatRegions.length}`);
 });
@@ -58,6 +60,11 @@ await runTest('detour-navigation: assay returns finite behavior metrics', async 
     `meanMinGoalDistance=${result.meanMinGoalDistance}`);
   assert('max x is finite', Number.isFinite(result.meanMaxX),
     `meanMaxX=${result.meanMaxX}`);
+  assertInRange('meanSpeedCapFracAlive', result.meanSpeedCapFracAlive, 0, 1.5);
+  assertInRange('highSpeedAliveRate', result.highSpeedAliveRate, 0, 1);
+  assertInRange('gapApproachRate', result.gapApproachRate, 0, 1);
+  assert('min gap distance is finite', Number.isFinite(result.meanMinGapDistance),
+    `meanMinGapDistance=${result.meanMinGapDistance}`);
 });
 
 await runTest('detour-navigation: assay can replay an evolved cohort', async () => {
@@ -80,4 +87,25 @@ await runTest('detour-navigation: assay can replay an evolved cohort', async () 
   assertInRange('evolved survivalRate', result.survivalRate, 0, 1);
   assert('arena was reset to controlled goal food', result.arena.barrierCells > 0,
     `barrierCells=${result.arena.barrierCells}`);
+});
+
+await runTest('detour-navigation: source population can evolve inside arena', async () => {
+  const result = await runDetourAssay({
+    preset: 'soup',
+    evolveTicks: 8,
+    evolveInArena: true,
+    ticks: 8,
+    cap: 80,
+    start: 40,
+    seed: 0xD370C,
+    barrier: 'glass',
+    combatMode: 'event',
+    cohort: 'mixed',
+  });
+
+  assert('arena evolution flag is reported', result.evolveInArena === true,
+    `evolveInArena=${result.evolveInArena}`);
+  assert('arena-evolved cohort was tracked', result.tracked > 0,
+    `tracked=${result.tracked}`);
+  assertInRange('arena-evolved survivalRate', result.survivalRate, 0, 1);
 });

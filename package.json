@@ -9,6 +9,7 @@
     "bench:cpu": "node tools/bench-cpu.js",
     "bench:browser": "node tools/bench-browser.js",
     "soak:defense": "node tools/defense-soak.js",
-    "assay:detour": "node tools/detour-assay.js"
+    "assay:detour": "node tools/detour-assay.js",
+    "suite:detour": "node tools/detour-suite.js"
   }
 }

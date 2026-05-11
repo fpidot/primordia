@@ -25,6 +25,7 @@ export class UI {
 
     this.paused = false;
     this.speed = 1;
+    this.workBudgetMs = 12;
     this.activeBrush = 'none';
     this.brushSize = 2;
     this.brushStrength = 1;
@@ -200,6 +201,15 @@ export class UI {
       this.speed = parseFloat(speedSlider.value);
       speedVal.textContent = this.speed.toFixed(2) + '×';
     });
+
+    const workBudgetSlider = document.getElementById('ui-work-budget');
+    const workBudgetVal = document.getElementById('ui-work-budget-val');
+    if (workBudgetSlider && workBudgetVal) {
+      workBudgetSlider.addEventListener('input', () => {
+        this.workBudgetMs = Math.max(1, parseFloat(workBudgetSlider.value) || 12);
+        workBudgetVal.textContent = `${this.workBudgetMs.toFixed(0)} ms`;
+      });
+    }
 
     const sizeSlider = document.getElementById('ui-brush-size');
     const sizeVal = document.getElementById('ui-brush-size-val');
@@ -933,6 +943,7 @@ export class UI {
     html += `<div class="row-stat"><span></span><span>low E (&lt;1)</span><span class="num">${lowPct}%</span></div>`;
     html += `<div class="row-stat"><span></span><span>mean food</span><span class="num">${v.meanFood.toFixed(3)}</span></div>`;
     html += `<div class="row-stat"><span></span><span>mean decay</span><span class="num">${v.meanDecay.toFixed(3)}</span></div>`;
+    html += `<div class="row-stat"><span></span><span>speed / motor</span><span class="num">${v.meanSpeed.toFixed(2)} · ${(v.highSpeedFrac * 100).toFixed(0)}% fast · ${v.meanMotorEffort.toFixed(2)}</span></div>`;
     html += `<div class="row-stat"><span></span><span>walls</span><span class="num">${v.walls}</span></div>`;
     html += `<div class="row-stat"><span></span><span>carrying</span><span class="num">${v.wallCarriers}</span></div>`;
     html += `<div class="row-stat"><span></span><span>dig / build</span><span class="num">${v.wallDigs}/${v.wallDeposits}</span></div>`;

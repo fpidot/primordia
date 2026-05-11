@@ -29,9 +29,11 @@ What is still holding back interesting behavior:
   particle-level reproduction remains a dominant background process.
 - Navigation has raw scaffolding but not yet enough measured proof. Particles
   can sense food gradients, terrain, damage direction, motion slip, signals,
-  sound, and bond messages. The first detour assay now exists, but founder
-  smokes do not yet show reliable crossing, so evolved-cohort and niche-pressure
-  comparisons are still needed.
+  sound, and bond messages. The detour assay/suite now supports evolved
+  particle cohorts, intact/disassembled cluster replay, arena evolution,
+  easier gap curricula, goal scent, and movement telemetry. Crossings are now
+  possible in the easier scented arena, but rare, and no tested cohort reliably
+  reaches the goal yet.
 - Communication has costs and some payoffs, but not enough situation-specific
   pressure to prove dynamic useful messaging.
 - Brain capacity should rise only when the world gives extra cognition a real
@@ -232,10 +234,16 @@ Goal: raise neural capacity only when there is a reason.
 
 Near steps:
 
-- Use `tools/detour-assay.js` for repeated food-behind-obstacle comparisons:
-  founder controls, `--evolveTicks` soup/maze/planet cohorts,
-  `mixed|elite|random|all` cohort choices, and eventually intact vs
-  disassembled clusters.
+- Use `tools/detour-assay.js` and `tools/detour-suite.js` for repeated
+  food-behind-obstacle comparisons: founder controls, `--evolveTicks`
+  soup/maze/planet cohorts, `--evolveInArena` challenge-world evolution,
+  `mixed|elite|random|all` particle cohorts, and intact vs disassembled
+  cluster replay.
+- Use the movement telemetry (`meanSpeed`, speed-cap fraction, motor effort,
+  high-speed fraction) to tune motion economics. Recent probes show many agents
+  are not explicitly commanding maximum thrust; body forces, fields, and pair
+  interactions often keep the swarm moving, with a high-speed tail that may
+  still be too cheap.
 - Add more behavior metrics to defense replay: retreat vector, predator-distance
   delta, alarm timing, cohesion under attack, mud/glass use. First pass now
   reports cohort-owned feeding, predation, attacks, kills, counters, escapes,
@@ -284,7 +292,9 @@ Next structural target:
 
 Other scale steps:
 
-- User-facing population/work budgets.
+- User-facing population/work budgets. A first `Sim budget` slider now exposes
+  the per-frame sim-step time budget; worker/snapshot architecture is still
+  the bigger responsiveness fix.
 - Chunked spatial ecology: only active regions get full simulation cadence.
 - Lower-write CPU pair-loop redesign if GPU readback remains limiting.
 - GPU work only when readback and parity risks are contained.
@@ -309,7 +319,10 @@ Other scale steps:
 4. Add behavior metrics to defense replay. Shipped first cohort-owned behavior
    counters; next add retreat/alarm/cohesion timing.
 5. Attack flash. Shipped as a small red droplet.
-6. Detour-navigation assay. Shipped controlled barrier/food-goal tool plus
-   evolved-cohort replay; next run longer evolved-cohort comparisons.
+6. Detour-navigation assay. Shipped controlled barrier/food-goal tool,
+   evolved-cohort replay, intact/disassembled cluster replay, arena evolution,
+   easier curricula, goal scent, gap metrics, and movement telemetry. Latest
+   evidence says crossings are possible but not yet selected into a reliable
+   detour/goal-reaching behavior.
 7. Decide whether torus topology or a small bounded fishbowl prototype is the
    better next topology/physics experiment.

@@ -40,6 +40,8 @@ entropy, profile-window movement between regions, and clade turnover/local
 extinction by region. Profile windows also compare regional survival, deaths,
 escapes, new particles, mean energy change, and per-region behavior deltas for
 feeding, wall work, predation, attacks, counters, escapes, and combat damage.
+Vitals and CPU JSON also include live movement telemetry: mean speed, fraction
+of the energy-scaled velocity cap, mean motor effort, and high-speed fraction.
 Use `--combat nibble` or `--combat event` to compare the legacy
 contact-predation model against the event-style attack/counter/escape model
 used by the browser app.
@@ -69,16 +71,24 @@ made from the same cluster member cells.
 npm run assay:detour -- --ticks 600 --cap 600 --start 320 --seed 0xD370A --barrier glass --combat event
 node tools/detour-assay.js --ticks 600 --cap 600 --start 320 --seed 0xD370A --barrier glass --combat event
 node tools/detour-assay.js --evolveTicks 1200 --ticks 600 --cap 900 --start 320 --seed 0x51A11 --barrier glass --combat event --cohort elite
+node tools/detour-suite.js --presets soup,maze,planet --seeds 0x51A11,0xA11CE --ticks 180 --evolveTicks 420 --cap 600 --start 320 --replays particles,clusters-intact,clusters-disassembled --combat event
+node tools/detour-suite.js --presets soup,planet --seeds 0x51A11,0xA11CE --ticks 220 --evolveTicks 650 --evolveInArena --difficulty easy --combat event
 ```
 
 The detour assay creates a controlled vertical obstacle with two gaps, places a
-food patch behind it, and tracks whether the near-side cohort crosses, reaches
-the goal, survives, gets stuck/slips near the barrier, and gains field or meat
-energy. It is an evidence generator, not a pass/fail proof of planning; use it
-before and after longer evolved-cohort runs to test whether obstacle navigation
-is becoming more than random wandering. `--evolveTicks` soaks the source
-population before the controlled arena is built; `--cohort mixed|elite|random|all`
-chooses which live particles enter the replay.
+food patch and scent field behind it, and tracks whether the near-side cohort
+crosses, reaches the goal, survives, approaches either gap, gets stuck/slips
+near the barrier, gains field or meat energy, and how fast it moves. It is an
+evidence generator, not a pass/fail proof of planning; use it before and after
+longer evolved-cohort runs to test whether obstacle navigation is becoming more
+than random wandering. `--evolveTicks` soaks the source population before the
+controlled arena is built; `--evolveInArena` soaks the source population inside
+the challenge world; `--difficulty easy|medium|hard` changes gap generosity;
+`--replay particles|clusters-intact|clusters-disassembled` compares individual
+cells with intact/disassembled organism cohorts; and
+`--cohort mixed|elite|random|all` chooses which live particles enter particle
+replay. `--noScent`, `--scentRadiusCells`, and `--scentAmount` control whether
+the goal signal actually reaches the start area.
 
 ## Browser timing probe
 

@@ -50,7 +50,7 @@ export const K_REP = 1.8;            // short-range repulsion strength
 export const K_ATTR = 0.30;          // tent peak strength multiplier
 const K_FIELD = 4.5;          // gradient → acceleration scale
 const K_DRAG = 0.18;          // viscous drag (overdamped, Particle-Lenia style)
-const MAX_V = 3.6;
+export const MAX_V = 3.6;
 const K_MOTION_COST = 0.0014; // per-tick energy cost of |v|^2 (raised from 0.0008
                               // to make movement metabolically meaningful — was
                               // ~free before, no pressure to conserve)
@@ -147,6 +147,8 @@ const WALL_CARRY_MAX    = 5;
 const WALL_SCAN_RANGE   = 6;       // grid cells; sensor reach for wall.{n,s,e,w}
 const MUD_SPEED_MULT     = 0.78;
 const MUD_ENERGY_DRAIN   = 0.010;
+const HARD_CONTACT_TANGENT = 0.18; // rough hard-surface slip so agents do not pin forever
+const HARD_CONTACT_ESCAPE  = 0.05; // tiny generic rebound from solid/glass/edges
 
 // Communication has a tiny metabolic cost, but named clusters can convert
 // received bond messages into action-specific coordination bonuses.
@@ -615,15 +617,28 @@ export class World {
     let wallCarriers = 0;
     let brainSlots = 0;
     let energy = 0;
+    let speed = 0;
+    let speedCapFrac = 0;
+    let motorEffort = 0;
+    let highSpeed = 0;
+    let alive = 0;
     for (let i = 0; i < ps.length; i++) {
       const p = ps[i];
       if (p.dead) continue;
+      alive++;
       bonds += p.bonds ? p.bonds.length : 0;
       if ((p.wallCarry || 0) > 0) wallCarriers++;
       if (p.genome && p.genome.brain) brainSlots += p.genome.brain.enabledCount();
       energy += p.energy || 0;
+      const sp = Math.hypot(p.vx || 0, p.vy || 0);
+      const cap = MAX_V * (0.5 + Math.min(1, (p.energy || 0) * 0.15) * 0.5);
+      const frac = cap > 0 ? sp / cap : 0;
+      speed += sp;
+      speedCapFrac += frac;
+      motorEffort += Math.min(1, Math.hypot(p.lastMotorX || 0, p.lastMotorY || 0));
+      if (frac > 0.8) highSpeed++;
     }
-    const n = Math.max(1, ps.length);
+    const n = Math.max(1, alive);
     let activeSound = 0;
     for (let s = 0; s < this._soundLastEmit.length; s++) {
       if (this.tick - this._soundLastEmit[s] < 60) activeSound++;
@@ -637,6 +652,10 @@ export class World {
       meanBonds: +(bonds / n).toFixed(3),
       meanBrainSlots: +(brainSlots / n).toFixed(3),
       meanEnergy: +(energy / n).toFixed(3),
+      meanSpeed: +(speed / n).toFixed(3),
+      meanSpeedCapFrac: +(speedCapFrac / n).toFixed(3),
+      meanMotorEffort: +(motorEffort / n).toFixed(3),
+      highSpeedFrac: +(highSpeed / n).toFixed(3),
       wallCarriers,
       births: this.totalBorn || 0,
       deaths: this.totalDied || 0,
@@ -829,6 +848,7 @@ export class World {
       wallDeposits: 0,
       lastMotorX: 0, lastMotorY: 0,
       lastMotorProgress: 0, lastMotorSlip: 0,
+      lastHardContactX: 0, lastHardContactY: 0,
       cluster: null,
       bonds: [],
       dead: false,
@@ -2206,12 +2226,15 @@ export class World {
       let ny = oldY + vy;
 
       // Wall handling — axis-separated, using actual current cell
+      let hardContactX = 0;
+      let hardContactY = 0;
       const pgy = clamp((p.y / CELL) | 0, 0, GH - 1);
       const ngx = clamp((nx / CELL) | 0, 0, GW - 1);
       // Solid + glass wall types block particles; mud lets them pass.
       const wTargetX = walls[pgy * GW + ngx];
       if (wTargetX === WALL_SOLID || wTargetX === WALL_MEMBRANE) {
         nx = p.x;
+        hardContactX = vx > 0 ? 1 : -1;
         vx = -vx * 0.5;
       }
       const cgx = clamp((nx / CELL) | 0, 0, GW - 1);
@@ -2219,6 +2242,7 @@ export class World {
       const wTargetY = walls[ngy * GW + cgx];
       if (wTargetY === WALL_SOLID || wTargetY === WALL_MEMBRANE) {
         ny = p.y;
+        hardContactY = vy > 0 ? 1 : -1;
         vy = -vy * 0.5;
       }
       const terrainIdx = clamp((ny / CELL) | 0, 0, GH - 1) * GW +
@@ -2231,10 +2255,38 @@ export class World {
         ny = p.y + vy;
       }
       // Toroidal-ish bounds: reflect at edges
-      if (nx < 1) { nx = 1; vx = Math.abs(vx) * 0.5; }
-      else if (nx > W - 1) { nx = W - 1; vx = -Math.abs(vx) * 0.5; }
-      if (ny < 1) { ny = 1; vy = Math.abs(vy) * 0.5; }
-      else if (ny > H - 1) { ny = H - 1; vy = -Math.abs(vy) * 0.5; }
+      if (nx < 1) { nx = 1; hardContactX = -1; vx = Math.abs(vx) * 0.5; }
+      else if (nx > W - 1) { nx = W - 1; hardContactX = 1; vx = -Math.abs(vx) * 0.5; }
+      if (ny < 1) { ny = 1; hardContactY = -1; vy = Math.abs(vy) * 0.5; }
+      else if (ny > H - 1) { ny = H - 1; hardContactY = 1; vy = -Math.abs(vy) * 0.5; }
+
+      if (hardContactX || hardContactY) {
+        const tangentSign = ((p.id + ((this.tick / 31) | 0)) & 1) ? 1 : -1;
+        vx -= hardContactX * HARD_CONTACT_ESCAPE;
+        vy -= hardContactY * HARD_CONTACT_ESCAPE;
+        if (hardContactX && Math.abs(vy) < 0.35) {
+          const tryVy = vy + tangentSign * HARD_CONTACT_TANGENT;
+          const tryY = clamp(oldY + tryVy, 1, H - 1);
+          const tryGy = clamp((tryY / CELL) | 0, 0, GH - 1);
+          const curGx = clamp((nx / CELL) | 0, 0, GW - 1);
+          const wt = walls[tryGy * GW + curGx];
+          if (wt !== WALL_SOLID && wt !== WALL_MEMBRANE) {
+            vy = tryVy;
+            ny = tryY;
+          }
+        }
+        if (hardContactY && Math.abs(vx) < 0.35) {
+          const tryVx = vx + tangentSign * HARD_CONTACT_TANGENT;
+          const tryX = clamp(oldX + tryVx, 1, W - 1);
+          const tryGx = clamp((tryX / CELL) | 0, 0, GW - 1);
+          const curGy = clamp((ny / CELL) | 0, 0, GH - 1);
+          const wt = walls[curGy * GW + tryGx];
+          if (wt !== WALL_SOLID && wt !== WALL_MEMBRANE) {
+            vx = tryVx;
+            nx = tryX;
+          }
+        }
+      }
 
       p.x = nx; p.y = ny;
       p.vx = vx; p.vy = vy;
@@ -2248,8 +2300,11 @@ export class World {
         p.lastMotorProgress = 0;
         p.lastMotorSlip = 0;
       }
+      if (hardContactX || hardContactY) p.lastMotorSlip = Math.max(p.lastMotorSlip, 0.65);
       p.lastMotorX = tx;
       p.lastMotorY = ty;
+      p.lastHardContactX = hardContactX;
+      p.lastHardContactY = hardContactY;
       p.age++;
 
       // Energy
@@ -2408,6 +2463,7 @@ export class World {
             wallDeposits: 0,
             lastMotorX: 0, lastMotorY: 0,
             lastMotorProgress: 0, lastMotorSlip: 0,
+            lastHardContactX: 0, lastHardContactY: 0,
             cluster: null,
             bonds: [],
             dead: false,
@@ -2480,6 +2536,7 @@ export class World {
             wallDeposits: 0,
             lastMotorX: 0, lastMotorY: 0,
             lastMotorProgress: 0, lastMotorSlip: 0,
+            lastHardContactX: 0, lastHardContactY: 0,
             cluster: null,
             bonds: [],
             dead: false,
@@ -3293,6 +3350,7 @@ export class World {
     const ps = this.particles;
     let eSum = 0, eMin = Infinity, eMax = -Infinity, lowN = 0, carrying = 0;
     let shelterSum = 0, shelteredN = 0;
+    let speedSum = 0, speedCapFracSum = 0, motorEffortSum = 0, highSpeedN = 0;
     const lowThresh = 1.0;
     let alive = 0;
     for (const p of ps) {
@@ -3303,6 +3361,13 @@ export class World {
       const shelter = p.shelterRelief || 0;
       shelterSum += shelter;
       if (shelter > 0) shelteredN++;
+      const sp = Math.hypot(p.vx || 0, p.vy || 0);
+      const cap = MAX_V * (0.5 + Math.min(1, (p.energy || 0) * 0.15) * 0.5);
+      const frac = cap > 0 ? sp / cap : 0;
+      speedSum += sp;
+      speedCapFracSum += frac;
+      motorEffortSum += Math.min(1, Math.hypot(p.lastMotorX || 0, p.lastMotorY || 0));
+      if (frac > 0.8) highSpeedN++;
       if (p.energy < lowThresh) lowN++;
       if (p.energy < eMin) eMin = p.energy;
       if (p.energy > eMax) eMax = p.energy;
@@ -3323,6 +3388,10 @@ export class World {
     return {
       alive,
       meanEnergy,
+      meanSpeed: alive ? speedSum / alive : 0,
+      meanSpeedCapFrac: alive ? speedCapFracSum / alive : 0,
+      meanMotorEffort: alive ? motorEffortSum / alive : 0,
+      highSpeedFrac: alive ? highSpeedN / alive : 0,
       eMin: alive ? eMin : 0,
       eMax: alive ? eMax : 0,
       lowFrac,

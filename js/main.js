@@ -92,11 +92,12 @@ async function frame(now) {
     if (acc > MAX_STEP_BACKLOG) acc = MAX_STEP_BACKLOG;
     let steps = 0;
     const stepStart = performance.now();
+    const workBudgetMs = Math.max(1, ui.workBudgetMs || STEP_FRAME_BUDGET_MS);
     while (acc >= 1 && steps < 8) {
       await world.step();
       acc -= 1;
       steps++;
-      if (performance.now() - stepStart > STEP_FRAME_BUDGET_MS) break;
+      if (performance.now() - stepStart > workBudgetMs) break;
     }
   }
   mark('step');
