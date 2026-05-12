@@ -199,7 +199,11 @@ heavier Planet starts are still a deliberate stress test.
    bond-message circuits can evolve around actual organism-level locomotion
    state. Current GPU extras stride is 66 floats. `tools/detour-suite.js` now
    reports `cMsg`, `msgCov`, `cMotor`, `cField`, and `fieldCov` alongside
-   `cDrift`, `cContact`, `cSlip`, and `cSignal`.
+   `cDrift`, `cContact`, `cSlip`, and `cSignal`. It also reports body-level
+   route metrics for cluster replays: centroid crossing, majority-member
+   crossing, body goal reach, body gap approach, body closest goal/gap
+   distances, gap-fit ratio, and stretch. This separates "some member cells got
+   through" from "the organism's body crossed as a body."
    Evidence so far: a three-seed easy ladder check after body telemetry alone
    (`soup`, ticks 360, evolveTicks 1200, cap 620/start 340) still showed
    intact clusters crossing far less than disassembled controls (2.1% vs
@@ -226,9 +230,17 @@ heavier Planet starts are still a deliberate stress test.
    and achieved 30.6% intact crossing with 98.9% bond retention. Current
    conclusion: cohesive detour crossing is now real and no longer just a lucky
    one-seed artifact, but intact bodies still lag disassembled members and do
-   not reliably finish the route. The next bottleneck is morphology, gap
-   fitting, final goal reach, and role specialization that makes staying intact
-   worth the mobility cost without scripting a navigator.
+   not reliably finish the route. A new `--curriculum route` mode extends the
+   ladder with a finish-run stage: organisms train near a gap but must still
+   continue toward the full final goal, so route completion is paid by ordinary
+   food/energy rather than a scripted path reward. In a two-seed easy
+   comparison (`soup`, seeds `0x51A11,0xA11CE`, ticks 300, evolveTicks 900,
+   cap 620/start 340), old ladder produced 0.0% intact member crossing and no
+   body crossing, while route produced 28.6% intact member crossing, 8.4%
+   member goal reach, and 50.0% centroid/majority body crossing with 92.4%
+   bond retention. Body goal reach remained 0.0%. The next bottleneck is
+   morphology, gap fitting, final goal reach, and role specialization that
+   makes staying intact worth the mobility cost without scripting a navigator.
    Latest glass/edge pinning update: solid, glass, and world-edge collisions
    now add generic hard-contact feedback plus a tiny tangent/escape nudge so
    agents pressing into a barrier can slide away and receive the same bodily

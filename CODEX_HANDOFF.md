@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Improve cluster detour replay realism`
+  current `main` HEAD after this pass: `Add cluster body detour metrics`
 
 Recent useful commits:
 
-- current `main` HEAD - Improve cluster detour replay realism
+- current `main` HEAD - Add cluster body detour metrics
+- `18ebde5` - Improve cluster detour replay realism
 - `7a6d932` - Add cluster locomotion scaffolds
 - `045275e` - Add cluster message trace and surface slide
 - `1cf46b8` - Add cluster body telemetry
@@ -1516,6 +1517,34 @@ Latest verification in the cluster-budding pass:
     39.2% crossing and 17.4% goal reach. Current read: cohesive crossing is
     real, but final route completion and morphology/gap-fit selection remain
     the next bottleneck.
+- Cluster body detour metrics / route curriculum verification:
+  - Clarified the measurement split: member-level `crossRate` only means a
+    tracked particle reached the far side of the barrier once. It does not mean
+    the organism crossed as a cohesive body or reached the food goal.
+  - Added cluster replay body metrics to `tools/detour-assay.js` and
+    `tools/detour-suite.js`: centroid crossing, majority-member crossing, body
+    goal reach, body gap approach, body closest goal/gap distance, body max X,
+    minimum gap-fit ratio, and maximum stretch ratio.
+  - Added `--curriculum route`, aliasable as `completion` or `finish`. It
+    extends the ladder with a finish-run stage: a body starts near a gap but
+    must continue to the normal final goal/food patch, so completion pressure
+    comes from ordinary food access rather than scripted path reward.
+  - `node --check tools\detour-assay.js` and
+    `node --check tools\detour-suite.js` passed.
+  - `npm test -- detour-navigation.test.js cluster-replay-harness.test.js`
+    passed, including the new route-curriculum contract and body-metric output
+    checks.
+  - A full three-seed route run at the larger previous shape exceeded a 244s
+    local timeout before printing results; use a longer timeout for the full
+    matrix.
+  - Completed two-seed easy comparison (`soup`, seeds `0x51A11,0xA11CE`,
+    ticks 300, evolveTicks 900, cap 620/start 340, event combat, clusterBudget
+    96): old `ladder` produced 0.0% intact member crossing and no body
+    crossing; new `route` produced 28.6% intact member crossing, 8.4% member
+    goal reach, 97.9% survival, 92.4% bond retention, 50.0% centroid crossing,
+    and 50.0% majority body crossing. Body goal reach remained 0.0%. Current
+    read: route curriculum is a useful pressure, but complete organism-scale
+    goal reach is still the unsolved target.
 
 Core:
 
@@ -1605,11 +1634,11 @@ git log --oneline -5
 - agency: run repeated post-topology `--replay both` evidence with the new
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use
-- agency: detour next step is no longer just "can intact clusters ever cross?"
-  The immediate target is complete route success: morphology/gap-fit pressure,
-  final goal reach rewards, organism body-shape telemetry, and role
-  specialization checks that compare intact clusters against their
-  disassembled controls across more seeds and medium difficulty.
+- agency: detour next step is now body-level route completion. Use the new
+  `--curriculum route` and body metrics to run a longer multi-seed matrix, then
+  tune morphology/gap-fit pressure, final food-goal distance, and possible
+  role-specialization signals if centroid/majority crossing keeps improving
+  while body goal reach stays at zero.
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization
 

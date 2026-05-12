@@ -335,6 +335,7 @@ export function focusCohortNearStart(world, cohort, arena, opts = {}) {
 function parseCurriculum(raw) {
   const s = String(raw || 'none').toLowerCase();
   if (s === 'gap' || s === 'near-gap' || s === 'gap-adjacent') return 'gap-adjacent';
+  if (s === 'route' || s === 'completion' || s === 'finish') return 'route';
   if (s === 'ladder' || s === 'staged') return 'ladder';
   return 'none';
 }
@@ -370,8 +371,11 @@ function curriculumPlan(kind, totalTicks, opts = {}) {
       localFoodRadiusCells: 8,
     }] : [];
   }
-  if (kind !== 'ladder') return [];
-  const ticks = splitStageTicks(totalTicks, [0.22, 0.26, 0.26, 0.26]);
+  if (kind !== 'ladder' && kind !== 'route') return [];
+  const routeMode = kind === 'route';
+  const ticks = splitStageTicks(totalTicks, routeMode
+    ? [0.18, 0.22, 0.22, 0.20, 0.18]
+    : [0.22, 0.26, 0.26, 0.26]);
   const stages = [
     {
       name: 'mouth',
@@ -410,6 +414,16 @@ function curriculumPlan(kind, totalTicks, opts = {}) {
       localScentRadiusCells: 96,
       localFoodRadiusCells: 9,
     },
+    ...(routeMode ? [{
+      name: 'finish-run',
+      difficulty: 'medium',
+      gapCells: 18,
+      thickness: 2,
+      gap: 'lower',
+      startDistance: 92,
+      startYOffset: 24,
+      localGoal: false,
+    }] : []),
     {
       name: 'full-start',
       difficulty: baseDifficulty === 'hard' ? 'hard' : 'medium',
@@ -605,6 +619,67 @@ function nearestGapDistance(x, y, arena) {
   return Math.min(Math.hypot(x - gx, y - gapAy), Math.hypot(x - gx, y - gapBy));
 }
 
+function clusterBodyStats(group, arena) {
+  const live = group.members.filter(p => p && !p.dead);
+  if (!live.length) return null;
+  let cx = 0;
+  let cy = 0;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let crossedMembers = 0;
+  for (const p of live) {
+    cx += p.x;
+    cy += p.y;
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
+    if (p.x > arena.barrierX + 10) crossedMembers++;
+  }
+  cx /= live.length;
+  cy /= live.length;
+  const gapHeight = Math.max(CELL, (arena.gapCells * 2 + 1) * CELL);
+  const dispersion = meanDispersion(live);
+  return {
+    liveCount: live.length,
+    cx,
+    cy,
+    spanX: maxX - minX,
+    spanY: maxY - minY,
+    maxX,
+    crossedMembers,
+    centroidCrossed: cx > arena.barrierX + 10,
+    majorityCrossed: crossedMembers >= Math.ceil(Math.max(1, group.startCount) * 0.5),
+    goalDistance: Math.hypot(cx - arena.goalX, cy - arena.goalY),
+    gapDistance: nearestGapDistance(cx, cy, arena),
+    gapFit: (maxY - minY) / gapHeight,
+    stretchRatio: dispersion / Math.max(1, group.initialDispersion || 1),
+  };
+}
+
+function updateClusterRouteTrackers(groups, arena) {
+  for (const g of groups || []) {
+    if (!Number.isFinite(g.minBodyGoalDistance)) g.minBodyGoalDistance = Infinity;
+    if (!Number.isFinite(g.minBodyGapDistance)) g.minBodyGapDistance = Infinity;
+    if (!Number.isFinite(g.maxBodyX)) g.maxBodyX = -Infinity;
+    if (!Number.isFinite(g.minGapFit)) g.minGapFit = Infinity;
+    if (!Number.isFinite(g.maxStretchRatio)) g.maxStretchRatio = 0;
+    const s = clusterBodyStats(g, arena);
+    if (!s) continue;
+    g.minBodyGoalDistance = Math.min(g.minBodyGoalDistance, s.goalDistance);
+    g.minBodyGapDistance = Math.min(g.minBodyGapDistance, s.gapDistance);
+    g.maxBodyX = Math.max(g.maxBodyX, s.cx);
+    g.minGapFit = Math.min(g.minGapFit, s.gapFit);
+    g.maxStretchRatio = Math.max(g.maxStretchRatio, s.stretchRatio);
+    if (s.centroidCrossed) g.bodyCrossed = true;
+    if (s.majorityCrossed) g.majorityCrossed = true;
+    if (s.goalDistance < 42) g.bodyReachedGoal = true;
+    if (s.gapDistance < 60) g.bodyApproachedGap = true;
+  }
+}
+
 function initTrackers(world, arena, selectedIds = null) {
   const tracked = new Map();
   for (const p of world.particles) {
@@ -670,6 +745,15 @@ function summarizeClusterGroups(groups) {
       meanClusterMotorConsensus: 0,
       meanClusterFieldStrength: 0,
       clusterFieldCoverage: 0,
+      clusterCentroidCrossRate: 0,
+      clusterMajorityCrossRate: 0,
+      clusterBodyGoalRate: 0,
+      clusterBodyGapApproachRate: 0,
+      meanClusterMinGoalDistance: 0,
+      meanClusterMinGapDistance: 0,
+      meanClusterMaxX: 0,
+      meanClusterMinGapFit: 0,
+      meanClusterMaxStretch: 0,
     };
   }
   let aliveAny = 0;
@@ -686,6 +770,15 @@ function summarizeClusterGroups(groups) {
   let motorConsensus = 0;
   let fieldStrength = 0;
   let fieldGroups = 0;
+  let centroidCross = 0;
+  let majorityCross = 0;
+  let bodyGoal = 0;
+  let bodyGap = 0;
+  let bodyMinGoal = 0;
+  let bodyMinGap = 0;
+  let bodyMaxX = 0;
+  let bodyGapFit = 0;
+  let bodyStretch = 0;
   for (const g of groups) {
     const liveMembers = g.members.filter(p => p && !p.dead);
     if (liveMembers.length > 0) aliveAny++;
@@ -739,6 +832,15 @@ function summarizeClusterGroups(groups) {
       if (msg > 0.08) clusterMessageGroups++;
       if (field > 0.04) fieldGroups++;
     }
+    if (g.bodyCrossed) centroidCross++;
+    if (g.majorityCrossed) majorityCross++;
+    if (g.bodyReachedGoal) bodyGoal++;
+    if (g.bodyApproachedGap) bodyGap++;
+    bodyMinGoal += Number.isFinite(g.minBodyGoalDistance) ? g.minBodyGoalDistance : 0;
+    bodyMinGap += Number.isFinite(g.minBodyGapDistance) ? g.minBodyGapDistance : 0;
+    bodyMaxX += Number.isFinite(g.maxBodyX) ? g.maxBodyX : 0;
+    bodyGapFit += Number.isFinite(g.minGapFit) ? g.minGapFit : 0;
+    bodyStretch += Number.isFinite(g.maxStretchRatio) ? g.maxStretchRatio : 0;
   }
   return {
     cohortClusters: groups.length,
@@ -758,6 +860,15 @@ function summarizeClusterGroups(groups) {
     meanClusterMotorConsensus: round(motorConsensus / groups.length),
     meanClusterFieldStrength: round(fieldStrength / groups.length),
     clusterFieldCoverage: round(fieldGroups / groups.length),
+    clusterCentroidCrossRate: round(centroidCross / groups.length),
+    clusterMajorityCrossRate: round(majorityCross / groups.length),
+    clusterBodyGoalRate: round(bodyGoal / groups.length),
+    clusterBodyGapApproachRate: round(bodyGap / groups.length),
+    meanClusterMinGoalDistance: round(bodyMinGoal / groups.length),
+    meanClusterMinGapDistance: round(bodyMinGap / groups.length),
+    meanClusterMaxX: round(bodyMaxX / groups.length),
+    meanClusterMinGapFit: round(bodyGapFit / groups.length),
+    meanClusterMaxStretch: round(bodyStretch / groups.length),
   };
 }
 
@@ -833,12 +944,17 @@ export async function runDetourAssay(opts = {}) {
     }
     const selectedIds = new Set(placed.cohortParticles.map(p => p.id));
     const tracked = initTrackers(world, arena, selectedIds);
+    updateClusterRouteTrackers(placed.clusterGroups, arena);
 
     for (let t = 0; t < ticks; t++) {
       await world.step();
-      if ((t + 1) % sampleEvery === 0) updateTrackers(world, arena, tracked);
+      if ((t + 1) % sampleEvery === 0) {
+        updateTrackers(world, arena, tracked);
+        updateClusterRouteTrackers(placed.clusterGroups, arena);
+      }
     }
     updateTrackers(world, arena, tracked);
+    updateClusterRouteTrackers(placed.clusterGroups, arena);
 
     const records = [...tracked.values()];
     const liveById = new Map(world.particles.filter(p => !p.dead).map(p => [p.id, p]));

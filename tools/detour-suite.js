@@ -80,12 +80,20 @@ function summarize(rows) {
       clusterMotorConsensusMean: round(mean(items.map(r => r.meanClusterMotorConsensus || 0))),
       clusterFieldStrengthMean: round(mean(items.map(r => r.meanClusterFieldStrength || 0))),
       clusterFieldCoverageMean: round(mean(items.map(r => r.clusterFieldCoverage || 0))),
+      clusterCentroidCrossMean: round(mean(items.map(r => r.clusterCentroidCrossRate || 0))),
+      clusterMajorityCrossMean: round(mean(items.map(r => r.clusterMajorityCrossRate || 0))),
+      clusterBodyGoalMean: round(mean(items.map(r => r.clusterBodyGoalRate || 0))),
+      clusterBodyGapMean: round(mean(items.map(r => r.clusterBodyGapApproachRate || 0))),
+      clusterBodyMinGoalMean: round(mean(items.map(r => r.meanClusterMinGoalDistance || 0))),
+      clusterBodyMinGapMean: round(mean(items.map(r => r.meanClusterMinGapDistance || 0))),
+      clusterGapFitMean: round(mean(items.map(r => r.meanClusterMinGapFit || 0))),
+      clusterStretchMean: round(mean(items.map(r => r.meanClusterMaxStretch || 0))),
     };
   });
 }
 
 function printTable(summary) {
-  console.log('preset | stage | replay | runs | tracked | cross | goal | gap | survive | minGoal | minGap | field | meat | speed | capFrac | motor | fast | cParts | cBonds | cTrim | bondRet | cDrift | cContact | cSlip | cSignal | cMsg | msgCov | cMotor | cField | fieldCov');
+  console.log('preset | stage | replay | runs | tracked | cross | goal | gap | survive | minGoal | minGap | field | meat | speed | capFrac | motor | fast | cParts | cBonds | cTrim | bondRet | cDrift | cContact | cSlip | cSignal | cMsg | msgCov | cMotor | cField | fieldCov | bodyX | bodyMaj | bodyGoal | bodyGap | bodyMinGoal | bodyMinGap | cFit | cStretch');
   for (const s of summary) {
     console.log([
       s.preset,
@@ -118,6 +126,14 @@ function printTable(summary) {
       s.clusterMotorConsensusMean.toFixed(3),
       s.clusterFieldStrengthMean.toFixed(3),
       s.clusterFieldCoverageMean.toFixed(3),
+      s.clusterCentroidCrossMean.toFixed(3),
+      s.clusterMajorityCrossMean.toFixed(3),
+      s.clusterBodyGoalMean.toFixed(3),
+      s.clusterBodyGapMean.toFixed(3),
+      s.clusterBodyMinGoalMean.toFixed(1),
+      s.clusterBodyMinGapMean.toFixed(1),
+      s.clusterGapFitMean.toFixed(3),
+      s.clusterStretchMean.toFixed(3),
     ].join(' | '));
   }
 }

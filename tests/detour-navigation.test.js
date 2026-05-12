@@ -111,6 +111,18 @@ await runTest('detour-navigation: assay returns finite behavior metrics', async 
   assertInRange('meanClusterMotorConsensus', result.meanClusterMotorConsensus, 0, 1);
   assertInRange('meanClusterFieldStrength', result.meanClusterFieldStrength, 0, 1);
   assertInRange('clusterFieldCoverage', result.clusterFieldCoverage, 0, 1);
+  assertInRange('clusterCentroidCrossRate', result.clusterCentroidCrossRate, 0, 1);
+  assertInRange('clusterMajorityCrossRate', result.clusterMajorityCrossRate, 0, 1);
+  assertInRange('clusterBodyGoalRate', result.clusterBodyGoalRate, 0, 1);
+  assertInRange('clusterBodyGapApproachRate', result.clusterBodyGapApproachRate, 0, 1);
+  assert('cluster body route distance is finite',
+    Number.isFinite(result.meanClusterMinGoalDistance) &&
+    Number.isFinite(result.meanClusterMinGapDistance),
+    `bodyMinGoal=${result.meanClusterMinGoalDistance} bodyMinGap=${result.meanClusterMinGapDistance}`);
+  assert('cluster morphology metrics are finite',
+    Number.isFinite(result.meanClusterMinGapFit) &&
+    Number.isFinite(result.meanClusterMaxStretch),
+    `gapFit=${result.meanClusterMinGapFit} stretch=${result.meanClusterMaxStretch}`);
   assert('min gap distance is finite', Number.isFinite(result.meanMinGapDistance),
     `meanMinGapDistance=${result.meanMinGapDistance}`);
 });
@@ -185,4 +197,28 @@ await runTest('detour-navigation: curriculum stages train through easier gap wor
     result.curriculumStages.every(s => Number.isFinite(s.startX) && Number.isFinite(s.goalX)),
     JSON.stringify(result.curriculumStages));
   assertInRange('curriculum survivalRate', result.survivalRate, 0, 1);
+});
+
+await runTest('detour-navigation: route curriculum adds a finish-run stage', async () => {
+  const result = await runDetourAssay({
+    preset: 'soup',
+    evolveTicks: 15,
+    curriculum: 'route',
+    ticks: 8,
+    cap: 80,
+    start: 40,
+    seed: 0xD370E,
+    barrier: 'glass',
+    combatMode: 'event',
+    cohort: 'mixed',
+  });
+
+  assert('route curriculum mode is reported', result.curriculum === 'route',
+    `curriculum=${result.curriculum}`);
+  assert('finish-run stage is included',
+    result.curriculumStages.some(s => s.name === 'finish-run'),
+    JSON.stringify(result.curriculumStages));
+  const totalStageTicks = result.curriculumStages.reduce((sum, s) => sum + s.ticks, 0);
+  assert('route curriculum consumes evolve ticks', totalStageTicks === 15,
+    `stageTicks=${totalStageTicks}`);
 });
