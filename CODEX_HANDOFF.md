@@ -1583,6 +1583,37 @@ Latest verification in the cluster-budding pass:
     in that run: 5.7% crossing and 4.7% goal. Current read: this is the first
     strong organism-scale route-completion signal, still seed-dependent rather
     than solved.
+- Detour robustness / measurement correction:
+  - Fixed a determinism leak in `tools/detour-assay.js`: seeded assays now
+    reset simulation identity counters before each run, so a given seed no
+    longer changes because a previous assay consumed particle/cluster ids. A
+    regression in `detour-navigation.test.js` verifies identical seeded output
+    after an intervening assay with a different seed.
+  - Corrected cohesive route metrics so `clusterCohesiveCrossRate` and
+    `clusterCohesiveGoalRate` record whether the body was compact at the
+    moment of crossing/goal reach. The previous metric could erase a valid
+    cohesive success if the body stretched later in the replay.
+  - Reweighted `--curriculum route` toward finish-run/post-gap/goal-approach
+    stages (`[0.08, 0.10, 0.12, 0.15, 0.16, 0.17, 0.22]`) while preserving
+    full-start practice. A topology-aware bond-stiffness experiment and a
+    route-aware sampler experiment were tried and not kept because aggregate
+    route evidence worsened or did not improve cleanly.
+  - Focused checks passed:
+    `node --check js\sim.js`, `node --check tools\detour-assay.js`,
+    `node --check tools\defense-soak.js`, and
+    `npm test -- detour-navigation.test.js cluster-body-telemetry.test.js`.
+  - Latest six-seed medium route matrix (`soup`, seeds
+    `0x51A11,0xA11CE,0xBEE,0xC0FFEE,0xD370A,0xF00D`, ticks 720,
+    evolveTicks 900, cap 620/start 340, event combat, clusterBudget 96):
+    intact clusters reached 69.6% member crossing, 14.7% member goal, 83.3%
+    centroid body crossing, 16.7% body goal, 50.0% cohesive crossing, 16.7%
+    cohesive goal, 75.3% survival, and strong bond retention in the viable
+    seeds. Disassembled controls reached 40.6% member crossing, 4.4% member
+    goal, 50.0% centroid crossing as loose groups, and 0.0% body/cohesive
+    goal. Current read: intact organisms now have a stronger body-level route
+    signal than controls, but robust goal completion remains seed-dependent;
+    weak seeds either fail to survive as route-capable clusters or get stuck
+    near the barrier/final leg.
 
 Core:
 
@@ -1639,6 +1670,9 @@ If no local server is running, start a static server from the repo root and use
   dispatches. Use `used/fallback/pending` telemetry.
 - Random initial particle velocities can pollute microtests unless explicitly
   zeroed.
+- Detour assay seeds are now order-stable by default through
+  `resetSimulationIdentityCounters()`. Do not disable that in normal matrix
+  runs unless specifically testing identity/order effects.
 - Some files show mojibake in comments; avoid unnecessary churn there.
 
 ## How to resume work
@@ -1672,11 +1706,15 @@ git log --oneline -5
 - agency: run repeated post-topology `--replay both` evidence with the new
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use
-- agency: detour next step is robustness. The cohesive route pass produced
-  organism-scale goal completion in one of two seeds, with intact clusters
-  beating disassembled controls in the two-seed matrix. Run broader seeds and
-  medium difficulty, then inspect why stuck seeds form compact non-routing
-  bodies rather than following the post-gap/goal gradient.
+- agency: detour next step is still robustness, now with cleaner evidence.
+  The six-seed medium route pass shows intact clusters beating disassembled
+  controls on body/cohesive route metrics, but cohesive goal remains 16.7% and
+  weak seeds still fail. Next inspect the weak seeds by failure class:
+  low-survival/no-route (`0xF00D`), gap-approach without passage (`0xBEE`),
+  crossing without final-goal completion (`0x51A11`, `0xC0FFEE`, `0xD370A`).
+  Likely next experiments: morphology/gap-fit selection, cohesion-preserving
+  passage pressure, stronger final-leg food pressure, or motor-consensus
+  scaffolds that help compact bodies commit to a route without scripting it.
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization
 

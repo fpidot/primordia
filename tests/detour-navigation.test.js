@@ -235,3 +235,38 @@ await runTest('detour-navigation: route curriculum adds a finish-run stage', asy
   assert('route curriculum consumes evolve ticks', totalStageTicks === 15,
     `stageTicks=${totalStageTicks}`);
 });
+
+await runTest('detour-navigation: seeded assays are independent of prior assay order', async () => {
+  const opts = {
+    preset: 'soup',
+    evolveTicks: 18,
+    curriculum: 'route',
+    ticks: 12,
+    cap: 96,
+    start: 52,
+    seed: 0xD370F,
+    barrier: 'glass',
+    combatMode: 'event',
+    replay: 'clusters-intact',
+    clusterBudget: 48,
+    clusterMaxClusters: 3,
+    clusterMinSize: 4,
+  };
+  const a = await runDetourAssay(opts);
+  await runDetourAssay({ ...opts, seed: 0xD3710 });
+  const b = await runDetourAssay(opts);
+  const fields = [
+    'tracked',
+    'crossRate',
+    'goalRate',
+    'survivalRate',
+    'clusterSampleParticles',
+    'clusterSampleBonds',
+    'clusterCentroidCrossRate',
+    'meanClusterMinGoalDistance',
+  ];
+  for (const field of fields) {
+    assert(`seeded field ${field} is stable`, a[field] === b[field],
+      `${field}: ${a[field]} !== ${b[field]}`);
+  }
+});

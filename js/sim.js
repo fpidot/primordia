@@ -434,6 +434,11 @@ const CROWD_PENALTY = 0.0015;
 let _id = 0;
 let _lineage = 0;
 
+export function resetSimulationIdentityCounters() {
+  _id = 0;
+  _lineage = 0;
+}
+
 function rng_default() { return Math.random(); }
 
 const CLUSTER_FORBIDDEN_GIVEN_NAMES = new Set(SPECIES_NAMES.map(s => s.toLowerCase()));

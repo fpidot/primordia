@@ -254,6 +254,25 @@ heavier Planet starts are still a deliberate stress test.
    organism-scale route-completion signal, still seed-dependent and not yet
    proof of robust general navigation. Next: run broader seeds/difficulties and
    inspect why some seeds still form compact but non-routing bodies.
+   Broader robustness pass: the detour assay now resets simulation identity
+   counters at the start of each seeded run, fixing an order-dependence leak
+   where earlier assays changed later particle/cluster ids. Cohesive route
+   metrics now record compact crossing/goal at the moment those events happen,
+   instead of invalidating a success if the body stretches later. The route
+   curriculum now allocates more time to finish-run, post-gap, and
+   goal-approach practice while keeping full-start practice. A six-seed medium
+   route matrix (`soup`, seeds `0x51A11,0xA11CE,0xBEE,0xC0FFEE,0xD370A,0xF00D`,
+   ticks 720, evolveTicks 900, cap 620/start 340, event combat, clusterBudget
+   96) measured intact clusters at 69.6% member crossing, 14.7% member goal,
+   83.3% body crossing, 16.7% body goal, 50.0% cohesive crossing, and 16.7%
+   cohesive goal. Disassembled controls reached 40.6% member crossing, 4.4%
+   member goal, 50.0% loose centroid crossing, and 0.0% body/cohesive goal.
+   Current read: organism-scale routing is now a real, measurable advantage
+   over disassembled cells, but final goal completion is still not robust.
+   Next experiments should classify weak seeds by failure mode and test
+   morphology/gap-fit selection, cohesion-preserving passage pressure,
+   stronger final-leg food pressure, or motor-consensus scaffolds that make
+   compact bodies commit to routes without adding a pathfinder.
    Latest glass/edge pinning update: solid, glass, and world-edge collisions
    now add generic hard-contact feedback plus a tiny tangent/escape nudge so
    agents pressing into a barrier can slide away and receive the same bodily

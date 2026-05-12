@@ -10,6 +10,7 @@ import { mulberry32 } from '../tests/harness.js';
 import {
   World, W, H, GW, GH, CELL, MAX_V,
   WALL_MEMBRANE, WALL_POROUS, WALL_SOLID,
+  resetSimulationIdentityCounters,
 } from '../js/sim.js';
 import { cloneGenome } from '../js/genome.js';
 import { PRESETS, PRESET_COUNTS } from '../js/presets.js';
@@ -375,7 +376,7 @@ function curriculumPlan(kind, totalTicks, opts = {}) {
   if (kind !== 'ladder' && kind !== 'route') return [];
   const routeMode = kind === 'route';
   const weights = routeMode
-    ? [0.10, 0.14, 0.16, 0.16, 0.12, 0.12, 0.20]
+    ? [0.08, 0.10, 0.12, 0.15, 0.16, 0.17, 0.22]
     : [0.22, 0.26, 0.26, 0.26];
   const ticks = splitStageTicks(totalTicks, weights);
   const stages = [
@@ -509,6 +510,9 @@ function applyCurriculumStage(world, baseOpts, stage) {
     difficulty: arena.difficulty,
     gapCells: arena.gapCells,
     thickness: stageOpts.thickness,
+    barrierX: round(arena.barrierX),
+    gapA: arena.gapA,
+    gapB: arena.gapB,
     startX: round(startX),
     startY: round(startY),
     goalX: round(goalX),
@@ -707,9 +711,16 @@ function updateClusterRouteTrackers(groups, arena) {
     g.maxBodyX = Math.max(g.maxBodyX, s.cx);
     g.minGapFit = Math.min(g.minGapFit, s.gapFit);
     g.maxStretchRatio = Math.max(g.maxStretchRatio, s.stretchRatio);
-    if (s.centroidCrossed) g.bodyCrossed = true;
+    const compactEnough = s.stretchRatio <= 4;
+    if (s.centroidCrossed) {
+      g.bodyCrossed = true;
+      if (compactEnough && s.majorityCrossed) g.bodyCrossedCompact = true;
+    }
     if (s.majorityCrossed) g.majorityCrossed = true;
-    if (s.goalDistance < 42) g.bodyReachedGoal = true;
+    if (s.goalDistance < 42) {
+      g.bodyReachedGoal = true;
+      if (compactEnough) g.bodyReachedGoalCompact = true;
+    }
     if (s.gapDistance < 60) g.bodyApproachedGap = true;
   }
 }
@@ -876,13 +887,12 @@ function summarizeClusterGroups(groups) {
       if (msg > 0.08) clusterMessageGroups++;
       if (field > 0.04) fieldGroups++;
     }
-    const compactEnough = (g.maxStretchRatio || 0) <= 4;
     if (g.bodyCrossed) centroidCross++;
     if (g.majorityCrossed) majorityCross++;
     if (g.bodyReachedGoal) bodyGoal++;
     if (g.bodyApproachedGap) bodyGap++;
-    if (compactEnough && g.bodyCrossed && g.majorityCrossed) cohesiveCross++;
-    if (compactEnough && g.bodyReachedGoal) cohesiveGoal++;
+    if (g.bodyCrossedCompact) cohesiveCross++;
+    if (g.bodyReachedGoalCompact) cohesiveGoal++;
     bodyMinGoal += Number.isFinite(g.minBodyGoalDistance) ? g.minBodyGoalDistance : 0;
     bodyMinGap += Number.isFinite(g.minBodyGapDistance) ? g.minBodyGapDistance : 0;
     bodyMaxX += Number.isFinite(g.maxBodyX) ? g.maxBodyX : 0;
@@ -930,6 +940,7 @@ function parseReplayMode(raw) {
 }
 
 export async function runDetourAssay(opts = {}) {
+  if (opts.resetIdentityCounters !== false) resetSimulationIdentityCounters();
   const seed = Number(opts.seed ?? 0xD370A);
   const presetName = opts.preset || 'soup';
   const cap = Math.max(16, Number(opts.cap) || 600);
