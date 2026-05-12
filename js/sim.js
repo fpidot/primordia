@@ -548,6 +548,7 @@ export class World {
     this._clusterBudReadiness = new Map();
     this.clusterBudDiagnostics = newClusterBudDiagnostics();
     this.clusterBudding = opts.clusterBudding ?? true;
+    this._clusterMotion = new Map();
     this._clusterNames = new Map();   // member-set fingerprint → stable name
     // Map from particle.id → cluster object, rebuilt each detection. Lets the
     // camera chase a cluster by holding a reference to one specific member
@@ -1023,6 +1024,7 @@ export class World {
     this._clusterNames.clear();
     this._clusterBudLastTick.clear();
     this._clusterBudReadiness.clear();
+    this._clusterMotion.clear();
     this.clusterBudDiagnostics = newClusterBudDiagnostics();
   }
 
@@ -1975,6 +1977,15 @@ export class World {
         inp[69] = longChem[5];
         inp[70] = longChem[6];
         inp[71] = longChem[7];
+        if (cl6) {
+          inp[72] = cl6.vx || 0;
+          inp[73] = cl6.vy || 0;
+          inp[74] = cl6.contactX || 0;
+          inp[75] = cl6.contactY || 0;
+          inp[76] = cl6.slip || 0;
+        } else {
+          inp[72] = inp[73] = inp[74] = inp[75] = inp[76] = 0;
+        }
         g.brain.forward(inp, out);
       }
 
@@ -2839,6 +2850,15 @@ export class World {
       const longChemRadius = Math.round((p.genome?.sense_radius || 48) / CELL);
       sampleLongChemInto(f0, sgx, sgy, longChemRadius, extras, o + 44, 0.45);
       sampleLongChemInto(f1, sgx, sgy, longChemRadius, extras, o + 48, 0.32);
+      if (cl) {
+        extras[o + 52] = cl.vx || 0;
+        extras[o + 53] = cl.vy || 0;
+        extras[o + 54] = cl.contactX || 0;
+        extras[o + 55] = cl.contactY || 0;
+        extras[o + 56] = cl.slip || 0;
+      } else {
+        extras[o + 52] = extras[o + 53] = extras[o + 54] = extras[o + 55] = extras[o + 56] = 0;
+      }
     }
   }
 
@@ -3273,6 +3293,8 @@ export class World {
     const memberMap = this._particleToCluster;
     memberMap.clear();
     const usedHumanNames = new Set();
+    const prevMotion = this._clusterMotion || new Map();
+    const nextMotion = new Map();
     for (const [root, members] of groups) {
       if (members.length < MIN_NAMED_CLUSTER) continue;
       let cx = 0, cy = 0;
@@ -3294,12 +3316,16 @@ export class World {
       let spreadSum = 0, maxR2 = 0;
       const memberIds = new Set(members.map(p => p.id));
       let internalBondRefs = 0;
+      let contactX = 0, contactY = 0, slipSum = 0;
       for (const p of members) {
         const dx = p.x - cx;
         const dy = p.y - cy;
         const d2 = dx * dx + dy * dy;
         spreadSum += Math.sqrt(d2);
         if (d2 > maxR2) maxR2 = d2;
+        contactX += p.lastHardContactX || 0;
+        contactY += p.lastHardContactY || 0;
+        slipSum += p.lastMotorSlip || 0;
         for (const partnerId of p.bonds || []) {
           if (memberIds.has(partnerId)) internalBondRefs++;
         }
@@ -3330,6 +3356,16 @@ export class World {
       const generationSuffix = organismGenerationSuffix(topOrganismGeneration);
       displayBase += generationSuffix;
       const name = `${displayBase} ×${members.length}`;
+      const motionKey = smallestId;
+      const prev = prevMotion.get(motionKey);
+      const dt = prev ? Math.max(1, this.tick - prev.tick) : 0;
+      const clusterVx = dt ? clamp(((cx - prev.cx) / dt) / MAX_V, -1, 1) : 0;
+      const clusterVy = dt ? clamp(((cy - prev.cy) / dt) / MAX_V, -1, 1) : 0;
+      const invCount = 1 / Math.max(1, members.length);
+      const meanContactX = clamp(contactX * invCount, -1, 1);
+      const meanContactY = clamp(contactY * invCount, -1, 1);
+      const meanSlip = clamp(slipSum * invCount, 0, 1);
+      nextMotion.set(motionKey, { cx, cy, tick: this.tick });
       const cluster = {
         root,
         anchorId: smallestId,
@@ -3339,6 +3375,11 @@ export class World {
         count: members.length,
         members,                  // actual particle refs — used by chase highlight
         cx, cy,
+        vx: clusterVx,
+        vy: clusterVy,
+        contactX: meanContactX,
+        contactY: meanContactY,
+        slip: meanSlip,
         radius: Math.max(8, Math.sqrt(maxR2)),
         spread: spreadSum / members.length,
         internalBonds,
@@ -3358,6 +3399,7 @@ export class World {
     // Sort by size descending — renderer caps how many flags it draws
     clusters.sort((a, b) => b.count - a.count);
     this._clusters = clusters;
+    this._clusterMotion = nextMotion;
   }
 
   clearWallMeta(idx) {

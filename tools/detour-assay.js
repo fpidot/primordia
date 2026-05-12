@@ -602,6 +602,10 @@ function summarizeClusterGroups(groups) {
       meanMemberSurvival: 0,
       meanBondRetention: 0,
       meanDispersionRatio: 0,
+      meanClusterBodyDrift: 0,
+      meanClusterBodyContact: 0,
+      meanClusterBodySlip: 0,
+      clusterBodySignalCoverage: 0,
     };
   }
   let aliveAny = 0;
@@ -609,6 +613,10 @@ function summarizeClusterGroups(groups) {
   let memberSurvival = 0;
   let bondRetention = 0;
   let dispersionRatio = 0;
+  let bodyDrift = 0;
+  let bodyContact = 0;
+  let bodySlip = 0;
+  let bodySignalGroups = 0;
   for (const g of groups) {
     const liveMembers = g.members.filter(p => p && !p.dead);
     if (liveMembers.length > 0) aliveAny++;
@@ -620,6 +628,28 @@ function summarizeClusterGroups(groups) {
     }
     bondRetention += g.startBondCount ? retained / g.startBondCount : 0;
     dispersionRatio += meanDispersion(liveMembers) / Math.max(1, g.initialDispersion);
+    const seenClusters = new Set();
+    const liveClusters = [];
+    for (const p of liveMembers) {
+      const c = p.cluster;
+      if (!c) continue;
+      const key = c.anchorId || c.root || c.name;
+      if (seenClusters.has(key)) continue;
+      seenClusters.add(key);
+      liveClusters.push(c);
+    }
+    if (liveClusters.length > 0) {
+      bodySignalGroups++;
+      let drift = 0, contact = 0, slip = 0;
+      for (const c of liveClusters) {
+        drift += Math.hypot(c.vx || 0, c.vy || 0);
+        contact += Math.hypot(c.contactX || 0, c.contactY || 0);
+        slip += c.slip || 0;
+      }
+      bodyDrift += drift / liveClusters.length;
+      bodyContact += contact / liveClusters.length;
+      bodySlip += slip / liveClusters.length;
+    }
   }
   return {
     cohortClusters: groups.length,
@@ -630,6 +660,10 @@ function summarizeClusterGroups(groups) {
     meanMemberSurvival: round(memberSurvival / groups.length),
     meanBondRetention: round(bondRetention / groups.length),
     meanDispersionRatio: round(dispersionRatio / groups.length),
+    meanClusterBodyDrift: round(bodyDrift / groups.length),
+    meanClusterBodyContact: round(bodyContact / groups.length),
+    meanClusterBodySlip: round(bodySlip / groups.length),
+    clusterBodySignalCoverage: round(bodySignalGroups / groups.length),
   };
 }
 

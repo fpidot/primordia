@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Bias hard-contact slide by chemical tangent`
+  current `main` HEAD after this pass: `Add cluster body telemetry`
 
 Recent useful commits:
 
-- current `main` HEAD - Bias hard-contact slide by chemical tangent
+- current `main` HEAD - Add cluster body telemetry
+- `986448a` - Bias hard-contact slide by chemical tangent
 - `b0b4fe6` - Add long chemical navigation sensors
 - `bc9f618` - Expose population cap and refine visibility prefix
 - `ce31468` - Recycle worker particle slab buffers
@@ -149,6 +150,8 @@ Core systems:
 - visual RGB signal channels
 - bond messages and named clusters
 - cluster alarm broadcast
+- cluster body telemetry shared to named members: whole-organism drift,
+  hard-contact direction, and mean motor slip
 - cluster topology scoring that feeds modest bond-message reinforcement and
   defensive guard payoff
 - cluster-level budding reproduction for stable, energy-rich bonded organisms,
@@ -214,9 +217,16 @@ Important recent sensor state:
   - `chem.decay.long.dx/dy/strength/contrast`
   These are radial field samples; they expose distant food/carcass gradients
   through glass and mud because those materials transmit chemistry.
+- Cluster body sensors were appended after long chemistry at inputs 72-76:
+  - `cluster.vx/vy`
+  - `cluster.contact.x/y`
+  - `cluster.slip`
+  These let every named-cluster member sense whether the organism as a whole
+  is drifting, pinned against a hard surface, or failing to turn motor effort
+  into movement. They do not identify the obstacle or prescribe a route.
 - Old wall/mud slots remain stable.
-- CPU and GPU terrain/proprioception/damage/long-chem sensor paths are wired
-  for parity. GPU extras stride is now 52 floats.
+- CPU and GPU terrain/proprioception/damage/long-chem/cluster-body sensor
+  paths are wired for parity. GPU extras stride is now 57 floats.
 
 ## Recently shipped behavior
 
@@ -1364,6 +1374,26 @@ Latest verification in the cluster-budding pass:
     small replay confirmed the same sampled organism can be compared intact vs
     disassembled, so the ecological read is plausible: cohesive organisms need
     better coordinated locomotion/surface-following.
+- Cluster body telemetry verification:
+  - Added append-only brain inputs 72-76 for named-cluster body drift,
+    hard-contact direction, and mean slip, plus GPU extras stride 57 parity.
+  - `npm test -- cluster-body-telemetry.test.js terrain-sensors.test.js detour-navigation.test.js`
+    passed.
+  - `npm test` passed all 25 test files after the cluster-body telemetry pass.
+  - GPU smoke passed:
+    `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 1 --warmup 100 --width 1200 --height 800 --port 9273 --gpu`;
+    GPU ready/enabled, no page errors.
+  - Worker performance sanity check:
+    `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset maze --seconds 30 --speed 4 --seed 0xC0FFEE --profile --profileEvery 300 --zoom 0.35 --port 9272 --worker --workBudget 12 --maxParticles 1800`
+    held 50 FPS and reached 646 ticks / 21.5 ticks/sec at population 1651,
+    with render around 4.6 ms/frame and agent work still the main bottleneck.
+  - Short cluster detour telemetry check:
+    `node tools\detour-suite.js --presets soup --seeds 0x51A11 --replays clusters-intact,clusters-disassembled --ticks 160 --evolveTicks 360 --cap 420 --start 240 --difficulty easy --curriculum ladder --clusterBudget 64 --clusterMaxClusters 3 --cohort mixed`
+    passed. Intact cluster replay showed `cSignal=1.0`, `cDrift=0.438`,
+    `cSlip=0.056`, and bond retention 1.0, but still no crossings in this
+    short run; next evidence pass should be a longer multi-seed curriculum
+    soak to see whether whole-body feedback improves intact cluster gap
+    approach/crossing over generations.
   - `npm test` passed all 24 test files after the chemical-tangent pass.
   - GPU browser smoke passed:
     `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 1 --warmup 100 --width 1200 --height 800 --port 9271 --gpu`;

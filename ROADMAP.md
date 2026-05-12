@@ -165,9 +165,22 @@ heavier Planet starts are still a deliberate stress test.
    survival and only modestly improved crossing. Medium difficulty still
    remains weak. A direct intact-vs-disassembled cluster probe used the same
    sampled organism set and showed intact clusters preserve bonds/survive but
-   still fail to cross; disassembled members disperse more easily. Next agency
-   target: coordinated cluster locomotion and surface-following, not more
-   individual smell alone.
+   still fail to cross; disassembled members disperse more easily.
+   Current cluster-body update: named clusters now compute append-only
+   organism-level motion telemetry and expose it to every member's brain:
+   cluster drift, average hard-contact normal, and mean member slip. This
+   gives non-contact members raw information that the body as a whole is
+   pinned, sliding, or not making progress, without telling them what the
+   obstacle is or how to solve it. CPU and GPU brain paths are kept in parity
+   by extending the extras stride to 57 floats; the detour suite now reports
+   `cDrift`, `cContact`, `cSlip`, and `cSignal` for cluster replay rows. A
+   quick post-change easy ladder check (`soup`, seed `0x51A11`, ticks 160,
+   evolveTicks 360, cap 420/start 240) confirmed intact and disassembled
+   cluster replays both receive body telemetry (`cSignal=1.0`), but still did
+   not cross in that short run. Next agency target: use longer curriculum
+   runs to test whether this whole-body feedback improves intact cluster gap
+   approach/crossing, then consider topology-weighted bond-message routing or
+   movement-economy tuning if intact bodies still only survive.
    Latest glass/edge pinning update: solid, glass, and world-edge collisions
    now add generic hard-contact feedback plus a tiny tangent/escape nudge so
    agents pressing into a barrier can slide away and receive the same bodily
@@ -433,6 +446,10 @@ heavier Planet starts are still a deliberate stress test.
    run slower. Current measurements on this machine: default worker low-zoom
    maze, seed `0xC0FFEE`, speed 4/workBudget 12, 60s: 50 FPS, 1244 ticks,
    20.7 ticks/sec, population ~1731, no page errors. The same shape with
+   the cluster-body sensor pass in place, run for a 30s sanity check, held
+   50 FPS and reached 646 ticks / 21.5 ticks/sec at population 1651, with
+   render around 4.6 ms/frame and the profiler still dominated by agent work.
+   The same shape with
    `--maxParticles 1500` for 75s reached 1824 ticks, 24.3 ticks/sec,
    population ~1442, and still held 50 FPS; late render stayed under
    4 ms/frame while the worker sim remained the bottleneck. A high-cap 5000

@@ -97,6 +97,11 @@ export const SENSOR_NAMES = [
   /* 69 */ 'chem.decay.long.dy',
   /* 70 */ 'chem.decay.long.strength',
   /* 71 */ 'chem.decay.long.contrast',
+  /* 72 */ 'cluster.vx',                 // body-level drift shared by named clusters
+  /* 73 */ 'cluster.vy',
+  /* 74 */ 'cluster.contact.x',          // average hard-contact normal across the organism
+  /* 75 */ 'cluster.contact.y',
+  /* 76 */ 'cluster.slip',               // mean member motor slip across the organism
 ];
 export const N_INPUT = SENSOR_NAMES.length;
 
