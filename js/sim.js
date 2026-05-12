@@ -150,6 +150,7 @@ const MUD_SPEED_MULT     = 0.78;
 const MUD_ENERGY_DRAIN   = 0.010;
 const HARD_CONTACT_TANGENT = 0.18; // rough hard-surface slip so agents do not pin forever
 const HARD_CONTACT_ESCAPE  = 0.05; // tiny generic rebound from solid/glass/edges
+const CLUSTER_CONTACT_SLIDE = 0.12; // organism-scale surface following from shared contact feedback
 
 // Communication has a tiny metabolic cost, but named clusters can convert
 // received bond messages into action-specific coordination bonuses.
@@ -158,6 +159,8 @@ const SOUND_COST   = 0.0010;
 const BONDMSG_COST = 0.0008;
 const BONDMSG_DEGREE_GAIN = 0.10;
 const BONDMSG_TOPOLOGY_GAIN = 0.25;
+const CLUSTER_MSG_DECAY = 0.84;
+const CLUSTER_MSG_TOPOLOGY_GAIN = 0.35;
 const COORD_HUNT_BONUS  = 0.25;
 const COORD_EAT_BONUS   = 0.08;
 const COORD_BUILD_BONUS = 0.35;
@@ -382,6 +385,25 @@ function newClusterBudDiagnostics() {
   };
 }
 
+function centeredBondMsg(v) {
+  return clamp(((Number.isFinite(v) ? v : 0.5) * 2) - 1, -1, 1);
+}
+
+function salientMessageMean(members, channel) {
+  let weighted = 0;
+  let weightSum = 0;
+  for (const p of members || []) {
+    if (!p || p.dead) continue;
+    const v = centeredBondMsg(p[channel]);
+    const a = Math.abs(v);
+    if (a < 0.04) continue;
+    const w = a * a;
+    weighted += v * w;
+    weightSum += w;
+  }
+  return weightSum > 1e-6 ? weighted / weightSum : 0;
+}
+
 // Bond barrier — bonded clusters act as one-way "moving walls" against
 // outsider particles. Outsider = not bonded to either endpoint of the segment.
 // Gated on cluster membership so a single bonded pair doesn't form a barrier;
@@ -549,6 +571,7 @@ export class World {
     this.clusterBudDiagnostics = newClusterBudDiagnostics();
     this.clusterBudding = opts.clusterBudding ?? true;
     this._clusterMotion = new Map();
+    this._clusterBus = new Map();
     this._clusterNames = new Map();   // member-set fingerprint → stable name
     // Map from particle.id → cluster object, rebuilt each detection. Lets the
     // camera chase a cluster by holding a reference to one specific member
@@ -876,7 +899,7 @@ export class World {
       lastDamageTick: -9999,
       soundCh: 0, soundAmp: 0,
       wantBond: 0, wantMate: 0,
-      bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
+      bondMsgR: 0.5, bondMsgG: 0.5, bondMsgB: 0.5,
       incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
       wallCarry: 0,
       shelterRelief: 0,
@@ -1025,6 +1048,7 @@ export class World {
     this._clusterBudLastTick.clear();
     this._clusterBudReadiness.clear();
     this._clusterMotion.clear();
+    this._clusterBus.clear();
     this.clusterBudDiagnostics = newClusterBudDiagnostics();
   }
 
@@ -1455,6 +1479,7 @@ export class World {
         p.incomingBondMsgR = p.incomingBondMsgG = p.incomingBondMsgB = 0;
       }
     }
+    this._updateClusterMessageBus();
 
     // Phase 6c — fast cluster alarm. After bondMsg propagation, scan each
     // named cluster for any member whose previous-tick bondMsg (any channel)
@@ -1846,6 +1871,29 @@ export class World {
       const longFieldY = gSense[0] * longChem[1] + gSense[1] * longChem[5];
       ax += K_FIELD_LONG * longFieldX;
       ay += K_FIELD_LONG * longFieldY;
+      const bodyContactCluster = p.cluster;
+      if (bodyContactCluster && (bodyContactCluster.slip || 0) > 0.025) {
+        const contactX = bodyContactCluster.contactX || 0;
+        const contactY = bodyContactCluster.contactY || 0;
+        const contactMag = Math.hypot(contactX, contactY);
+        if (contactMag > 0.02) {
+          const nxBody = contactX / contactMag;
+          const nyBody = contactY / contactMag;
+          const txBody = -nyBody;
+          const tyBody = nxBody;
+          const tangentField = longFieldX * txBody + longFieldY * tyBody;
+          const tangentStrength = Math.abs(tangentField);
+          if (tangentStrength > 0.04) {
+            const slipGain = clamp((bodyContactCluster.slip || 0) * 4, 0, 1);
+            const topologyGain = 0.5 + (bodyContactCluster.topology || 0) * 0.5;
+            const sizeGain = Math.tanh((bodyContactCluster.count || 0) / 14);
+            const slide = CLUSTER_CONTACT_SLIDE * slipGain * topologyGain * sizeGain *
+              clamp(tangentStrength * 2, 0, 1) * Math.sign(tangentField);
+            ax += txBody * slide;
+            ay += tyBody * slide;
+          }
+        }
+      }
 
       // ── Brain: build sensor input, run forward pass, apply outputs ──
       const out = this._brainOutput;
@@ -1983,8 +2031,12 @@ export class World {
           inp[74] = cl6.contactX || 0;
           inp[75] = cl6.contactY || 0;
           inp[76] = cl6.slip || 0;
+          inp[77] = cl6.busR || 0;
+          inp[78] = cl6.busG || 0;
+          inp[79] = cl6.busB || 0;
         } else {
           inp[72] = inp[73] = inp[74] = inp[75] = inp[76] = 0;
+          inp[77] = inp[78] = inp[79] = 0;
         }
         g.brain.forward(inp, out);
       }
@@ -2519,7 +2571,7 @@ export class World {
             lastDamageTick: -9999,
             soundCh: 0, soundAmp: 0,
             wantBond: 0, wantMate: 0,
-            bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
+            bondMsgR: 0.5, bondMsgG: 0.5, bondMsgB: 0.5,
             incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
             wallCarry: 0,
             shelterRelief: 0,
@@ -2592,7 +2644,7 @@ export class World {
             lastDamageTick: -9999,
             soundCh: 0, soundAmp: 0,
             wantBond: 0, wantMate: 0,
-            bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
+            bondMsgR: 0.5, bondMsgG: 0.5, bondMsgB: 0.5,
             incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
             wallCarry: 0,
             shelterRelief: 0,
@@ -2856,8 +2908,12 @@ export class World {
         extras[o + 54] = cl.contactX || 0;
         extras[o + 55] = cl.contactY || 0;
         extras[o + 56] = cl.slip || 0;
+        extras[o + 57] = cl.busR || 0;
+        extras[o + 58] = cl.busG || 0;
+        extras[o + 59] = cl.busB || 0;
       } else {
         extras[o + 52] = extras[o + 53] = extras[o + 54] = extras[o + 55] = extras[o + 56] = 0;
+        extras[o + 57] = extras[o + 58] = extras[o + 59] = 0;
       }
     }
   }
@@ -3235,6 +3291,34 @@ export class World {
     return children.length;
   }
 
+  _updateClusterMessageBus() {
+    if (!this._clusters || this._clusters.length === 0) {
+      this._clusterBus.clear();
+      return;
+    }
+    const nextBus = new Map();
+    for (const c of this._clusters) {
+      const key = c.anchorId || c.root || 0;
+      const prev = this._clusterBus.get(key) || { r: 0, g: 0, b: 0 };
+      const gain = 1 + (c.topology || 0) * CLUSTER_MSG_TOPOLOGY_GAIN;
+      const freshR = Math.tanh(salientMessageMean(c.members, 'bondMsgR') * gain);
+      const freshG = Math.tanh(salientMessageMean(c.members, 'bondMsgG') * gain);
+      const freshB = Math.tanh(salientMessageMean(c.members, 'bondMsgB') * gain);
+      const carry = (old, fresh) => {
+        const decayed = old * CLUSTER_MSG_DECAY;
+        return Math.abs(fresh) >= Math.abs(decayed) ? fresh : decayed;
+      };
+      const r = carry(prev.r || 0, freshR);
+      const g = carry(prev.g || 0, freshG);
+      const b = carry(prev.b || 0, freshB);
+      c.busR = r;
+      c.busG = g;
+      c.busB = b;
+      nextBus.set(key, { r, g, b });
+    }
+    this._clusterBus = nextBus;
+  }
+
   updateClusters() {
     const CLUSTER_INTERVAL = 12;
     const MIN_NAMED_CLUSTER = 8;
@@ -3358,6 +3442,7 @@ export class World {
       const name = `${displayBase} ×${members.length}`;
       const motionKey = smallestId;
       const prev = prevMotion.get(motionKey);
+      const prevBus = this._clusterBus.get(motionKey) || { r: 0, g: 0, b: 0 };
       const dt = prev ? Math.max(1, this.tick - prev.tick) : 0;
       const clusterVx = dt ? clamp(((cx - prev.cx) / dt) / MAX_V, -1, 1) : 0;
       const clusterVy = dt ? clamp(((cy - prev.cy) / dt) / MAX_V, -1, 1) : 0;
@@ -3380,6 +3465,9 @@ export class World {
         contactX: meanContactX,
         contactY: meanContactY,
         slip: meanSlip,
+        busR: prevBus.r || 0,
+        busG: prevBus.g || 0,
+        busB: prevBus.b || 0,
         radius: Math.max(8, Math.sqrt(maxR2)),
         spread: spreadSum / members.length,
         internalBonds,
@@ -3799,12 +3887,12 @@ export class World {
         lastDamageTick: op.lastDamageTick || -9999,
         soundCh: 0, soundAmp: 0,
         wantBond: 0, wantMate: 0,
-        bondMsgR: 0, bondMsgG: 0, bondMsgB: 0,
-      incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
-      wallCarry: op.wallCarry || 0,
-      shelterRelief: op.shelterRelief || 0,
-      wallDigs: op.wallDigs || 0,
-      wallDeposits: op.wallDeposits || 0,
+        bondMsgR: 0.5, bondMsgG: 0.5, bondMsgB: 0.5,
+        incomingBondMsgR: 0, incomingBondMsgG: 0, incomingBondMsgB: 0,
+        wallCarry: op.wallCarry || 0,
+        shelterRelief: op.shelterRelief || 0,
+        wallDigs: op.wallDigs || 0,
+        wallDeposits: op.wallDeposits || 0,
         cluster: null,
         bonds: Array.isArray(op.bonds) ? op.bonds.slice() : [],
         dead: false,

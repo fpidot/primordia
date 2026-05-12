@@ -36,7 +36,7 @@ import {
 const PARTICLE_STRIDE_F32 = 16;
 const RESULT_STRIDE_F32   = 30;       // forces+stats(12) + outputs(18); h stays GPU-resident
 const PAIR_RESULT_STRIDE_F32 = 20;    // forces+stats(12) + quadrant stats(8)
-const EXTRAS_STRIDE_F32   = 57;       // chem + sound + bondMsg + cluster + wallCarry + terrain + proprioception + damage + long chem + cluster body telemetry
+const EXTRAS_STRIDE_F32   = 60;       // chem + sound + bondMsg + cluster + wallCarry + terrain + proprioception + damage + long chem + cluster body telemetry/bus
 const BRAIN_STRIDE_F32    = BRAIN_PACK_STRIDE;
 const STATE_STRIDE_F32    = N_HIDDEN_MAX + 8; // h state + GPU-only quadrant scratch
 const PARAMS_SIZE         = 48;
@@ -65,6 +65,7 @@ const READBACK_SLOTS      = 3;
 //   44..47: longer-range food field dx/dy/strength/contrast
 //   48..51: longer-range decay field dx/dy/strength/contrast
 //   52..56: cluster vx/vy, contact x/y, slip
+//   57..59: cluster-wide message trace r/g/b
 const EXTRAS_BOND_MSG_R_OFFSET = 10;
 const EXTRAS_BOND_MSG_G_OFFSET = 11;
 const EXTRAS_BOND_MSG_B_OFFSET = 12;
@@ -478,6 +479,9 @@ fn brain_forward(@builtin(global_invocation_id) id: vec3u) {
   inp[74] = extras[eo + 54u];     // cluster hard-contact x
   inp[75] = extras[eo + 55u];     // cluster hard-contact y
   inp[76] = extras[eo + 56u];     // cluster mean slip
+  inp[77] = extras[eo + 57u];     // cluster message trace r
+  inp[78] = extras[eo + 58u];     // cluster message trace g
+  inp[79] = extras[eo + 59u];     // cluster message trace b
 
   // Forward — compute new hidden state
   var h_new: array<f32, ${N_HIDDEN_MAX}>;

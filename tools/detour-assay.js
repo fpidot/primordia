@@ -606,6 +606,8 @@ function summarizeClusterGroups(groups) {
       meanClusterBodyContact: 0,
       meanClusterBodySlip: 0,
       clusterBodySignalCoverage: 0,
+      meanClusterMessage: 0,
+      clusterMessageCoverage: 0,
     };
   }
   let aliveAny = 0;
@@ -617,6 +619,8 @@ function summarizeClusterGroups(groups) {
   let bodyContact = 0;
   let bodySlip = 0;
   let bodySignalGroups = 0;
+  let clusterMessage = 0;
+  let clusterMessageGroups = 0;
   for (const g of groups) {
     const liveMembers = g.members.filter(p => p && !p.dead);
     if (liveMembers.length > 0) aliveAny++;
@@ -649,6 +653,17 @@ function summarizeClusterGroups(groups) {
       bodyDrift += drift / liveClusters.length;
       bodyContact += contact / liveClusters.length;
       bodySlip += slip / liveClusters.length;
+      let msg = 0;
+      for (const c of liveClusters) {
+        msg += Math.max(
+          Math.abs(c.busR || 0),
+          Math.abs(c.busG || 0),
+          Math.abs(c.busB || 0),
+        );
+      }
+      msg /= liveClusters.length;
+      clusterMessage += msg;
+      if (msg > 0.08) clusterMessageGroups++;
     }
   }
   return {
@@ -664,6 +679,8 @@ function summarizeClusterGroups(groups) {
     meanClusterBodyContact: round(bodyContact / groups.length),
     meanClusterBodySlip: round(bodySlip / groups.length),
     clusterBodySignalCoverage: round(bodySignalGroups / groups.length),
+    meanClusterMessage: round(clusterMessage / groups.length),
+    clusterMessageCoverage: round(clusterMessageGroups / groups.length),
   };
 }
 

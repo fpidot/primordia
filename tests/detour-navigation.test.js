@@ -64,6 +64,7 @@ await runTest('detour-navigation: assay returns finite behavior metrics', async 
   assertInRange('highSpeedAliveRate', result.highSpeedAliveRate, 0, 1);
   assertInRange('gapApproachRate', result.gapApproachRate, 0, 1);
   assertInRange('clusterBodySignalCoverage', result.clusterBodySignalCoverage, 0, 1);
+  assertInRange('clusterMessageCoverage', result.clusterMessageCoverage, 0, 1);
   assert('min gap distance is finite', Number.isFinite(result.meanMinGapDistance),
     `meanMinGapDistance=${result.meanMinGapDistance}`);
 });

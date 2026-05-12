@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add cluster body telemetry`
+  current `main` HEAD after this pass: `Add cluster message trace and surface slide`
 
 Recent useful commits:
 
-- current `main` HEAD - Add cluster body telemetry
+- current `main` HEAD - Add cluster message trace and surface slide
+- `1cf46b8` - Add cluster body telemetry
 - `986448a` - Bias hard-contact slide by chemical tangent
 - `b0b4fe6` - Add long chemical navigation sensors
 - `bc9f618` - Expose population cap and refine visibility prefix
@@ -149,6 +150,7 @@ Core systems:
 - sound channels
 - visual RGB signal channels
 - bond messages and named clusters
+- cluster-wide bond-message salience trace for evolvable internal payloads
 - cluster alarm broadcast
 - cluster body telemetry shared to named members: whole-organism drift,
   hard-contact direction, and mean motor slip
@@ -224,9 +226,14 @@ Important recent sensor state:
   These let every named-cluster member sense whether the organism as a whole
   is drifting, pinned against a hard surface, or failing to turn motor effort
   into movement. They do not identify the obstacle or prescribe a route.
+- Cluster message sensors were appended after body telemetry at inputs 77-79:
+  - `cluster.msg.r/g/b`
+  These are named-organism-wide salience traces of the same three continuous
+  bond-message channels. They let a food, danger, stuck-front, or other
+  evolved payload reach remote members without hard-coding channel meanings.
 - Old wall/mud slots remain stable.
-- CPU and GPU terrain/proprioception/damage/long-chem/cluster-body sensor
-  paths are wired for parity. GPU extras stride is now 57 floats.
+- CPU and GPU terrain/proprioception/damage/long-chem/cluster-body/message
+  sensor paths are wired for parity. GPU extras stride is now 60 floats.
 
 ## Recently shipped behavior
 
@@ -824,9 +831,13 @@ Communication:
 - Current bondMsg:
   - three continuous channels
   - immediate bonded neighbors are averaged
-  - distant members hear only through one-hop-per-tick relay unless cluster
-    alarm triggers
+  - distant members can hear salient signed payloads through
+    `cluster.msg.r/g/b`, a short-lived named-organism-wide trace that does
+    not assign fixed meanings to channels
+  - urgent high-amplitude events can still also trigger `cluster.alarm`
   - multiple same-channel neighbors reinforce by shifting the local mean
+  - fresh particles now start bond messages at true neutral (`0.5`) rather
+    than accidental strong negative on their first tick
 - User is interested in whether cluster interconnectedness confers a theoretical
   boost. Current stance:
   - measure topology first
@@ -1394,6 +1405,33 @@ Latest verification in the cluster-budding pass:
     short run; next evidence pass should be a longer multi-seed curriculum
     soak to see whether whole-body feedback improves intact cluster gap
     approach/crossing over generations.
+- Cluster surface-following and message-trace verification:
+  - Added a faint cluster-level contact slide: when a named organism is
+    slipping against a hard surface and the long chemical field points along
+    the contact tangent, members receive a small shared topology-scaled
+    surface-following bias. This is still sensor/physics scaffolding, not a
+    pathfinder.
+  - Added `cluster.msg.r/g/b` inputs 77-79 and expanded GPU extras stride to
+    60. The trace preserves salient signed R/G/B bond-message payloads across
+    the named organism for a few ticks, while one-hop `bond.msg.*` remains.
+  - New regression: `signal-transmission: cluster message trace carries a
+    salient payload beyond one hop` verifies a non-neighbor member can use
+    `cluster.msg.g` for movement while local `incomingBondMsgG` stays neutral.
+  - `npm test -- signal-transmission.test.js terrain-sensors.test.js detour-navigation.test.js cluster-body-telemetry.test.js`
+    passed.
+  - `npm test` passed all 25 test files after the message-trace pass.
+  - GPU smoke passed:
+    `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 1 --warmup 100 --width 1200 --height 800 --port 9274 --gpu`;
+    GPU ready/enabled, no page errors.
+  - Three-seed detour evidence after surface-following + message trace:
+    `node tools\detour-suite.js --presets soup --seeds 0x51A11,0xA11CE,0xD370A --replays clusters-intact,clusters-disassembled --ticks 360 --evolveTicks 1200 --cap 620 --start 340 --difficulty easy --curriculum ladder --clusterBudget 96 --clusterMaxClusters 4 --clusterMinSize 5 --cohort mixed`
+    passed. Intact clusters still did not cross, but survived almost
+    perfectly; disassembled controls crossed 20.0% / reached goal 9.9%.
+    A shorter message-instrumented run reported `msgCov=1.0` for sampled
+    cluster replays, confirming the internal bus is active. Current read:
+    communication payload transmission is no longer the obvious blocker;
+    next work should focus on turning shared messages/body feedback into
+    coherent whole-body locomotion and route exploration.
   - `npm test` passed all 24 test files after the chemical-tangent pass.
   - GPU browser smoke passed:
     `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 1 --warmup 100 --width 1200 --height 800 --port 9271 --gpu`;

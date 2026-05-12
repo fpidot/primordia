@@ -102,6 +102,9 @@ export const SENSOR_NAMES = [
   /* 74 */ 'cluster.contact.x',          // average hard-contact normal across the organism
   /* 75 */ 'cluster.contact.y',
   /* 76 */ 'cluster.slip',               // mean member motor slip across the organism
+  /* 77 */ 'cluster.msg.r',              // cluster-wide salience trace of internal bond messages
+  /* 78 */ 'cluster.msg.g',
+  /* 79 */ 'cluster.msg.b',
 ];
 export const N_INPUT = SENSOR_NAMES.length;
 

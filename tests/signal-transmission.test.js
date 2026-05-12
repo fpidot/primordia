@@ -17,7 +17,9 @@ const { makeGenome } = await import('../js/genome.js');
 const {
   N_INPUT,
   N_OUTPUT,
+  SENSOR_NAMES,
   OUT_TX,
+  OUT_TY,
   OUT_DIG,
   OUT_DEPOSIT,
   OUT_REPRO_GATE,
@@ -49,6 +51,16 @@ function signalSeekingGenome() {
   g.brain.actH[0] = 3; // linear
   g.brain.W_ih[0 * N_INPUT + 13] = 4.0; // signal.r
   g.brain.W_ho[0 * N_OUTPUT + OUT_TX] = 3.0;
+  return g;
+}
+
+function clusterMessageSeekingGenome() {
+  const g = quietGenome(0);
+  const msgG = SENSOR_NAMES.indexOf('cluster.msg.g');
+  g.brain.enabled[0] = 1;
+  g.brain.actH[0] = 3; // linear
+  g.brain.W_ih[0 * N_INPUT + msgG] = 5.0;
+  g.brain.W_ho[0 * N_OUTPUT + OUT_TY] = 4.0;
   return g;
 }
 
@@ -140,4 +152,43 @@ await runTest('signal-transmission: mesh bonds reinforce shared messages', async
   assert('same-channel bonded neighbors reinforce above single-message tanh limit',
     receiver.incomingBondMsgR > 0.77,
     `incoming=${receiver.incomingBondMsgR}`);
+});
+
+await runTest('signal-transmission: cluster message trace carries a salient payload beyond one hop', async () => {
+  const world = new World({ maxParticles: 12 });
+  const ps = [];
+  const cx = 72 * CELL;
+  const cy = 50 * CELL;
+  for (let i = 0; i < 8; i++) {
+    const g = i === 4 ? clusterMessageSeekingGenome() : quietGenome(i % 2);
+    const p = world.addParticle(cx + i * 4, cy, g, 8);
+    p.vx = 0;
+    p.vy = 0;
+    p.bondMsgR = 0.5;
+    p.bondMsgG = i === 0 ? 1 : 0.5;
+    p.bondMsgB = 0.5;
+    ps.push(p);
+  }
+  for (let i = 0; i < ps.length - 1; i++) {
+    ps[i].bonds.push(ps[i + 1].id);
+    ps[i + 1].bonds.push(ps[i].id);
+  }
+
+  const source = ps[0];
+  const receiver = ps[4];
+  world.updateClusters();
+  assert('chain cluster is named', world._clusters.length === 1);
+  assert('receiver is not a direct neighbor of source', !receiver.bonds.includes(source.id));
+
+  await world.step();
+
+  assert('one-hop local G message stays neutral at the remote receiver',
+    Math.abs(receiver.incomingBondMsgG) < 0.05,
+    `incomingBondMsgG=${receiver.incomingBondMsgG}`);
+  assert('cluster trace preserves the salient G-channel payload',
+    receiver.cluster.busG > 0.45,
+    `cluster.msg.g=${receiver.cluster.busG}`);
+  assert('remote brain can use cluster.msg.g for coordinated movement',
+    receiver.lastMotorY > 0.8,
+    `lastMotorY=${receiver.lastMotorY}`);
 });

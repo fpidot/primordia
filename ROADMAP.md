@@ -171,16 +171,32 @@ heavier Planet starts are still a deliberate stress test.
    cluster drift, average hard-contact normal, and mean member slip. This
    gives non-contact members raw information that the body as a whole is
    pinned, sliding, or not making progress, without telling them what the
-   obstacle is or how to solve it. CPU and GPU brain paths are kept in parity
-   by extending the extras stride to 57 floats; the detour suite now reports
-   `cDrift`, `cContact`, `cSlip`, and `cSignal` for cluster replay rows. A
-   quick post-change easy ladder check (`soup`, seed `0x51A11`, ticks 160,
-   evolveTicks 360, cap 420/start 240) confirmed intact and disassembled
-   cluster replays both receive body telemetry (`cSignal=1.0`), but still did
-   not cross in that short run. Next agency target: use longer curriculum
-   runs to test whether this whole-body feedback improves intact cluster gap
-   approach/crossing, then consider topology-weighted bond-message routing or
-   movement-economy tuning if intact bodies still only survive.
+   obstacle is or how to solve it. A follow-on body-scale scaffold adds a
+   faint topology-scaled surface-following bias when the named organism is
+   slipping against a hard surface and the long chemical field points along
+   the contact tangent; a unit test verifies this adds tangential movement
+   beyond individual smell alone. CPU and GPU brain paths are kept in parity
+   by extending the extras stride as sensors are appended.
+   Current bond-message update: bond messages now start truly neutral
+   (`0.5`) and named clusters maintain an evolvable three-channel
+   `cluster.msg.r/g/b` salience trace. Local one-hop `bond.msg.*` still
+   exists, but a salient signed pulse can also be heard by every named-cluster
+   member for a few ticks without assigning a fixed meaning to the channel.
+   This makes "food found", "danger", or "front edge stuck" messages easier
+   to evolve because brains no longer need to discover a relay circuit before
+   the payload can reach remote members. Current GPU extras stride is 60
+   floats. `tools/detour-suite.js` now reports `cMsg` and `msgCov` alongside
+   `cDrift`, `cContact`, `cSlip`, and `cSignal`.
+   Evidence so far: a three-seed easy ladder check after body telemetry alone
+   (`soup`, ticks 360, evolveTicks 1200, cap 620/start 340) still showed
+   intact clusters crossing far less than disassembled controls (2.1% vs
+   15.4%). After the surface-following and message-trace pass, the same
+   three-seed shape still did not yield intact crossings, though intact
+   organisms survived almost perfectly. A shorter message-instrumented replay
+   confirmed the bus is active (`msgCov=1.0` for sampled cluster replays).
+   Current conclusion: internal payload transmission is now robust enough for
+   evolution to use; the remaining bottleneck is translating shared messages
+   and body feedback into effective whole-body locomotion/planning.
    Latest glass/edge pinning update: solid, glass, and world-edge collisions
    now add generic hard-contact feedback plus a tiny tangent/escape nudge so
    agents pressing into a barrier can slide away and receive the same bodily

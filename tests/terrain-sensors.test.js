@@ -33,8 +33,10 @@ await runTest('terrain-sensors: material sensor names append without moving old 
   assert('long food direction appended after damage sensors', SENSOR_NAMES[64] === 'chem.food.long.dx');
   assert('long decay contrast keeps its prior index', SENSOR_NAMES[71] === 'chem.decay.long.contrast');
   assert('cluster body drift appended after long chem', SENSOR_NAMES[72] === 'cluster.vx');
-  assert('cluster body slip appended last', SENSOR_NAMES[76] === 'cluster.slip');
-  assert('input count includes terrain, proprioception, damage, long chem, and cluster body sensors', N_INPUT === 77);
+  assert('cluster body slip keeps its prior index', SENSOR_NAMES[76] === 'cluster.slip');
+  assert('cluster message trace appended after body telemetry', SENSOR_NAMES[77] === 'cluster.msg.r');
+  assert('cluster message B channel appended last', SENSOR_NAMES[79] === 'cluster.msg.b');
+  assert('input count includes terrain, proprioception, damage, long chem, cluster body, and message sensors', N_INPUT === 80);
 });
 
 await runTest('terrain-sensors: gpu extras include typed directional material proximity', async () => {

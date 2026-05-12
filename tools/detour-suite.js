@@ -74,12 +74,14 @@ function summarize(rows) {
       clusterBodyContactMean: round(mean(items.map(r => r.meanClusterBodyContact || 0))),
       clusterBodySlipMean: round(mean(items.map(r => r.meanClusterBodySlip || 0))),
       clusterBodyCoverageMean: round(mean(items.map(r => r.clusterBodySignalCoverage || 0))),
+      clusterMessageMean: round(mean(items.map(r => r.meanClusterMessage || 0))),
+      clusterMessageCoverageMean: round(mean(items.map(r => r.clusterMessageCoverage || 0))),
     };
   });
 }
 
 function printTable(summary) {
-  console.log('preset | stage | replay | runs | tracked | cross | goal | gap | survive | minGoal | minGap | field | meat | speed | capFrac | motor | fast | cParts | cBonds | bondRet | cDrift | cContact | cSlip | cSignal');
+  console.log('preset | stage | replay | runs | tracked | cross | goal | gap | survive | minGoal | minGap | field | meat | speed | capFrac | motor | fast | cParts | cBonds | bondRet | cDrift | cContact | cSlip | cSignal | cMsg | msgCov');
   for (const s of summary) {
     console.log([
       s.preset,
@@ -106,6 +108,8 @@ function printTable(summary) {
       s.clusterBodyContactMean.toFixed(3),
       s.clusterBodySlipMean.toFixed(3),
       s.clusterBodyCoverageMean.toFixed(3),
+      s.clusterMessageMean.toFixed(3),
+      s.clusterMessageCoverageMean.toFixed(3),
     ].join(' | '));
   }
 }
