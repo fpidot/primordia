@@ -152,6 +152,22 @@ heavier Planet starts are still a deliberate stress test.
    17.8%, survived at 72.4%, and cut mean closest goal/gap distances from
    912.6/451.6 to 698.6/278.0. That is a real improvement signal, not yet
    proof of general path planning.
+   Current wall-following update: generic hard contact now projects the same
+   long chemical signal onto the contact tangent. A particle that is pushing
+   into solid/glass/edge while food or decay smells along the surface gets a
+   small slide bias in that tangential direction instead of a purely random
+   slip. This is not a gap finder; it is a physics/sensing scaffold that can
+   turn "straight-line approach failed" into wall-following exploration.
+   Post-change fair fixed-size two-seed checks show ladder curriculum is the
+   useful mode: `soup`, easy glass detour, ticks 360, evolveTicks 900, cap 420,
+   start 240, `cohort mixed` improved crossing from 3.8% founder to 12.5%
+   evolved and survival from 41.0% to 63.5%. `gap-adjacent` mostly improved
+   survival and only modestly improved crossing. Medium difficulty still
+   remains weak. A direct intact-vs-disassembled cluster probe used the same
+   sampled organism set and showed intact clusters preserve bonds/survive but
+   still fail to cross; disassembled members disperse more easily. Next agency
+   target: coordinated cluster locomotion and surface-following, not more
+   individual smell alone.
    Latest glass/edge pinning update: solid, glass, and world-edge collisions
    now add generic hard-contact feedback plus a tiny tangent/escape nudge so
    agents pressing into a barrier can slide away and receive the same bodily

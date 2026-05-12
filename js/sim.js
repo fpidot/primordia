@@ -1840,8 +1840,10 @@ export class World {
       const longChem = this._longChemScratch;
       sampleLongChemInto(f0, sgx, sgy, longChemRadius, longChem, 0, 0.45);
       sampleLongChemInto(f1, sgx, sgy, longChemRadius, longChem, 4, 0.32);
-      ax += K_FIELD_LONG * (gSense[0] * longChem[0] + gSense[1] * longChem[4]);
-      ay += K_FIELD_LONG * (gSense[0] * longChem[1] + gSense[1] * longChem[5]);
+      const longFieldX = gSense[0] * longChem[0] + gSense[1] * longChem[4];
+      const longFieldY = gSense[0] * longChem[1] + gSense[1] * longChem[5];
+      ax += K_FIELD_LONG * longFieldX;
+      ay += K_FIELD_LONG * longFieldY;
 
       // ── Brain: build sensor input, run forward pass, apply outputs ──
       const out = this._brainOutput;
@@ -2310,11 +2312,13 @@ export class World {
       else if (ny > H - 1) { ny = H - 1; hardContactY = 1; vy = -Math.abs(vy) * 0.5; }
 
       if (hardContactX || hardContactY) {
-        const tangentSign = ((p.id + ((this.tick / 31) | 0)) & 1) ? 1 : -1;
+        const randomTangentSign = ((p.id + ((this.tick / 31) | 0)) & 1) ? 1 : -1;
+        const tangentSignY = Math.abs(longFieldY) > 0.08 ? Math.sign(longFieldY) : randomTangentSign;
+        const tangentSignX = Math.abs(longFieldX) > 0.08 ? Math.sign(longFieldX) : randomTangentSign;
         vx -= hardContactX * HARD_CONTACT_ESCAPE;
         vy -= hardContactY * HARD_CONTACT_ESCAPE;
         if (hardContactX && Math.abs(vy) < 0.35) {
-          const tryVy = vy + tangentSign * HARD_CONTACT_TANGENT;
+          const tryVy = vy + tangentSignY * HARD_CONTACT_TANGENT;
           const tryY = clamp(oldY + tryVy, 1, H - 1);
           const tryGy = clamp((tryY / CELL) | 0, 0, GH - 1);
           const curGx = clamp((nx / CELL) | 0, 0, GW - 1);
@@ -2325,7 +2329,7 @@ export class World {
           }
         }
         if (hardContactY && Math.abs(vx) < 0.35) {
-          const tryVx = vx + tangentSign * HARD_CONTACT_TANGENT;
+          const tryVx = vx + tangentSignX * HARD_CONTACT_TANGENT;
           const tryX = clamp(oldX + tryVx, 1, W - 1);
           const tryGx = clamp((tryX / CELL) | 0, 0, GW - 1);
           const curGy = clamp((ny / CELL) | 0, 0, GH - 1);

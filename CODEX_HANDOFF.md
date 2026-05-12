@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add long chemical navigation sensors`
+  current `main` HEAD after this pass: `Bias hard-contact slide by chemical tangent`
 
 Recent useful commits:
 
-- current `main` HEAD - Add long chemical navigation sensors
+- current `main` HEAD - Bias hard-contact slide by chemical tangent
+- `b0b4fe6` - Add long chemical navigation sensors
 - `bc9f618` - Expose population cap and refine visibility prefix
 - `ce31468` - Recycle worker particle slab buffers
 - `018f454` - Use typed worker particle slabs
@@ -764,6 +765,12 @@ Obstacle navigation:
     gently feeds the inherited chemotaxis force. This answers the "can they
     smell food at useful range?" concern without encoding a route around
     barriers.
+  - latest wall-following fix: when a particle is already in generic hard
+    contact with solid, glass, or an edge, the tiny tangent escape nudge now
+    prefers the tangential component of the same long chemical signal. This is
+    deliberately surface-following physics, not a pathfinder: "my thrust
+    failed, but the food smell runs up/down this surface" can now become
+    exploratory sliding toward a gap.
 - Detour assay now exists:
   - `tools/detour-assay.js` builds a repeatable glass/solid/mud barrier arena
     with two gaps and food/scent behind the obstacle.
@@ -796,6 +803,9 @@ Obstacle navigation:
     roles better than disassembled members
   - tune movement economics only after using the new speed/motor telemetry to
     avoid mistaking body/field drift for chosen full-throttle behavior
+  - next structural target if the above holds: coordinated cluster locomotion
+    and surface-following, because intact clusters currently preserve bonds
+    and survive but often cross less than dispersed cells.
 
 Communication:
 
@@ -1332,6 +1342,32 @@ Latest verification in the cluster-budding pass:
     `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 1 --warmup 100 --width 1200 --height 800 --port 9270 --gpu`;
     GPU ready/enabled, no page errors.
   - `npm test` passed all 24 test files after the long-chem pass.
+- Chemical-tangent wall-following verification:
+  - `node --check js\sim.js` and
+    `node --check tests\long-chem-sensors.test.js` passed.
+  - `node tests\run-all.js long-chem-sensors.test.js proprioception.test.js detour-navigation.test.js`
+    passed, including a regression where a glass-pinned particle slides toward
+    tangential food scent while staying on the near side.
+  - Short all-cohort easy/medium checks at ticks 300/evolveTicks 720 stayed
+    mixed; all-cohort replay is noisy because evolved populations can replay
+    more bodies than founders.
+  - Fair fixed-size `cohort mixed` checks were clearer. Easy ladder:
+    `node tools\detour-suite.js --presets soup --seeds 0xD370A,0xD370B --ticks 360 --evolveTicks 900 --cap 420 --start 240 --replays particles --curriculum ladder --difficulty easy --combat event --cohort mixed`
+    passed with founder crossRate 0.038 / goalRate 0.021 / survival 0.410 and
+    evolved crossRate 0.125 / goalRate 0.025 / survival 0.635. Gap-adjacent
+    with the same shape improved survival more than crossing
+    (evolved crossRate 0.058 / survival 0.708).
+  - Cluster detour check:
+    `node tools\detour-suite.js --presets soup --seeds 0x51A11 --ticks 300 --evolveTicks 900 --cap 620 --start 340 --replays clusters-intact,clusters-disassembled --curriculum ladder --difficulty easy --combat event --clusterBudget 96 --clusterMaxClusters 4 --clusterMinSize 5 --cohort mixed`
+    passed. In that run, intact clusters preserved bonds and survived but did
+    not cross; disassembled members dispersed/crossed more. A direct paired
+    small replay confirmed the same sampled organism can be compared intact vs
+    disassembled, so the ecological read is plausible: cohesive organisms need
+    better coordinated locomotion/surface-following.
+  - `npm test` passed all 24 test files after the chemical-tangent pass.
+  - GPU browser smoke passed:
+    `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 1 --warmup 100 --width 1200 --height 800 --port 9271 --gpu`;
+    GPU ready/enabled, no page errors.
 
 Core:
 
