@@ -115,6 +115,9 @@ await runTest('detour-navigation: assay returns finite behavior metrics', async 
   assertInRange('clusterMajorityCrossRate', result.clusterMajorityCrossRate, 0, 1);
   assertInRange('clusterBodyGoalRate', result.clusterBodyGoalRate, 0, 1);
   assertInRange('clusterBodyGapApproachRate', result.clusterBodyGapApproachRate, 0, 1);
+  assertInRange('meanClusterCohesion', result.meanClusterCohesion, 0, 1);
+  assertInRange('clusterCohesiveCrossRate', result.clusterCohesiveCrossRate, 0, 1);
+  assertInRange('clusterCohesiveGoalRate', result.clusterCohesiveGoalRate, 0, 1);
   assert('cluster body route distance is finite',
     Number.isFinite(result.meanClusterMinGoalDistance) &&
     Number.isFinite(result.meanClusterMinGapDistance),
@@ -217,6 +220,16 @@ await runTest('detour-navigation: route curriculum adds a finish-run stage', asy
     `curriculum=${result.curriculum}`);
   assert('finish-run stage is included',
     result.curriculumStages.some(s => s.name === 'finish-run'),
+    JSON.stringify(result.curriculumStages));
+  const postGap = result.curriculumStages.find(s => s.name === 'post-gap');
+  assert('post-gap finish stage starts on the far side',
+    postGap && postGap.startX > result.arena.barrierX,
+    JSON.stringify(result.curriculumStages));
+  const goalApproach = result.curriculumStages.find(s => s.name === 'goal-approach');
+  assert('goal-approach stage starts between barrier and goal',
+    goalApproach &&
+    goalApproach.startX > result.arena.barrierX &&
+    goalApproach.startX < result.arena.goalX,
     JSON.stringify(result.curriculumStages));
   const totalStageTicks = result.curriculumStages.reduce((sum, s) => sum + s.ticks, 0);
   assert('route curriculum consumes evolve ticks', totalStageTicks === 15,

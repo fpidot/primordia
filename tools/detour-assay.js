@@ -297,8 +297,9 @@ export function focusCohortNearStart(world, cohort, arena, opts = {}) {
   for (let i = 0; i < bodies.length; i++) {
     const body = bodies[i];
     const pose = startPose(i, bodies.length, arena, opts);
+    const maxBodyX = opts.allowFarSide ? W - 2 : arena.barrierX - 14;
     const minCenterX = 2 + (body.cx - body.minX);
-    const maxCenterX = arena.barrierX - 14 - (body.maxX - body.cx);
+    const maxCenterX = maxBodyX - (body.maxX - body.cx);
     const minCenterY = 2 + (body.cy - body.minY);
     const maxCenterY = H - 2 - (body.maxY - body.cy);
     const targetX = minCenterX <= maxCenterX
@@ -373,9 +374,10 @@ function curriculumPlan(kind, totalTicks, opts = {}) {
   }
   if (kind !== 'ladder' && kind !== 'route') return [];
   const routeMode = kind === 'route';
-  const ticks = splitStageTicks(totalTicks, routeMode
-    ? [0.18, 0.22, 0.22, 0.20, 0.18]
-    : [0.22, 0.26, 0.26, 0.26]);
+  const weights = routeMode
+    ? [0.10, 0.14, 0.16, 0.16, 0.12, 0.12, 0.20]
+    : [0.22, 0.26, 0.26, 0.26];
+  const ticks = splitStageTicks(totalTicks, weights);
   const stages = [
     {
       name: 'mouth',
@@ -423,6 +425,24 @@ function curriculumPlan(kind, totalTicks, opts = {}) {
       startDistance: 92,
       startYOffset: 24,
       localGoal: false,
+    }, {
+      name: 'post-gap',
+      difficulty: 'medium',
+      gapCells: 18,
+      thickness: 2,
+      gap: 'upper',
+      postGap: true,
+      startDistance: 42,
+      startYOffset: -20,
+      localGoal: false,
+    }, {
+      name: 'goal-approach',
+      difficulty: 'medium',
+      gapCells: 18,
+      thickness: 2,
+      goalApproach: true,
+      startGoalFraction: 0.58,
+      localGoal: false,
     }] : []),
     {
       name: 'full-start',
@@ -448,11 +468,21 @@ function applyCurriculumStage(world, baseOpts, stage) {
   const arena = buildDetourArena(world, stageOpts);
   const gapCell = stage.gap === 'lower' ? arena.gapB : arena.gapA;
   const gapY = (gapCell + 0.5) * CELL;
-  const startX = stage.fullStart
+  const startX = stage.goalApproach
+    ? clamp(
+      arena.barrierX + (arena.goalX - arena.barrierX) * (stage.startGoalFraction || 0.58),
+      arena.barrierX + 16,
+      W - 16,
+    )
+    : stage.postGap
+    ? clamp(arena.barrierX + (stage.startDistance || 42), arena.barrierX + 16, W - 16)
+    : stage.fullStart
     ? W * 0.28
     : clamp(arena.barrierX - (stage.startDistance || 64), 16, arena.barrierX - 14);
   const startY = stage.fullStart
     ? H * 0.5
+    : stage.goalApproach
+    ? arena.goalY
     : clamp(gapY + (stage.startYOffset || 0), 16, H - 16);
   const goalX = stage.localGoal
     ? clamp(arena.barrierX + (stage.goalDistance || 96), arena.barrierX + 12, W - 16)
@@ -468,7 +498,11 @@ function applyCurriculumStage(world, baseOpts, stage) {
       Number(baseOpts.foodAmount) || 5.5);
   }
 
-  focusCohortNearStart(world, world.particles.filter(p => p && !p.dead), arena, { startX, startY });
+  focusCohortNearStart(world, world.particles.filter(p => p && !p.dead), arena, {
+    startX,
+    startY,
+    allowFarSide: !!(stage.postGap || stage.goalApproach),
+  });
   return {
     name: stage.name,
     ticks: stage.ticks,
@@ -754,6 +788,9 @@ function summarizeClusterGroups(groups) {
       meanClusterMaxX: 0,
       meanClusterMinGapFit: 0,
       meanClusterMaxStretch: 0,
+      meanClusterCohesion: 0,
+      clusterCohesiveCrossRate: 0,
+      clusterCohesiveGoalRate: 0,
     };
   }
   let aliveAny = 0;
@@ -779,6 +816,9 @@ function summarizeClusterGroups(groups) {
   let bodyMaxX = 0;
   let bodyGapFit = 0;
   let bodyStretch = 0;
+  let bodyCohesion = 0;
+  let cohesiveCross = 0;
+  let cohesiveGoal = 0;
   for (const g of groups) {
     const liveMembers = g.members.filter(p => p && !p.dead);
     if (liveMembers.length > 0) aliveAny++;
@@ -814,6 +854,7 @@ function summarizeClusterGroups(groups) {
       let msg = 0;
       let motor = 0;
       let field = 0;
+      let cohesion = 0;
       for (const c of liveClusters) {
         msg += Math.max(
           Math.abs(c.busR || 0),
@@ -822,20 +863,26 @@ function summarizeClusterGroups(groups) {
         );
         motor += c.motorConsensus || 0;
         field += c.fieldStrength || 0;
+        cohesion += Number.isFinite(c.cohesion) ? c.cohesion : 1;
       }
       msg /= liveClusters.length;
       motor /= liveClusters.length;
       field /= liveClusters.length;
+      cohesion /= liveClusters.length;
       clusterMessage += msg;
       motorConsensus += motor;
       fieldStrength += field;
+      bodyCohesion += cohesion;
       if (msg > 0.08) clusterMessageGroups++;
       if (field > 0.04) fieldGroups++;
     }
+    const compactEnough = (g.maxStretchRatio || 0) <= 4;
     if (g.bodyCrossed) centroidCross++;
     if (g.majorityCrossed) majorityCross++;
     if (g.bodyReachedGoal) bodyGoal++;
     if (g.bodyApproachedGap) bodyGap++;
+    if (compactEnough && g.bodyCrossed && g.majorityCrossed) cohesiveCross++;
+    if (compactEnough && g.bodyReachedGoal) cohesiveGoal++;
     bodyMinGoal += Number.isFinite(g.minBodyGoalDistance) ? g.minBodyGoalDistance : 0;
     bodyMinGap += Number.isFinite(g.minBodyGapDistance) ? g.minBodyGapDistance : 0;
     bodyMaxX += Number.isFinite(g.maxBodyX) ? g.maxBodyX : 0;
@@ -869,6 +916,9 @@ function summarizeClusterGroups(groups) {
     meanClusterMaxX: round(bodyMaxX / groups.length),
     meanClusterMinGapFit: round(bodyGapFit / groups.length),
     meanClusterMaxStretch: round(bodyStretch / groups.length),
+    meanClusterCohesion: round(bodyCohesion / groups.length),
+    clusterCohesiveCrossRate: round(cohesiveCross / groups.length),
+    clusterCohesiveGoalRate: round(cohesiveGoal / groups.length),
   };
 }
 

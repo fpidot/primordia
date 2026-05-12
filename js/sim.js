@@ -152,8 +152,9 @@ const HARD_CONTACT_TANGENT = 0.18; // rough hard-surface slip so agents do not p
 const HARD_CONTACT_ESCAPE  = 0.05; // tiny generic rebound from solid/glass/edges
 const CLUSTER_CONTACT_SLIDE = 0.12; // organism-scale surface following from shared contact feedback
 const CLUSTER_CONTACT_EXPLORE = 0.62; // coherent wall-following when a body is pushing into an obstacle
-const CLUSTER_TRACTION = 0.24; // shared traction when a named organism's motors agree
-const CLUSTER_FIELD_STEER = 0.14; // weak distributed-scent steering for named organisms
+const CLUSTER_TRACTION = 0.30; // shared traction when a named organism's motors agree
+const CLUSTER_FIELD_STEER = 0.17; // weak distributed-scent steering for named organisms
+const CLUSTER_COHESION_FLOOR = 0.25; // stretched clusters keep some agency but lose body-scale leverage
 
 // Communication has a tiny metabolic cost, but named clusters can convert
 // received bond messages into action-specific coordination bonuses.
@@ -390,6 +391,15 @@ function newClusterBudDiagnostics() {
 
 function centeredBondMsg(v) {
   return clamp(((Number.isFinite(v) ? v : 0.5) * 2) - 1, -1, 1);
+}
+
+function clusterCohesionFactor(cluster) {
+  if (!cluster) return 1;
+  const count = Math.max(1, cluster.count || cluster.members?.length || 1);
+  const expectedSpread = Math.max(BOND_REST * 1.8, BOND_REST * Math.sqrt(count) * 1.8);
+  const spread = Math.max(1, cluster.spread || expectedSpread);
+  const compactness = clamp(expectedSpread / Math.max(expectedSpread, spread), 0, 1);
+  return CLUSTER_COHESION_FLOOR + (1 - CLUSTER_COHESION_FLOOR) * compactness;
 }
 
 function salientMessageMean(members, channel) {
@@ -1881,16 +1891,18 @@ export class World {
       if (locomotionCluster && (locomotionCluster.motorConsensus || 0) > 0.15) {
         const topologyGain = 0.45 + (locomotionCluster.topology || 0) * 0.55;
         const sizeGain = Math.tanh((locomotionCluster.count || 0) / 16);
+        const cohesionGain = locomotionCluster.cohesion || clusterCohesionFactor(locomotionCluster);
         const traction = CLUSTER_TRACTION * (locomotionCluster.motorConsensus || 0) *
-          topologyGain * sizeGain;
+          topologyGain * sizeGain * cohesionGain;
         ax += (locomotionCluster.motorX || 0) * traction;
         ay += (locomotionCluster.motorY || 0) * traction;
       }
       if (locomotionCluster && (locomotionCluster.fieldStrength || 0) > 0.04) {
         const topologyGain = 0.45 + (locomotionCluster.topology || 0) * 0.55;
         const sizeGain = Math.tanh((locomotionCluster.count || 0) / 16);
+        const cohesionGain = locomotionCluster.cohesion || clusterCohesionFactor(locomotionCluster);
         const steer = CLUSTER_FIELD_STEER * topologyGain * sizeGain *
-          clamp((locomotionCluster.fieldStrength || 0) * 2, 0, 1);
+          cohesionGain * clamp((locomotionCluster.fieldStrength || 0) * 2, 0, 1);
         ax += (locomotionCluster.fieldX || 0) * steer;
         ay += (locomotionCluster.fieldY || 0) * steer;
       }
@@ -1930,7 +1942,9 @@ export class World {
             const slipGain = clamp((bodyContactCluster.slip || 0) * 4, 0, 1);
             const topologyGain = 0.5 + (bodyContactCluster.topology || 0) * 0.5;
             const sizeGain = Math.tanh((bodyContactCluster.count || 0) / 14);
-            const slide = CLUSTER_CONTACT_SLIDE * slipGain * topologyGain * sizeGain * slideSignal;
+            const cohesionGain = bodyContactCluster.cohesion || clusterCohesionFactor(bodyContactCluster);
+            const slide = CLUSTER_CONTACT_SLIDE * slipGain * topologyGain * sizeGain *
+              cohesionGain * slideSignal;
             ax += txBody * slide;
             ay += tyBody * slide;
           }
@@ -3582,6 +3596,8 @@ export class World {
       const meanFieldX = clamp(fieldXSum * invCount, -1, 1);
       const meanFieldY = clamp(fieldYSum * invCount, -1, 1);
       const fieldStrength = Math.min(1, Math.hypot(meanFieldX, meanFieldY));
+      const spread = spreadSum / members.length;
+      const radius = Math.max(8, Math.sqrt(maxR2));
       nextMotion.set(motionKey, { cx, cy, tick: this.tick });
       const cluster = {
         root,
@@ -3606,8 +3622,8 @@ export class World {
         busR: prevBus.r || 0,
         busG: prevBus.g || 0,
         busB: prevBus.b || 0,
-        radius: Math.max(8, Math.sqrt(maxR2)),
-        spread: spreadSum / members.length,
+        radius,
+        spread,
         internalBonds,
         meanInternalBonds,
         topology,
@@ -3616,6 +3632,7 @@ export class World {
         isMixed,
         species: clade?.species ?? 0,
       };
+      cluster.cohesion = clusterCohesionFactor(cluster);
       clusters.push(cluster);
       for (const p of members) {
         p.cluster = cluster;

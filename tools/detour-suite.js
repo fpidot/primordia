@@ -88,12 +88,15 @@ function summarize(rows) {
       clusterBodyMinGapMean: round(mean(items.map(r => r.meanClusterMinGapDistance || 0))),
       clusterGapFitMean: round(mean(items.map(r => r.meanClusterMinGapFit || 0))),
       clusterStretchMean: round(mean(items.map(r => r.meanClusterMaxStretch || 0))),
+      clusterCohesionMean: round(mean(items.map(r => r.meanClusterCohesion || 0))),
+      clusterCohesiveCrossMean: round(mean(items.map(r => r.clusterCohesiveCrossRate || 0))),
+      clusterCohesiveGoalMean: round(mean(items.map(r => r.clusterCohesiveGoalRate || 0))),
     };
   });
 }
 
 function printTable(summary) {
-  console.log('preset | stage | replay | runs | tracked | cross | goal | gap | survive | minGoal | minGap | field | meat | speed | capFrac | motor | fast | cParts | cBonds | cTrim | bondRet | cDrift | cContact | cSlip | cSignal | cMsg | msgCov | cMotor | cField | fieldCov | bodyX | bodyMaj | bodyGoal | bodyGap | bodyMinGoal | bodyMinGap | cFit | cStretch');
+  console.log('preset | stage | replay | runs | tracked | cross | goal | gap | survive | minGoal | minGap | field | meat | speed | capFrac | motor | fast | cParts | cBonds | cTrim | bondRet | cDrift | cContact | cSlip | cSignal | cMsg | msgCov | cMotor | cField | fieldCov | bodyX | bodyMaj | bodyGoal | bodyGap | bodyMinGoal | bodyMinGap | cFit | cStretch | cCoh | cCohX | cCohGoal');
   for (const s of summary) {
     console.log([
       s.preset,
@@ -134,6 +137,9 @@ function printTable(summary) {
       s.clusterBodyMinGapMean.toFixed(1),
       s.clusterGapFitMean.toFixed(3),
       s.clusterStretchMean.toFixed(3),
+      s.clusterCohesionMean.toFixed(3),
+      s.clusterCohesiveCrossMean.toFixed(3),
+      s.clusterCohesiveGoalMean.toFixed(3),
     ].join(' | '));
   }
 }

@@ -202,8 +202,9 @@ heavier Planet starts are still a deliberate stress test.
    `cDrift`, `cContact`, `cSlip`, and `cSignal`. It also reports body-level
    route metrics for cluster replays: centroid crossing, majority-member
    crossing, body goal reach, body gap approach, body closest goal/gap
-   distances, gap-fit ratio, and stretch. This separates "some member cells got
-   through" from "the organism's body crossed as a body."
+   distances, gap-fit ratio, stretch, cluster cohesion, cohesive crossing, and
+   cohesive goal reach. This separates "some member cells got through" from
+   "the organism's body crossed as a body."
    Evidence so far: a three-seed easy ladder check after body telemetry alone
    (`soup`, ticks 360, evolveTicks 1200, cap 620/start 340) still showed
    intact clusters crossing far less than disassembled controls (2.1% vs
@@ -229,18 +230,30 @@ heavier Planet starts are still a deliberate stress test.
    96-particle connected replay subcluster from a 550-particle source organism
    and achieved 30.6% intact crossing with 98.9% bond retention. Current
    conclusion: cohesive detour crossing is now real and no longer just a lucky
-   one-seed artifact, but intact bodies still lag disassembled members and do
-   not reliably finish the route. A new `--curriculum route` mode extends the
-   ladder with a finish-run stage: organisms train near a gap but must still
-   continue toward the full final goal, so route completion is paid by ordinary
-   food/energy rather than a scripted path reward. In a two-seed easy
-   comparison (`soup`, seeds `0x51A11,0xA11CE`, ticks 300, evolveTicks 900,
-   cap 620/start 340), old ladder produced 0.0% intact member crossing and no
-   body crossing, while route produced 28.6% intact member crossing, 8.4%
-   member goal reach, and 50.0% centroid/majority body crossing with 92.4%
-   bond retention. Body goal reach remained 0.0%. The next bottleneck is
-   morphology, gap fitting, final goal reach, and role specialization that
-   makes staying intact worth the mobility cost without scripting a navigator.
+   one-seed artifact, but intact bodies still lag disassembled members and did
+   not initially finish the route. A new `--curriculum route` mode extends the
+   ladder with finish-run, post-gap, and goal-approach stages: organisms train
+   near a gap, just beyond a gap, and partway to the full final goal, so route
+   completion is paid by ordinary food/energy rather than a scripted path
+   reward. Whole-body locomotion now also scales by cluster cohesion: compact
+   bodies keep the full shared motor/field/contact scaffold, while badly
+   stretched cable-like bodies retain only a floor of body-scale leverage. In a
+   two-seed easy comparison after the first route pass (`soup`, seeds
+   `0x51A11,0xA11CE`, ticks 300, evolveTicks 900, cap 620/start 340), old
+   ladder produced 0.0% intact member crossing and no body crossing, while
+   route produced 28.6% intact member crossing, 8.4% member goal reach, and
+   50.0% centroid/majority body crossing with 92.4% bond retention, but body
+   goal reach remained 0.0%. After adding the cohesion gate, a post-gap stage,
+   a goal-approach stage, and a modest compact-body traction/field bump, the
+   two-seed route check at ticks 420/evolveTicks 900 produced intact-cluster
+   member crossing 96.9%, member goal 18.8%, centroid/majority crossing 100%,
+   body goal 50%, cohesive crossing 100%, cohesive goal 50%, survival 95.9%,
+   and bond retention 93.8%; disassembled controls fell to 5.7% crossing and
+   4.7% goal. A longer single-seed `0x51A11` 720-tick replay reached body goal
+   and cohesive goal (`1.0`) with 46.9% member goal reach. This is a genuine
+   organism-scale route-completion signal, still seed-dependent and not yet
+   proof of robust general navigation. Next: run broader seeds/difficulties and
+   inspect why some seeds still form compact but non-routing bodies.
    Latest glass/edge pinning update: solid, glass, and world-edge collisions
    now add generic hard-contact feedback plus a tiny tangent/escape nudge so
    agents pressing into a barrier can slide away and receive the same bodily

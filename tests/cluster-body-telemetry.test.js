@@ -151,6 +151,52 @@ await runTest('cluster-body-telemetry: aligned motors earn shared traction', asy
     `splitX=${splitX.toFixed(4)} alignedX=${alignedX.toFixed(4)}`);
 });
 
+await runTest('cluster-body-telemetry: stretched bodies lose whole-body leverage', async () => {
+  const makeWorld = (stretched) => {
+    const world = new World({ maxParticles: 16 });
+    const ps = makeNamedCluster(world);
+    const spacing = stretched ? 58 : 8;
+    for (const p of ps) p.bonds.length = 0;
+    for (let i = 0; i < ps.length; i++) {
+      ps[i].x = 20 * CELL + i * spacing;
+      ps[i].y = 36 * CELL;
+      if (i > 0) {
+        ps[i].bonds.push(ps[i - 1].id);
+        ps[i - 1].bonds.push(ps[i].id);
+      }
+    }
+    for (const p of ps) {
+      p.vx = 0;
+      p.vy = 0;
+      p.lastMotorX = 1;
+      p.lastMotorY = 0;
+    }
+    world._clustersTick = -10000;
+    world.updateClusters();
+    const startMeanX = ps.reduce((sum, p) => sum + p.x, 0) / ps.length;
+    return { world, ps, startMeanX };
+  };
+
+  const compact = makeWorld(false);
+  const stretched = makeWorld(true);
+  const compactCohesion = compact.ps[0].cluster.cohesion;
+  const stretchedCohesion = stretched.ps[0].cluster.cohesion;
+
+  await compact.world.step();
+  await stretched.world.step();
+
+  const meanX = ps => ps.reduce((sum, p) => sum + p.x, 0) / ps.length;
+  const compactDx = meanX(compact.ps) - compact.startMeanX;
+  const stretchedDx = meanX(stretched.ps) - stretched.startMeanX;
+
+  assert('stretched cluster records lower cohesion',
+    stretchedCohesion < compactCohesion - 0.25,
+    `compact=${compactCohesion.toFixed(3)} stretched=${stretchedCohesion.toFixed(3)}`);
+  assert('compact body receives more shared traction than stretched body',
+    compactDx > stretchedDx + 0.015,
+    `compactDx=${compactDx.toFixed(4)} stretchedDx=${stretchedDx.toFixed(4)}`);
+});
+
 await runTest('cluster-body-telemetry: distributed scent steers the named body', async () => {
   const makeWorld = (withField) => {
     const world = new World({ maxParticles: 16 });

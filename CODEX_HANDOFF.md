@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add cluster body detour metrics`
+  current `main` HEAD after this pass: `Bias route curriculum toward cohesive clusters`
 
 Recent useful commits:
 
-- current `main` HEAD - Add cluster body detour metrics
+- current `main` HEAD - Bias route curriculum toward cohesive clusters
+- `675497a` - Add cluster body detour metrics
 - `18ebde5` - Improve cluster detour replay realism
 - `7a6d932` - Add cluster locomotion scaffolds
 - `045275e` - Add cluster message trace and surface slide
@@ -1545,6 +1546,43 @@ Latest verification in the cluster-budding pass:
     and 50.0% majority body crossing. Body goal reach remained 0.0%. Current
     read: route curriculum is a useful pressure, but complete organism-scale
     goal reach is still the unsolved target.
+- Cohesive cluster route-completion verification:
+  - Added a cluster cohesion factor based on observed spread versus expected
+    sqrt(size) body spread. Shared cluster traction, distributed-field steering,
+    and shared contact sliding now keep full strength for compact organisms but
+    fade toward a floor for stretched cable-like bodies.
+  - Added `meanClusterCohesion`, `clusterCohesiveCrossRate`, and
+    `clusterCohesiveGoalRate` to the detour assay/suite. Cohesive crossing
+    requires centroid crossing, majority-member crossing, and bounded stretch.
+  - Extended `--curriculum route` with post-gap and goal-approach stages, then
+    rebalanced stage weights so full-start practice remains substantial.
+  - Raised compact-body whole-organism traction/field steering modestly
+    (`CLUSTER_TRACTION=0.30`, `CLUSTER_FIELD_STEER=0.17`) while stretched
+    organisms still lose leverage through the cohesion factor.
+  - Focused checks passed:
+    `node --check js\sim.js`, `node --check tools\detour-assay.js`, and
+    `npm test -- cluster-body-telemetry.test.js detour-navigation.test.js`.
+  - Full `npm test` passed all 25 test files after the cohesive route pass.
+  - GPU browser smoke passed:
+    `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 1 --warmup 100 --width 1200 --height 800 --port 9277 --gpu`;
+    GPU ready/enabled, no page errors, about 24.8 FPS/ticks/sec in this short
+    local probe.
+  - Evidence sequence:
+    before the goal-approach stage, a longer `0x51A11` route replay reached
+    cohesive body crossing but not body goal; mean body closest-goal distance
+    improved to about 207 px. After goal-approach, the same 720-tick seed
+    reached body goal and cohesive goal (`1.0`) with 93.8% member crossing,
+    46.9% member goal reach, 90.1% bond retention, and body min-goal distance
+    19.2 px.
+  - Two-seed easy route matrix after the cohesive pass (`soup`, seeds
+    `0x51A11,0xA11CE`, ticks 420, evolveTicks 900, cap 620/start 340,
+    clusterBudget 96, event combat): intact clusters reached 96.9% member
+    crossing, 18.8% member goal reach, 100% centroid and majority body
+    crossing, 50% body goal, 100% cohesive crossing, 50% cohesive goal, 95.9%
+    survival, and 93.8% bond retention. Disassembled controls were much worse
+    in that run: 5.7% crossing and 4.7% goal. Current read: this is the first
+    strong organism-scale route-completion signal, still seed-dependent rather
+    than solved.
 
 Core:
 
@@ -1634,11 +1672,11 @@ git log --oneline -5
 - agency: run repeated post-topology `--replay both` evidence with the new
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use
-- agency: detour next step is now body-level route completion. Use the new
-  `--curriculum route` and body metrics to run a longer multi-seed matrix, then
-  tune morphology/gap-fit pressure, final food-goal distance, and possible
-  role-specialization signals if centroid/majority crossing keeps improving
-  while body goal reach stays at zero.
+- agency: detour next step is robustness. The cohesive route pass produced
+  organism-scale goal completion in one of two seeds, with intact clusters
+  beating disassembled controls in the two-seed matrix. Run broader seeds and
+  medium difficulty, then inspect why stuck seeds form compact non-routing
+  bodies rather than following the post-gap/goal gradient.
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization
 
