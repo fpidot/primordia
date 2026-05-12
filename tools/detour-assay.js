@@ -608,6 +608,9 @@ function summarizeClusterGroups(groups) {
       clusterBodySignalCoverage: 0,
       meanClusterMessage: 0,
       clusterMessageCoverage: 0,
+      meanClusterMotorConsensus: 0,
+      meanClusterFieldStrength: 0,
+      clusterFieldCoverage: 0,
     };
   }
   let aliveAny = 0;
@@ -621,6 +624,9 @@ function summarizeClusterGroups(groups) {
   let bodySignalGroups = 0;
   let clusterMessage = 0;
   let clusterMessageGroups = 0;
+  let motorConsensus = 0;
+  let fieldStrength = 0;
+  let fieldGroups = 0;
   for (const g of groups) {
     const liveMembers = g.members.filter(p => p && !p.dead);
     if (liveMembers.length > 0) aliveAny++;
@@ -654,16 +660,25 @@ function summarizeClusterGroups(groups) {
       bodyContact += contact / liveClusters.length;
       bodySlip += slip / liveClusters.length;
       let msg = 0;
+      let motor = 0;
+      let field = 0;
       for (const c of liveClusters) {
         msg += Math.max(
           Math.abs(c.busR || 0),
           Math.abs(c.busG || 0),
           Math.abs(c.busB || 0),
         );
+        motor += c.motorConsensus || 0;
+        field += c.fieldStrength || 0;
       }
       msg /= liveClusters.length;
+      motor /= liveClusters.length;
+      field /= liveClusters.length;
       clusterMessage += msg;
+      motorConsensus += motor;
+      fieldStrength += field;
       if (msg > 0.08) clusterMessageGroups++;
+      if (field > 0.04) fieldGroups++;
     }
   }
   return {
@@ -681,6 +696,9 @@ function summarizeClusterGroups(groups) {
     clusterBodySignalCoverage: round(bodySignalGroups / groups.length),
     meanClusterMessage: round(clusterMessage / groups.length),
     clusterMessageCoverage: round(clusterMessageGroups / groups.length),
+    meanClusterMotorConsensus: round(motorConsensus / groups.length),
+    meanClusterFieldStrength: round(fieldStrength / groups.length),
+    clusterFieldCoverage: round(fieldGroups / groups.length),
   };
 }
 

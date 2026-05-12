@@ -105,6 +105,12 @@ export const SENSOR_NAMES = [
   /* 77 */ 'cluster.msg.r',              // cluster-wide salience trace of internal bond messages
   /* 78 */ 'cluster.msg.g',
   /* 79 */ 'cluster.msg.b',
+  /* 80 */ 'cluster.motor.x',            // shared previous-thrust direction across the organism
+  /* 81 */ 'cluster.motor.y',
+  /* 82 */ 'cluster.motor.consensus',    // high when members recently chose similar thrusts
+  /* 83 */ 'cluster.field.x',            // organism-level longer-range chem direction
+  /* 84 */ 'cluster.field.y',
+  /* 85 */ 'cluster.field.strength',
 ];
 export const N_INPUT = SENSOR_NAMES.length;
 

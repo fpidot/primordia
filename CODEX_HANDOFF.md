@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add cluster message trace and surface slide`
+  current `main` HEAD after this pass: `Add cluster locomotion scaffolds`
 
 Recent useful commits:
 
-- current `main` HEAD - Add cluster message trace and surface slide
+- current `main` HEAD - Add cluster locomotion scaffolds
+- `045275e` - Add cluster message trace and surface slide
 - `1cf46b8` - Add cluster body telemetry
 - `986448a` - Bias hard-contact slide by chemical tangent
 - `b0b4fe6` - Add long chemical navigation sensors
@@ -154,6 +155,9 @@ Core systems:
 - cluster alarm broadcast
 - cluster body telemetry shared to named members: whole-organism drift,
   hard-contact direction, and mean motor slip
+- cluster motor consensus and distributed field direction: named organisms can
+  turn shared agreement and shared longer-range chemistry into weak whole-body
+  traction/steering, and brains can read those organism-level values directly
 - cluster topology scoring that feeds modest bond-message reinforcement and
   defensive guard payoff
 - cluster-level budding reproduction for stable, energy-rich bonded organisms,
@@ -231,9 +235,17 @@ Important recent sensor state:
   These are named-organism-wide salience traces of the same three continuous
   bond-message channels. They let a food, danger, stuck-front, or other
   evolved payload reach remote members without hard-coding channel meanings.
+- Cluster motor/field sensors were appended after cluster messages at inputs
+  80-85:
+  - `cluster.motor.x/y/consensus`
+  - `cluster.field.x/y/strength`
+  These expose whether recent member thrust is aligned and whether distributed
+  long-range chemistry points somewhere useful, so bond-message circuits and
+  locomotion circuits can evolve around organism-level state.
 - Old wall/mud slots remain stable.
-- CPU and GPU terrain/proprioception/damage/long-chem/cluster-body/message
-  sensor paths are wired for parity. GPU extras stride is now 60 floats.
+- CPU and GPU terrain/proprioception/damage/long-chem/cluster-body/message/
+  motor/field sensor paths are wired for parity. GPU extras stride is now 66
+  floats.
 
 ## Recently shipped behavior
 
@@ -1436,6 +1448,36 @@ Latest verification in the cluster-budding pass:
   - GPU browser smoke passed:
     `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 1 --warmup 100 --width 1200 --height 800 --port 9271 --gpu`;
     GPU ready/enabled, no page errors.
+- Cluster locomotion scaffold verification:
+  - Added shared motor consensus and shared field consensus for named
+    organisms. Aligned recent thrust earns weak topology/size-scaled body
+    traction; distributed long chemistry gives weak body steering; hard contact
+    plus a shared blocked-goal signal triggers one coherent exploratory tangent.
+  - Added append-only brain inputs 80-85:
+    `cluster.motor.x/y/consensus` and `cluster.field.x/y/strength`; expanded
+    GPU extras stride to 66.
+  - Added detour metrics `cMotor`, `cField`, and `fieldCov`.
+  - `npm test -- cluster-body-telemetry.test.js detour-navigation.test.js`
+    passed, including regressions for aligned body traction, distributed scent
+    steering, and blocked-goal wall-following.
+  - `npm test` passed all 25 test files after updating the sensor contract.
+  - GPU smoke passed:
+    `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 1 --warmup 100 --width 1200 --height 800 --port 9275 --gpu`;
+    GPU ready/enabled, no page errors, about 30.1 FPS/ticks/sec in this
+    short local probe.
+  - Short one-seed detour after the field/motor scaffold showed active shared
+    field sensing (`cField=0.522`, `fieldCov=1.0`) and a much smaller intact
+    organism getting close to the gap (`minGap=102`) but not yet crossing.
+  - Longer one-seed easy ladder replay
+    (`soup`, seed `0x51A11`, ticks 360, evolveTicks 1200, cap 620/start 340,
+    clusterBudget 96) produced intact-cluster crossing 13.5%, matching the
+    disassembled control, with 99.6% bond retention.
+  - Three-seed version was mixed: intact averaged 4.5% crossing versus
+    disassembled 16.5%, and only one of three seeds produced a viable
+    message/field-covered intact cohort. Current read: cohesive detour crossing
+    is now possible, but not reliable across seeds; next work should focus on
+    producing more survivable route-capable organisms and improving final
+    passage/goal reach without scripted navigation.
 
 Core:
 

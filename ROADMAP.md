@@ -184,8 +184,21 @@ heavier Planet starts are still a deliberate stress test.
    member for a few ticks without assigning a fixed meaning to the channel.
    This makes "food found", "danger", or "front edge stuck" messages easier
    to evolve because brains no longer need to discover a relay circuit before
-   the payload can reach remote members. Current GPU extras stride is 60
-   floats. `tools/detour-suite.js` now reports `cMsg` and `msgCov` alongside
+   the payload can reach remote members.
+   Current locomotion update: named clusters now also compute shared motor
+   agreement and shared longer-range chemistry direction. Consensus thrust
+   earns a small topology/size-scaled whole-body traction bonus; shared food or
+   decay direction gives the body a weak distributed-scent steering force; and
+   a slipping organism whose shared goal signal points straight into hard
+   contact makes one coherent wall-following exploratory tangent choice instead
+   of each particle jittering independently. These are feedback scaffolds, not
+   a pathfinder: agreement, distributed sensing, and "my body is stuck" become
+   selectable raw material.
+   Cluster motor and field values are appended to brain inputs as
+   `cluster.motor.x/y/consensus` and `cluster.field.x/y/strength`, so internal
+   bond-message circuits can evolve around actual organism-level locomotion
+   state. Current GPU extras stride is 66 floats. `tools/detour-suite.js` now
+   reports `cMsg`, `msgCov`, `cMotor`, `cField`, and `fieldCov` alongside
    `cDrift`, `cContact`, `cSlip`, and `cSignal`.
    Evidence so far: a three-seed easy ladder check after body telemetry alone
    (`soup`, ticks 360, evolveTicks 1200, cap 620/start 340) still showed
@@ -194,9 +207,18 @@ heavier Planet starts are still a deliberate stress test.
    three-seed shape still did not yield intact crossings, though intact
    organisms survived almost perfectly. A shorter message-instrumented replay
    confirmed the bus is active (`msgCov=1.0` for sampled cluster replays).
-   Current conclusion: internal payload transmission is now robust enough for
-   evolution to use; the remaining bottleneck is translating shared messages
-   and body feedback into effective whole-body locomotion/planning.
+   After the motor/field-consensus pass, a longer one-seed `0x51A11` easy
+   ladder replay (`ticks 360`, `evolveTicks 1200`, cap 620/start 340) produced
+   intact-cluster crossings at 13.5%, matching the disassembled control while
+   retaining 99.6% of sampled bonds. The fair three-seed version was mixed but
+   no longer zero: intact clusters averaged 4.5% crossing versus 16.5% for
+   disassembled controls, with only one of three seeds producing a viable,
+   communicating/moving intact cohort (`fieldCov`/`msgCov` averaged 0.333).
+   Current conclusion: internal payload transmission and whole-body sensing are
+   now usable by evolution, and cohesive crossing is possible. The remaining
+   bottleneck is broader ecological reliability: produce more survivable,
+   route-capable organisms across seeds, then improve final gap passage and
+   goal reach without scripting a navigator.
    Latest glass/edge pinning update: solid, glass, and world-edge collisions
    now add generic hard-contact feedback plus a tiny tangent/escape nudge so
    agents pressing into a barrier can slide away and receive the same bodily

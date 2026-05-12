@@ -113,3 +113,105 @@ await runTest('cluster-body-telemetry: shared contact lets the body surface-foll
     contactY < noContactY - 0.04,
     `noContactY=${noContactY.toFixed(4)} contactY=${contactY.toFixed(4)}`);
 });
+
+await runTest('cluster-body-telemetry: aligned motors earn shared traction', async () => {
+  const makeWorld = (aligned) => {
+    const world = new World({ maxParticles: 16 });
+    const ps = makeNamedCluster(world);
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
+      p.vx = 0;
+      p.vy = 0;
+      p.lastMotorX = aligned || (i % 2 === 0) ? 1 : -1;
+      p.lastMotorY = 0;
+    }
+    return { world, ps };
+  };
+
+  const split = makeWorld(false);
+  const aligned = makeWorld(true);
+
+  await split.world.step();
+  await aligned.world.step();
+
+  const meanX = ps => ps.reduce((sum, p) => sum + p.x, 0) / ps.length;
+  const splitX = meanX(split.ps);
+  const alignedX = meanX(aligned.ps);
+  const alignedCluster = aligned.ps[0].cluster;
+  const splitCluster = split.ps[0].cluster;
+
+  assert('aligned cluster records high motor consensus',
+    alignedCluster.motorConsensus > 0.9,
+    `consensus=${alignedCluster.motorConsensus}`);
+  assert('split cluster records low motor consensus',
+    splitCluster.motorConsensus < 0.2,
+    `consensus=${splitCluster.motorConsensus}`);
+  assert('aligned body receives more shared eastward traction than split body',
+    alignedX > splitX + 0.025,
+    `splitX=${splitX.toFixed(4)} alignedX=${alignedX.toFixed(4)}`);
+});
+
+await runTest('cluster-body-telemetry: distributed scent steers the named body', async () => {
+  const makeWorld = (withField) => {
+    const world = new World({ maxParticles: 16 });
+    const ps = makeNamedCluster(world);
+    for (const p of ps) {
+      p.vx = 0;
+      p.vy = 0;
+      p.lastLongFieldX = withField ? 1 : 0;
+      p.lastLongFieldY = 0;
+    }
+    return { world, ps };
+  };
+
+  const unscented = makeWorld(false);
+  const scented = makeWorld(true);
+
+  await unscented.world.step();
+  await scented.world.step();
+
+  const meanX = ps => ps.reduce((sum, p) => sum + p.x, 0) / ps.length;
+  const unscentedX = meanX(unscented.ps);
+  const scentedX = meanX(scented.ps);
+
+  assert('shared previous scent adds organism-level eastward steering',
+    scentedX > unscentedX + 0.015,
+    `unscentedX=${unscentedX.toFixed(4)} scentedX=${scentedX.toFixed(4)}`);
+});
+
+await runTest('cluster-body-telemetry: blocked shared scent triggers coherent wall-following', async () => {
+  const makeWorld = (withContact) => {
+    const world = new World({ maxParticles: 16 });
+    const ps = makeNamedCluster(world);
+    const cluster = world._clusters[0];
+    if (withContact) {
+      cluster.contactX = 1;
+      cluster.contactY = 0;
+      cluster.slip = 1;
+      cluster.topology = 1;
+    }
+    for (const p of ps) {
+      p.vx = 0;
+      p.vy = 0;
+      p.lastLongFieldX = 1;
+      p.lastLongFieldY = 0;
+    }
+    const startY = ps.reduce((sum, p) => sum + p.y, 0) / ps.length;
+    return { world, ps, startY };
+  };
+
+  const free = makeWorld(false);
+  const blocked = makeWorld(true);
+
+  await free.world.step();
+  await blocked.world.step();
+
+  const meanY = ps => ps.reduce((sum, p) => sum + p.y, 0) / ps.length;
+  const freeSlide = meanY(free.ps) - free.startY;
+  const blockedSlide = meanY(blocked.ps) - blocked.startY;
+  const extraTangent = Math.abs(blockedSlide - freeSlide);
+
+  assert('body chooses a shared tangent when the shared scent points through contact',
+    extraTangent > 0.015,
+    `freeSlide=${freeSlide.toFixed(4)} blockedSlide=${blockedSlide.toFixed(4)}`);
+});

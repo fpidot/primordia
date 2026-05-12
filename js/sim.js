@@ -151,6 +151,9 @@ const MUD_ENERGY_DRAIN   = 0.010;
 const HARD_CONTACT_TANGENT = 0.18; // rough hard-surface slip so agents do not pin forever
 const HARD_CONTACT_ESCAPE  = 0.05; // tiny generic rebound from solid/glass/edges
 const CLUSTER_CONTACT_SLIDE = 0.12; // organism-scale surface following from shared contact feedback
+const CLUSTER_CONTACT_EXPLORE = 0.62; // coherent wall-following when a body is pushing into an obstacle
+const CLUSTER_TRACTION = 0.16; // shared traction when a named organism's motors agree
+const CLUSTER_FIELD_STEER = 0.07; // weak distributed-scent steering for named organisms
 
 // Communication has a tiny metabolic cost, but named clusters can convert
 // received bond messages into action-specific coordination bonuses.
@@ -905,6 +908,7 @@ export class World {
       shelterRelief: 0,
       wallDigs: 0,
       wallDeposits: 0,
+      lastLongFieldX: 0, lastLongFieldY: 0,
       lastMotorX: 0, lastMotorY: 0,
       lastMotorProgress: 0, lastMotorSlip: 0,
       lastHardContactX: 0, lastHardContactY: 0,
@@ -1480,6 +1484,8 @@ export class World {
       }
     }
     this._updateClusterMessageBus();
+    this._updateClusterMotorConsensus();
+    this._updateClusterFieldConsensus();
 
     // Phase 6c — fast cluster alarm. After bondMsg propagation, scan each
     // named cluster for any member whose previous-tick bondMsg (any channel)
@@ -1871,6 +1877,25 @@ export class World {
       const longFieldY = gSense[0] * longChem[1] + gSense[1] * longChem[5];
       ax += K_FIELD_LONG * longFieldX;
       ay += K_FIELD_LONG * longFieldY;
+      const locomotionCluster = p.cluster;
+      if (locomotionCluster && (locomotionCluster.motorConsensus || 0) > 0.15) {
+        const topologyGain = 0.45 + (locomotionCluster.topology || 0) * 0.55;
+        const sizeGain = Math.tanh((locomotionCluster.count || 0) / 16);
+        const traction = CLUSTER_TRACTION * (locomotionCluster.motorConsensus || 0) *
+          topologyGain * sizeGain;
+        ax += (locomotionCluster.motorX || 0) * traction;
+        ay += (locomotionCluster.motorY || 0) * traction;
+      }
+      if (locomotionCluster && (locomotionCluster.fieldStrength || 0) > 0.04) {
+        const topologyGain = 0.45 + (locomotionCluster.topology || 0) * 0.55;
+        const sizeGain = Math.tanh((locomotionCluster.count || 0) / 16);
+        const steer = CLUSTER_FIELD_STEER * topologyGain * sizeGain *
+          clamp((locomotionCluster.fieldStrength || 0) * 2, 0, 1);
+        ax += (locomotionCluster.fieldX || 0) * steer;
+        ay += (locomotionCluster.fieldY || 0) * steer;
+      }
+      p.lastLongFieldX = longFieldX;
+      p.lastLongFieldY = longFieldY;
       const bodyContactCluster = p.cluster;
       if (bodyContactCluster && (bodyContactCluster.slip || 0) > 0.025) {
         const contactX = bodyContactCluster.contactX || 0;
@@ -1881,14 +1906,31 @@ export class World {
           const nyBody = contactY / contactMag;
           const txBody = -nyBody;
           const tyBody = nxBody;
-          const tangentField = longFieldX * txBody + longFieldY * tyBody;
+          const sharedFieldX = (bodyContactCluster.fieldStrength || 0) > 0.04
+            ? (bodyContactCluster.fieldX || 0)
+            : longFieldX;
+          const sharedFieldY = (bodyContactCluster.fieldStrength || 0) > 0.04
+            ? (bodyContactCluster.fieldY || 0)
+            : longFieldY;
+          const tangentField = sharedFieldX * txBody + sharedFieldY * tyBody;
           const tangentStrength = Math.abs(tangentField);
+          let slideSignal = 0;
           if (tangentStrength > 0.04) {
+            slideSignal = Math.sign(tangentField) * clamp(tangentStrength * 2, 0, 1);
+          } else {
+            const normalField = sharedFieldX * nxBody + sharedFieldY * nyBody;
+            const blockedGoal = clamp(normalField * 2, 0, 1);
+            if (blockedGoal > 0.04) {
+              const routeSeed = bodyContactCluster.anchorId || bodyContactCluster.root || 0;
+              const routeSign = ((routeSeed + ((this.tick / 240) | 0)) & 1) ? 1 : -1;
+              slideSignal = routeSign * blockedGoal * CLUSTER_CONTACT_EXPLORE;
+            }
+          }
+          if (Math.abs(slideSignal) > 0.01) {
             const slipGain = clamp((bodyContactCluster.slip || 0) * 4, 0, 1);
             const topologyGain = 0.5 + (bodyContactCluster.topology || 0) * 0.5;
             const sizeGain = Math.tanh((bodyContactCluster.count || 0) / 14);
-            const slide = CLUSTER_CONTACT_SLIDE * slipGain * topologyGain * sizeGain *
-              clamp(tangentStrength * 2, 0, 1) * Math.sign(tangentField);
+            const slide = CLUSTER_CONTACT_SLIDE * slipGain * topologyGain * sizeGain * slideSignal;
             ax += txBody * slide;
             ay += tyBody * slide;
           }
@@ -2034,9 +2076,17 @@ export class World {
           inp[77] = cl6.busR || 0;
           inp[78] = cl6.busG || 0;
           inp[79] = cl6.busB || 0;
+          inp[80] = cl6.motorX || 0;
+          inp[81] = cl6.motorY || 0;
+          inp[82] = cl6.motorConsensus || 0;
+          inp[83] = cl6.fieldX || 0;
+          inp[84] = cl6.fieldY || 0;
+          inp[85] = cl6.fieldStrength || 0;
         } else {
           inp[72] = inp[73] = inp[74] = inp[75] = inp[76] = 0;
           inp[77] = inp[78] = inp[79] = 0;
+          inp[80] = inp[81] = inp[82] = 0;
+          inp[83] = inp[84] = inp[85] = 0;
         }
         g.brain.forward(inp, out);
       }
@@ -2577,6 +2627,7 @@ export class World {
             shelterRelief: 0,
             wallDigs: 0,
             wallDeposits: 0,
+            lastLongFieldX: 0, lastLongFieldY: 0,
             lastMotorX: 0, lastMotorY: 0,
             lastMotorProgress: 0, lastMotorSlip: 0,
             lastHardContactX: 0, lastHardContactY: 0,
@@ -2650,6 +2701,7 @@ export class World {
             shelterRelief: 0,
             wallDigs: 0,
             wallDeposits: 0,
+            lastLongFieldX: 0, lastLongFieldY: 0,
             lastMotorX: 0, lastMotorY: 0,
             lastMotorProgress: 0, lastMotorSlip: 0,
             lastHardContactX: 0, lastHardContactY: 0,
@@ -2911,9 +2963,17 @@ export class World {
         extras[o + 57] = cl.busR || 0;
         extras[o + 58] = cl.busG || 0;
         extras[o + 59] = cl.busB || 0;
+        extras[o + 60] = cl.motorX || 0;
+        extras[o + 61] = cl.motorY || 0;
+        extras[o + 62] = cl.motorConsensus || 0;
+        extras[o + 63] = cl.fieldX || 0;
+        extras[o + 64] = cl.fieldY || 0;
+        extras[o + 65] = cl.fieldStrength || 0;
       } else {
         extras[o + 52] = extras[o + 53] = extras[o + 54] = extras[o + 55] = extras[o + 56] = 0;
         extras[o + 57] = extras[o + 58] = extras[o + 59] = 0;
+        extras[o + 60] = extras[o + 61] = extras[o + 62] = 0;
+        extras[o + 63] = extras[o + 64] = extras[o + 65] = 0;
       }
     }
   }
@@ -3319,6 +3379,60 @@ export class World {
     this._clusterBus = nextBus;
   }
 
+  _updateClusterMotorConsensus() {
+    if (!this._clusters || this._clusters.length === 0) return;
+    for (const c of this._clusters) {
+      let sx = 0, sy = 0, effort = 0, n = 0;
+      for (const p of c.members || []) {
+        if (!p || p.dead) continue;
+        const mx = p.lastMotorX || 0;
+        const my = p.lastMotorY || 0;
+        const e = Math.min(1, Math.hypot(mx, my));
+        if (e <= 1e-4) continue;
+        sx += mx;
+        sy += my;
+        effort += e;
+        n++;
+      }
+      if (n <= 0 || effort <= 1e-4) {
+        c.motorX = 0;
+        c.motorY = 0;
+        c.motorConsensus = 0;
+        continue;
+      }
+      const meanX = sx / n;
+      const meanY = sy / n;
+      c.motorX = clamp(meanX, -1, 1);
+      c.motorY = clamp(meanY, -1, 1);
+      c.motorConsensus = clamp(Math.hypot(sx, sy) / effort, 0, 1);
+    }
+  }
+
+  _updateClusterFieldConsensus() {
+    if (!this._clusters || this._clusters.length === 0) return;
+    for (const c of this._clusters) {
+      let sx = 0, sy = 0, n = 0;
+      for (const p of c.members || []) {
+        if (!p || p.dead) continue;
+        sx += p.lastLongFieldX || 0;
+        sy += p.lastLongFieldY || 0;
+        n++;
+      }
+      if (n <= 0) {
+        c.fieldX = 0;
+        c.fieldY = 0;
+        c.fieldStrength = 0;
+        continue;
+      }
+      const fx = sx / n;
+      const fy = sy / n;
+      const strength = Math.min(1, Math.hypot(fx, fy));
+      c.fieldX = clamp(fx, -1, 1);
+      c.fieldY = clamp(fy, -1, 1);
+      c.fieldStrength = strength;
+    }
+  }
+
   updateClusters() {
     const CLUSTER_INTERVAL = 12;
     const MIN_NAMED_CLUSTER = 8;
@@ -3401,6 +3515,8 @@ export class World {
       const memberIds = new Set(members.map(p => p.id));
       let internalBondRefs = 0;
       let contactX = 0, contactY = 0, slipSum = 0;
+      let motorXSum = 0, motorYSum = 0, motorEffortSum = 0;
+      let fieldXSum = 0, fieldYSum = 0;
       for (const p of members) {
         const dx = p.x - cx;
         const dy = p.y - cy;
@@ -3410,6 +3526,14 @@ export class World {
         contactX += p.lastHardContactX || 0;
         contactY += p.lastHardContactY || 0;
         slipSum += p.lastMotorSlip || 0;
+        const motorX = p.lastMotorX || 0;
+        const motorY = p.lastMotorY || 0;
+        const motorEffort = Math.min(1, Math.hypot(motorX, motorY));
+        motorXSum += motorX;
+        motorYSum += motorY;
+        motorEffortSum += motorEffort;
+        fieldXSum += p.lastLongFieldX || 0;
+        fieldYSum += p.lastLongFieldY || 0;
         for (const partnerId of p.bonds || []) {
           if (memberIds.has(partnerId)) internalBondRefs++;
         }
@@ -3450,6 +3574,14 @@ export class World {
       const meanContactX = clamp(contactX * invCount, -1, 1);
       const meanContactY = clamp(contactY * invCount, -1, 1);
       const meanSlip = clamp(slipSum * invCount, 0, 1);
+      const meanMotorX = clamp(motorXSum * invCount, -1, 1);
+      const meanMotorY = clamp(motorYSum * invCount, -1, 1);
+      const motorConsensus = motorEffortSum > 1e-4
+        ? clamp(Math.hypot(motorXSum, motorYSum) / motorEffortSum, 0, 1)
+        : 0;
+      const meanFieldX = clamp(fieldXSum * invCount, -1, 1);
+      const meanFieldY = clamp(fieldYSum * invCount, -1, 1);
+      const fieldStrength = Math.min(1, Math.hypot(meanFieldX, meanFieldY));
       nextMotion.set(motionKey, { cx, cy, tick: this.tick });
       const cluster = {
         root,
@@ -3465,6 +3597,12 @@ export class World {
         contactX: meanContactX,
         contactY: meanContactY,
         slip: meanSlip,
+        motorX: meanMotorX,
+        motorY: meanMotorY,
+        motorConsensus,
+        fieldX: meanFieldX,
+        fieldY: meanFieldY,
+        fieldStrength,
         busR: prevBus.r || 0,
         busG: prevBus.g || 0,
         busB: prevBus.b || 0,
@@ -3893,6 +4031,7 @@ export class World {
         shelterRelief: op.shelterRelief || 0,
         wallDigs: op.wallDigs || 0,
         wallDeposits: op.wallDeposits || 0,
+        lastLongFieldX: 0, lastLongFieldY: 0,
         cluster: null,
         bonds: Array.isArray(op.bonds) ? op.bonds.slice() : [],
         dead: false,
