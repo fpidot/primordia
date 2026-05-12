@@ -325,7 +325,11 @@ heavier Planet starts are still a deliberate stress test.
    parent body's organism root/generation, must attach to available bond slots
    in that body, and are counted as `clusterCellBirths`. Cluster budding is
    therefore the only path that advances the visible organism generation
-   (`Jr`, `III`, etc.). Current visibility update: organism buds now emit
+   (`Jr`, `III`, etc.). Current offspring-placement update: ordinary cell
+   births and organism buds now use the same hard-terrain-aware placement
+   search. Mud is valid birth terrain, but glass and solid/wood cells are not;
+   a blocked intended birth spot is relocated to a nearby open cell before
+   parent energy is charged. Current visibility update: organism buds now emit
    explicit event-log entries, the vitals panel reports bud count, budded
    particles, somatic cluster-cell births, bud reserve, descendant clusters,
    descendant cells, max generation, and the last bud tick/generation/size; CPU

@@ -5,7 +5,8 @@ import { seedGlobalRandom, assert, runTest } from './harness.js';
 seedGlobalRandom(0xB17A5EED);
 
 const {
-  World, CELL,
+  World, CELL, GW,
+  WALL_MEMBRANE, WALL_POROUS, WALL_SOLID,
   OFFSPRING_BASE_ENERGY, OFFSPRING_MAX_ENERGY, OFFSPRING_SEX_MAX_ENERGY,
   offspringEndowmentForEnergy,
 } = await import('../js/sim.js');
@@ -51,6 +52,22 @@ function makeNamedCluster(world, energy = 40) {
   return ps;
 }
 
+function wallIndexAt(x, y) {
+  return ((y / CELL) | 0) * GW + ((x / CELL) | 0);
+}
+
+function setWallAt(world, x, y, wallType) {
+  const idx = wallIndexAt(x, y);
+  if (!world.walls[idx]) world._wallCount++;
+  world.walls[idx] = wallType;
+  world._wallsVersion++;
+  return idx;
+}
+
+function wallAtParticle(world, p) {
+  return world.walls[wallIndexAt(p.x, p.y)];
+}
+
 await runTest('reproduction provisioning: surplus helps but child reserves are capped', () => {
   const barelyReady = offspringEndowmentForEnergy(8, 7);
   const rich = offspringEndowmentForEnergy(80, 7);
@@ -78,6 +95,43 @@ await runTest('reproduction provisioning: asexual births no longer split rich en
   assert('forced asexual step creates a child', children.length >= 1);
   assert('child does not inherit rich parent reserves', children[0].energy <= OFFSPRING_MAX_ENERGY + 1e-6);
   assert('parent keeps more reserve than the newborn', parent.energy > children[0].energy);
+});
+
+await runTest('reproduction provisioning: newborns are not placed inside hard obstacles', async () => {
+  const world = new World({ maxParticles: 8, clusterBudding: false });
+  const parent = world.addParticle(40 * CELL, 40 * CELL, quietGenome(), 40);
+  parent.vx = 0;
+  parent.vy = 0;
+
+  const blockedIdx = setWallAt(world, parent.x - 2, parent.y - 2, WALL_MEMBRANE);
+
+  const prevRandom = Math.random;
+  Math.random = () => 0;
+  try {
+    await world.step();
+  } finally {
+    Math.random = prevRandom;
+  }
+
+  const children = world.particles.filter(p => p !== parent && !p.dead);
+  assert('forced asexual step creates a child near a hard wall', children.length >= 1);
+  assert('the predicted hard-wall spawn cell remains glass', world.walls[blockedIdx] === WALL_MEMBRANE);
+  assert('newborn is relocated out of glass/solid cells',
+    children.every(p => wallAtParticle(world, p) !== WALL_MEMBRANE && wallAtParticle(world, p) !== WALL_SOLID));
+  assert('newborn is not left in the blocked spawn cell',
+    children.every(p => wallIndexAt(p.x, p.y) !== blockedIdx));
+});
+
+await runTest('reproduction provisioning: mud remains a valid offspring spawn terrain', () => {
+  const world = new World({ maxParticles: 8, clusterBudding: false });
+  const x = 30 * CELL;
+  const y = 30 * CELL;
+  setWallAt(world, x, y, WALL_POROUS);
+
+  const pos = world._findBudPosition(x, y, 18);
+
+  assert('mud spawn search returns a position', !!pos);
+  assert('mud is treated as open for offspring', world.walls[wallIndexAt(pos[0], pos[1])] === WALL_POROUS);
 });
 
 await runTest('reproduction provisioning: sexual births use bounded shared reserves', async () => {

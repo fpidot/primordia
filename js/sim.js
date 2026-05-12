@@ -2598,12 +2598,16 @@ export class World {
           const partnerCost = childCost - pCost;
           // Inherit cladeId from the richer parent before provisioning costs.
           const parentClade = p.energy >= partner.energy ? p.cladeId : partner.cladeId;
+          const desiredX = clamp((p.x + partner.x) * 0.5 + (Math.random() - 0.5) * 4, 1, W - 1);
+          const desiredY = clamp((p.y + partner.y) * 0.5 + (Math.random() - 0.5) * 4, 1, H - 1);
+          const childPos = this._findOffspringPosition(desiredX, desiredY, 18);
+          if (!childPos) continue;
           p.energy -= pCost;
           partner.energy -= partnerCost;
           const child = {
             id: ++_id,
-            x: clamp((p.x + partner.x) * 0.5 + (Math.random() - 0.5) * 4, 1, W - 1),
-            y: clamp((p.y + partner.y) * 0.5 + (Math.random() - 0.5) * 4, 1, H - 1),
+            x: childPos[0],
+            y: childPos[1],
             vx: (p.vx + partner.vx) * 0.25,
             vy: (p.vy + partner.vy) * 0.25,
             genome: childGenome,
@@ -2672,12 +2676,16 @@ export class World {
           const childE = offspringEndowmentForEnergy(p.energy, g.repro_thresh, OFFSPRING_MAX_ENERGY);
           const childCost = offspringCostForEndowment(childE, REPRO_TAX);
           if (p.energy - childCost < OFFSPRING_PARENT_FLOOR) continue;
-          p.energy -= childCost;
           const jitter = 4;
+          const desiredX = clamp(p.x + (Math.random() - 0.5) * jitter, 1, W - 1);
+          const desiredY = clamp(p.y + (Math.random() - 0.5) * jitter, 1, H - 1);
+          const childPos = this._findOffspringPosition(desiredX, desiredY, 18);
+          if (!childPos) continue;
+          p.energy -= childCost;
           const child = {
             id: ++_id,
-            x: clamp(p.x + (Math.random() - 0.5) * jitter, 1, W - 1),
-            y: clamp(p.y + (Math.random() - 0.5) * jitter, 1, H - 1),
+            x: childPos[0],
+            y: childPos[1],
             vx: -p.vx * 0.5 + (Math.random() - 0.5) * 0.5,
             vy: -p.vy * 0.5 + (Math.random() - 0.5) * 0.5,
             genome: childGenome,
@@ -3037,25 +3045,49 @@ export class World {
     return `${root}:${generation}`;
   }
 
-  _isOpenForBud(x, y) {
+  _isOpenForOffspring(x, y) {
     const gx = clamp((x / CELL) | 0, 0, GW - 1);
     const gy = clamp((y / CELL) | 0, 0, GH - 1);
     const w = this.walls[gy * GW + gx];
     return w !== WALL_SOLID && w !== WALL_MEMBRANE;
   }
 
-  _findBudPosition(x, y, spread = 18) {
+  _findOffspringPosition(x, y, spread = 18) {
     let bx = clamp(x, 1, W - 1);
     let by = clamp(y, 1, H - 1);
-    if (this._isOpenForBud(bx, by)) return [bx, by];
-    for (let i = 0; i < 16; i++) {
+    if (this._isOpenForOffspring(bx, by)) return [bx, by];
+
+    const startGx = clamp((bx / CELL) | 0, 0, GW - 1);
+    const startGy = clamp((by / CELL) | 0, 0, GH - 1);
+    const maxRing = Math.max(2, Math.ceil(Math.max(1, spread) / CELL));
+    const jitter = Math.min(2, CELL * 0.3);
+    for (let ring = 1; ring <= maxRing; ring++) {
+      const gx0 = Math.max(0, startGx - ring);
+      const gx1 = Math.min(GW - 1, startGx + ring);
+      const gy0 = Math.max(0, startGy - ring);
+      const gy1 = Math.min(GH - 1, startGy + ring);
+      for (let gy = gy0; gy <= gy1; gy++) {
+        for (let gx = gx0; gx <= gx1; gx++) {
+          if (gx !== gx0 && gx !== gx1 && gy !== gy0 && gy !== gy1) continue;
+          const cx = clamp((gx + 0.5) * CELL + (Math.random() - 0.5) * jitter, 1, W - 1);
+          const cy = clamp((gy + 0.5) * CELL + (Math.random() - 0.5) * jitter, 1, H - 1);
+          if (this._isOpenForOffspring(cx, cy)) return [cx, cy];
+        }
+      }
+    }
+
+    for (let i = 0; i < 24; i++) {
       const a = Math.random() * Math.PI * 2;
-      const r = spread * (0.35 + Math.random());
+      const r = spread * (0.35 + Math.random() * 1.65);
       bx = clamp(x + Math.cos(a) * r, 1, W - 1);
       by = clamp(y + Math.sin(a) * r, 1, H - 1);
-      if (this._isOpenForBud(bx, by)) return [bx, by];
+      if (this._isOpenForOffspring(bx, by)) return [bx, by];
     }
-    return [bx, by];
+    return null;
+  }
+
+  _findBudPosition(x, y, spread = 18) {
+    return this._findOffspringPosition(x, y, spread);
   }
 
   _linkBudChildren(a, b) {
@@ -3305,11 +3337,13 @@ export class World {
       if (parent.energy - giftCost < CLUSTER_BUD_PARENT_FLOOR) continue;
       const relX = (parent.x - cluster.cx) * 0.7;
       const relY = (parent.y - cluster.cy) * 0.7;
-      const [x, y] = this._findBudPosition(
+      const pos = this._findBudPosition(
         budCx + relX + (Math.random() - 0.5) * 4,
         budCy + relY + (Math.random() - 0.5) * 4,
         Math.max(12, cluster.radius * 0.5),
       );
+      if (!pos) continue;
+      const [x, y] = pos;
       const clade = this.clades.clades.get(parent.cladeId) || null;
       const childGenome = mutate(parent.genome, Math.random, CLUSTER_BUD_MUTATION_BOOST);
       const child = this.addParticle(x, y, childGenome, childEnergy, clade);

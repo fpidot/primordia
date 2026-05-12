@@ -740,6 +740,13 @@ Predation and food pressure:
   capacity, that ordinary cell birth waits instead of spawning a detached
   cluster-born particle. True generation advancement remains reserved for
   cluster budding (`Jr`, `III`, `IV`, etc.).
+- Offspring placement update:
+  asexual, sexual, and cluster-bud offspring now share a hard-terrain-aware
+  placement helper. Newborns may spawn in mud, but they will not be placed
+  inside solid/wood or glass cells; if the intended birth spot is blocked,
+  the helper searches nearby open cells before any parent energy is charged.
+  This prevents stranded newborns from being born inside an obstacle while
+  still allowing ordinary mud ecology.
 - Organism-preserving replay and cluster-selection update:
   `tools/defense-soak.js --replay both` now compares particle replay,
   `clusters-intact`, and `clusters-disassembled`. Metrics include source-bond
