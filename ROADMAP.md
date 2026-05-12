@@ -269,6 +269,24 @@ heavier Planet starts are still a deliberate stress test.
    member goal, 50.0% loose centroid crossing, and 0.0% body/cohesive goal.
    Current read: organism-scale routing is now a real, measurable advantage
    over disassembled cells, but final goal completion is still not robust.
+   Latest specialist-field update: cluster shared-field consensus is now
+   salience-weighted instead of a plain member average, so one or a few
+   front-edge sensor members can preserve a strong food/decay direction for
+   the whole organism while signal strength still scales with sensing coverage.
+   The assay goal-body radius now scales with the organism-sized food patch,
+   so body goal hits are not undercounted for large compact clusters. The
+   louder-beacon experiment was explicitly not kept as a default; old
+   food/scent defaults are restored. Six-seed medium route replay with intact
+   clusters (`soup`, seeds `0x51A11,0xA11CE,0xBEE,0xC0FFEE,0xD370A,0xF00D`,
+   ticks 720, evolveTicks 900, cap 620/start 340, event combat) now measured
+   60.1% member crossing, 9.1% member goal, 66.7% majority body crossing,
+   8.3% body/cohesive goal, 100% survival, and mean max stretch 2.56.
+   Disassembled controls reached 30.5% member crossing, 5.7% member goal,
+   33.3% loose majority crossing, 0.0% body/cohesive goal, 93.5% survival, and
+   stretch 19.08. A longer 1080-tick intact replay raised cohesive/body
+   crossing to 83.3%, cohesive/body goal to 25.0%, and mean closest goal
+   distance to 364 px, confirming this is mostly a route-time and final-leg
+   robustness problem rather than pure inability to move as a body.
    Next experiments should classify weak seeds by failure mode and test
    morphology/gap-fit selection, cohesion-preserving passage pressure,
    stronger final-leg food pressure, or motor-consensus scaffolds that make

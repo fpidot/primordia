@@ -225,6 +225,25 @@ await runTest('cluster-body-telemetry: distributed scent steers the named body',
     `unscentedX=${unscentedX.toFixed(4)} scentedX=${scentedX.toFixed(4)}`);
 });
 
+await runTest('cluster-body-telemetry: sparse scent specialists preserve organism field direction', async () => {
+  const world = new World({ maxParticles: 16 });
+  const ps = makeNamedCluster(world);
+  for (const p of ps) {
+    p.lastLongFieldX = 0;
+    p.lastLongFieldY = 0;
+  }
+  ps[0].lastLongFieldX = 1;
+  world._updateClusterFieldConsensus();
+  const cluster = world._clusters[0];
+
+  assert('single specialist keeps eastward field direction',
+    cluster.fieldX > 0.9 && Math.abs(cluster.fieldY) < 0.01,
+    `field=(${cluster.fieldX.toFixed(3)},${cluster.fieldY.toFixed(3)})`);
+  assert('single specialist keeps usable organism-level field strength',
+    cluster.fieldStrength > 0.45 && cluster.fieldStrength < 0.75,
+    `fieldStrength=${cluster.fieldStrength.toFixed(3)} coverage=${cluster.fieldCoverage.toFixed(3)}`);
+});
+
 await runTest('cluster-body-telemetry: blocked shared scent triggers coherent wall-following', async () => {
   const makeWorld = (withContact) => {
     const world = new World({ maxParticles: 16 });

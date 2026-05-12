@@ -149,7 +149,8 @@ export function buildDetourArena(world, opts = {}) {
   const scentCells = opts.scent === false
     ? 0
     : addGoalScent(world, goalX, goalY, scentRadiusCells, scentAmount);
-  addFoodPatch(world, goalX, goalY, Math.max(3, Number(opts.foodRadiusCells) || 12),
+  const foodRadiusCells = Math.max(3, Number(opts.foodRadiusCells) || 12);
+  addFoodPatch(world, goalX, goalY, foodRadiusCells,
     Number(opts.foodAmount) || 5.5);
   addFoodPatch(world, W * 0.27, H * 0.5, Math.max(2, Number(opts.startFoodRadiusCells) || 5),
     Number(opts.startFoodAmount) || 1.8);
@@ -192,6 +193,8 @@ export function buildDetourArena(world, opts = {}) {
     scentCells,
     scentRadiusCells: opts.scent === false ? 0 : scentRadiusCells,
     scentAmount: opts.scent === false ? 0 : scentAmount,
+    foodRadiusCells,
+    goalBodyRadius: Math.max(42, foodRadiusCells * CELL * 1.25),
     goalX,
     goalY,
   };
@@ -717,7 +720,7 @@ function updateClusterRouteTrackers(groups, arena) {
       if (compactEnough && s.majorityCrossed) g.bodyCrossedCompact = true;
     }
     if (s.majorityCrossed) g.majorityCrossed = true;
-    if (s.goalDistance < 42) {
+    if (s.goalDistance < (arena.goalBodyRadius || 42)) {
       g.bodyReachedGoal = true;
       if (compactEnough) g.bodyReachedGoalCompact = true;
     }

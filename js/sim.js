@@ -417,6 +417,40 @@ function salientMessageMean(members, channel) {
   return weightSum > 1e-6 ? weighted / weightSum : 0;
 }
 
+function salientClusterField(members) {
+  let sx = 0;
+  let sy = 0;
+  let weightSum = 0;
+  let active = 0;
+  let n = 0;
+  for (const p of members || []) {
+    if (!p || p.dead) continue;
+    n++;
+    const fx = p.lastLongFieldX || 0;
+    const fy = p.lastLongFieldY || 0;
+    const mag = Math.min(1, Math.hypot(fx, fy));
+    if (mag <= 1e-4) continue;
+    const w = mag * mag;
+    sx += fx * w;
+    sy += fy * w;
+    weightSum += w;
+    active++;
+  }
+  if (n <= 0 || weightSum <= 1e-6) {
+    return { x: 0, y: 0, strength: 0, coverage: 0 };
+  }
+  const x = clamp(sx / weightSum, -1, 1);
+  const y = clamp(sy / weightSum, -1, 1);
+  const directionalStrength = Math.min(1, Math.hypot(x, y));
+  const coverage = clamp(Math.sqrt(active / n), 0, 1);
+  return {
+    x,
+    y,
+    strength: clamp(directionalStrength * (0.35 + coverage * 0.65), 0, 1),
+    coverage,
+  };
+}
+
 // Bond barrier — bonded clusters act as one-way "moving walls" against
 // outsider particles. Outsider = not bonded to either endpoint of the segment.
 // Gated on cluster membership so a single bonded pair doesn't form a barrier;
@@ -3464,25 +3498,11 @@ export class World {
   _updateClusterFieldConsensus() {
     if (!this._clusters || this._clusters.length === 0) return;
     for (const c of this._clusters) {
-      let sx = 0, sy = 0, n = 0;
-      for (const p of c.members || []) {
-        if (!p || p.dead) continue;
-        sx += p.lastLongFieldX || 0;
-        sy += p.lastLongFieldY || 0;
-        n++;
-      }
-      if (n <= 0) {
-        c.fieldX = 0;
-        c.fieldY = 0;
-        c.fieldStrength = 0;
-        continue;
-      }
-      const fx = sx / n;
-      const fy = sy / n;
-      const strength = Math.min(1, Math.hypot(fx, fy));
-      c.fieldX = clamp(fx, -1, 1);
-      c.fieldY = clamp(fy, -1, 1);
-      c.fieldStrength = strength;
+      const field = salientClusterField(c.members);
+      c.fieldX = field.x;
+      c.fieldY = field.y;
+      c.fieldStrength = field.strength;
+      c.fieldCoverage = field.coverage;
     }
   }
 
@@ -3569,7 +3589,6 @@ export class World {
       let internalBondRefs = 0;
       let contactX = 0, contactY = 0, slipSum = 0;
       let motorXSum = 0, motorYSum = 0, motorEffortSum = 0;
-      let fieldXSum = 0, fieldYSum = 0;
       for (const p of members) {
         const dx = p.x - cx;
         const dy = p.y - cy;
@@ -3585,8 +3604,6 @@ export class World {
         motorXSum += motorX;
         motorYSum += motorY;
         motorEffortSum += motorEffort;
-        fieldXSum += p.lastLongFieldX || 0;
-        fieldYSum += p.lastLongFieldY || 0;
         for (const partnerId of p.bonds || []) {
           if (memberIds.has(partnerId)) internalBondRefs++;
         }
@@ -3632,9 +3649,7 @@ export class World {
       const motorConsensus = motorEffortSum > 1e-4
         ? clamp(Math.hypot(motorXSum, motorYSum) / motorEffortSum, 0, 1)
         : 0;
-      const meanFieldX = clamp(fieldXSum * invCount, -1, 1);
-      const meanFieldY = clamp(fieldYSum * invCount, -1, 1);
-      const fieldStrength = Math.min(1, Math.hypot(meanFieldX, meanFieldY));
+      const field = salientClusterField(members);
       const spread = spreadSum / members.length;
       const radius = Math.max(8, Math.sqrt(maxR2));
       nextMotion.set(motionKey, { cx, cy, tick: this.tick });
@@ -3655,9 +3670,10 @@ export class World {
         motorX: meanMotorX,
         motorY: meanMotorY,
         motorConsensus,
-        fieldX: meanFieldX,
-        fieldY: meanFieldY,
-        fieldStrength,
+        fieldX: field.x,
+        fieldY: field.y,
+        fieldStrength: field.strength,
+        fieldCoverage: field.coverage,
         busR: prevBus.r || 0,
         busG: prevBus.g || 0,
         busB: prevBus.b || 0,

@@ -40,11 +40,14 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Bias route curriculum toward cohesive clusters`
+  current `main` HEAD after this pass: `Preserve specialist field steering`
 
 Recent useful commits:
 
-- current `main` HEAD - Bias route curriculum toward cohesive clusters
+- current `main` HEAD - Preserve specialist field steering
+- `d6f571a` - Prevent offspring spawning in hard obstacles
+- `5bc7a3e` - Stabilize detour route robustness metrics
+- `b46984a` - Bias route curriculum toward cohesive clusters
 - `675497a` - Add cluster body detour metrics
 - `18ebde5` - Improve cluster detour replay realism
 - `7a6d932` - Add cluster locomotion scaffolds
@@ -244,7 +247,10 @@ Important recent sensor state:
   - `cluster.field.x/y/strength`
   These expose whether recent member thrust is aligned and whether distributed
   long-range chemistry points somewhere useful, so bond-message circuits and
-  locomotion circuits can evolve around organism-level state.
+  locomotion circuits can evolve around organism-level state. Shared field
+  consensus is salience-weighted: a few strongly sensing specialist members can
+  preserve direction for the organism, while strength still scales with sensing
+  coverage.
 - Old wall/mud slots remain stable.
 - CPU and GPU terrain/proprioception/damage/long-chem/cluster-body/message/
   motor/field sensor paths are wired for parity. GPU extras stride is now 66
@@ -1621,6 +1627,31 @@ Latest verification in the cluster-budding pass:
     signal than controls, but robust goal completion remains seed-dependent;
     weak seeds either fail to survive as route-capable clusters or get stuck
     near the barrier/final leg.
+- Specialist-field steering verification:
+  - Cluster shared-field consensus is now salience-weighted instead of a plain
+    average. Sparse front-edge sensors can carry a usable long-food/decay
+    direction for the whole named organism, while field strength remains gated
+    by sensing coverage.
+  - The detour assay now scales body-goal radius from the goal food patch size,
+    so compact multi-cell organisms are not undercounted by a particle-sized
+    goal threshold. A stronger goal-scent/default-food experiment was tried
+    during diagnosis and intentionally rolled back; the committed change keeps
+    old food/scent defaults.
+  - Focused checks passed:
+    `node --check js\sim.js`, `node --check tools\detour-assay.js`, and
+    `npm test -- detour-navigation.test.js cluster-body-telemetry.test.js`.
+  - Six-seed medium route replay with intact clusters (`soup`, seeds
+    `0x51A11,0xA11CE,0xBEE,0xC0FFEE,0xD370A,0xF00D`, ticks 720,
+    evolveTicks 900, cap 620/start 340, event combat): 60.1% member crossing,
+    9.1% member goal, 66.7% majority/cohesive body crossing, 8.3% body/cohesive
+    goal, 100% survival, and mean max stretch 2.56. Disassembled controls:
+    30.5% member crossing, 5.7% member goal, 33.3% loose majority crossing,
+    0.0% body/cohesive goal, 93.5% survival, and stretch 19.08.
+  - Longer 1080-tick intact replay on the same six seeds raised crossing to
+    80.2%, majority/cohesive body crossing to 83.3%, member goal to 22.8%,
+    body/cohesive goal to 25.0%, and mean closest body-goal distance to 364 px.
+    Current read: the body-routing scaffold is now much cleaner, with final-leg
+    goal completion and weak-seed robustness still the next target.
 
 Core:
 
@@ -1714,14 +1745,15 @@ git log --oneline -5
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use
 - agency: detour next step is still robustness, now with cleaner evidence.
-  The six-seed medium route pass shows intact clusters beating disassembled
-  controls on body/cohesive route metrics, but cohesive goal remains 16.7% and
-  weak seeds still fail. Next inspect the weak seeds by failure class:
-  low-survival/no-route (`0xF00D`), gap-approach without passage (`0xBEE`),
-  crossing without final-goal completion (`0x51A11`, `0xC0FFEE`, `0xD370A`).
-  Likely next experiments: morphology/gap-fit selection, cohesion-preserving
-  passage pressure, stronger final-leg food pressure, or motor-consensus
-  scaffolds that help compact bodies commit to a route without scripting it.
+  After salience-weighted shared fields, intact clusters beat disassembled
+  controls much more cleanly on cohesive crossing and stretch, and longer
+  replay raises cohesive goal hits to 25.0%, but final completion remains
+  seed-dependent. Next inspect weak seeds by failure class: no-route
+  (`0xF00D`), weak passage (`0xD370A`), and crossing without final-goal
+  completion (`0xBEE`, `0xC0FFEE`). Likely next experiments:
+  morphology/gap-fit selection, cohesion-preserving passage pressure, stronger
+  final-leg food pressure, or motor-consensus scaffolds that help compact
+  bodies commit to routes without scripting a pathfinder.
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization
 

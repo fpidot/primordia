@@ -38,6 +38,9 @@ await runTest('detour-navigation: arena builds a glass barrier with two open gap
     `food=${world.field[0][goalIdx]}`);
   assert('goal scent exists', arena.scentCells > arena.openGapCells,
     `scentCells=${arena.scentCells}`);
+  assert('body goal radius reflects organism-sized food patch',
+    arena.goalBodyRadius >= arena.foodRadiusCells * CELL,
+    `goalBodyRadius=${arena.goalBodyRadius} foodRadiusCells=${arena.foodRadiusCells}`);
   assert('start and goal regions exposed', world.habitatRegions.length === 2,
     `regions=${world.habitatRegions.length}`);
 });
