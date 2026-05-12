@@ -69,6 +69,7 @@ function summarize(rows) {
       highSpeedRateMean: round(mean(items.map(r => r.highSpeedAliveRate))),
       clusterParticlesMean: round(mean(items.map(r => r.clusterSampleParticles || 0))),
       clusterBondsMean: round(mean(items.map(r => r.clusterSampleBonds || 0))),
+      clusterTrimmedMean: round(mean(items.map(r => r.clusterSampleTrimmed || 0))),
       bondRetentionMean: round(mean(items.map(r => r.meanBondRetention || 0))),
       clusterBodyDriftMean: round(mean(items.map(r => r.meanClusterBodyDrift || 0))),
       clusterBodyContactMean: round(mean(items.map(r => r.meanClusterBodyContact || 0))),
@@ -84,7 +85,7 @@ function summarize(rows) {
 }
 
 function printTable(summary) {
-  console.log('preset | stage | replay | runs | tracked | cross | goal | gap | survive | minGoal | minGap | field | meat | speed | capFrac | motor | fast | cParts | cBonds | bondRet | cDrift | cContact | cSlip | cSignal | cMsg | msgCov | cMotor | cField | fieldCov');
+  console.log('preset | stage | replay | runs | tracked | cross | goal | gap | survive | minGoal | minGap | field | meat | speed | capFrac | motor | fast | cParts | cBonds | cTrim | bondRet | cDrift | cContact | cSlip | cSignal | cMsg | msgCov | cMotor | cField | fieldCov');
   for (const s of summary) {
     console.log([
       s.preset,
@@ -106,6 +107,7 @@ function printTable(summary) {
       s.highSpeedRateMean.toFixed(3),
       s.clusterParticlesMean.toFixed(1),
       s.clusterBondsMean.toFixed(1),
+      s.clusterTrimmedMean.toFixed(1),
       s.bondRetentionMean.toFixed(3),
       s.clusterBodyDriftMean.toFixed(3),
       s.clusterBodyContactMean.toFixed(3),

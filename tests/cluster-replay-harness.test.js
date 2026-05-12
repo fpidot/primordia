@@ -8,12 +8,12 @@ const { World, CELL } = await import('../js/sim.js');
 const { makeGenome } = await import('../js/genome.js');
 const { sampleClusterCohort, runChallenge } = await import('../tools/defense-soak.js');
 
-function makeReplayCluster(world) {
+function makeReplayCluster(world, count = 8) {
   const ps = [];
   const cx = 60 * CELL;
   const cy = 55 * CELL;
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2;
     const g = makeGenome(i % 2);
     g.repro_thresh = 9999;
     const p = world.addParticle(cx + Math.cos(a) * 10, cy + Math.sin(a) * 10, g, 8);
@@ -59,6 +59,23 @@ await runTest('cluster replay: sampler preserves members and source bonds', asyn
   assert('one cluster sampled', cohort.clusters.length === 1);
   assert('all members sampled', cohort.particleCount === 8);
   assert('ring bonds exported', cohort.bondCount === 8);
+});
+
+await runTest('cluster replay: oversized organisms export a connected budgeted subcluster', async () => {
+  const world = new World({ maxParticles: 64 });
+  makeReplayCluster(world, 14);
+
+  const cohort = sampleClusterCohort(world, 8, 0x51A11, {
+    clusterMinSize: 5,
+    clusterMaxClusters: 1,
+  });
+
+  assert('large cluster is trimmed instead of dropped', cohort.clusters.length === 1);
+  assert('trimmed export uses the particle budget', cohort.particleCount === 8);
+  assert('source count records original organism size', cohort.clusters[0].sourceCount === 14);
+  assert('trimmed cluster count is reported', cohort.trimmedClusterCount === 1);
+  assert('connected ring subset preserves most local bonds', cohort.bondCount >= 7,
+    `bondCount=${cohort.bondCount}`);
 });
 
 await runTest('cluster replay: intact challenge retains topology unlike disassembled control', async () => {

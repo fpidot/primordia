@@ -152,8 +152,8 @@ const HARD_CONTACT_TANGENT = 0.18; // rough hard-surface slip so agents do not p
 const HARD_CONTACT_ESCAPE  = 0.05; // tiny generic rebound from solid/glass/edges
 const CLUSTER_CONTACT_SLIDE = 0.12; // organism-scale surface following from shared contact feedback
 const CLUSTER_CONTACT_EXPLORE = 0.62; // coherent wall-following when a body is pushing into an obstacle
-const CLUSTER_TRACTION = 0.16; // shared traction when a named organism's motors agree
-const CLUSTER_FIELD_STEER = 0.07; // weak distributed-scent steering for named organisms
+const CLUSTER_TRACTION = 0.24; // shared traction when a named organism's motors agree
+const CLUSTER_FIELD_STEER = 0.14; // weak distributed-scent steering for named organisms
 
 // Communication has a tiny metabolic cost, but named clusters can convert
 // received bond messages into action-specific coordination bonuses.

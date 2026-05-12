@@ -275,31 +275,21 @@ export function sampleClusterCohort(world, particleBudget, seed, opts = {}) {
 
   const candidates = clusters
     .map(c => {
-      const members = (c.members || []).filter(p => p && !p.dead);
+      const sourceMembers = (c.members || []).filter(p => p && !p.dead);
+      if (sourceMembers.length < minSize) return null;
+      const members = selectReplayClusterMembers(sourceMembers, budget, minSize);
       if (members.length < minSize || members.length > budget) return null;
-      const memberIds = new Set(members.map(p => p.id));
-      let energy = 0;
-      let age = 0;
-      let slots = 0;
-      let internalBonds = 0;
-      for (const p of members) {
-        energy += p.energy || 0;
-        age += p.age || 0;
-        slots += p.genome?.brain?.enabledCount?.() || 0;
-        for (const id of p.bonds || []) if (memberIds.has(id)) internalBonds++;
-      }
-      const n = Math.max(1, members.length);
-      const meanEnergy = energy / n;
-      const meanAge = age / n;
-      const meanSlots = slots / n;
-      const meanBonds = internalBonds / n;
-      const compactness = 1 / Math.max(1, c.spread || c.radius || 1);
+      const stats = clusterMemberStats(members);
+      const compactness = 1 / Math.max(1, stats.spread || stats.radius || 1);
       const generation = Math.max(1, c.organismGeneration || 1);
       return {
         cluster: c,
         members,
-        score: meanEnergy + Math.min(10, meanAge / 150) + meanSlots * 0.5 +
-          meanBonds * 0.8 + members.length * 0.35 + compactness * 12 +
+        stats,
+        sourceCount: sourceMembers.length,
+        trimmed: members.length < sourceMembers.length,
+        score: stats.meanEnergy + Math.min(10, stats.meanAge / 150) + stats.meanSlots * 0.5 +
+          stats.meanBonds * 0.8 + members.length * 0.35 + compactness * 12 +
           (generation - 1) * 1.5,
       };
     })
@@ -330,6 +320,7 @@ export function sampleClusterCohort(world, particleBudget, seed, opts = {}) {
   const exported = selected.map((item, clusterIndex) => {
     const c = item.cluster;
     const members = item.members;
+    const stats = item.stats || clusterMemberStats(members);
     const sourceToLocal = new Map();
     const exportedMembers = members.map((p, localId) => {
       sourceToLocal.set(p.id, localId);
@@ -342,8 +333,8 @@ export function sampleClusterCohort(world, particleBudget, seed, opts = {}) {
         age: p.age || 0,
         slots: p.genome.brain.enabledCount(),
         bonds: (p.bonds || []).length,
-        dx: p.x - c.cx,
-        dy: p.y - c.cy,
+        dx: p.x - stats.cx,
+        dy: p.y - stats.cy,
         genome: cloneGenome(p.genome),
       };
     });
@@ -362,10 +353,12 @@ export function sampleClusterCohort(world, particleBudget, seed, opts = {}) {
       organismRootId: c.organismRootId || c.anchorId || c.root || 0,
       organismGeneration: Math.max(1, c.organismGeneration || 1),
       count: exportedMembers.length,
-      radius: c.radius || 0,
-      spread: c.spread || 0,
-      topology: round(c.topology || 0),
-      meanInternalBonds: round(c.meanInternalBonds || 0),
+      sourceCount: item.sourceCount || exportedMembers.length,
+      trimmed: !!item.trimmed,
+      radius: stats.radius || 0,
+      spread: stats.spread || 0,
+      topology: round(stats.topology),
+      meanInternalBonds: round(stats.meanBonds),
       score: round(item.score),
       members: exportedMembers,
       bonds: bondPairs,
@@ -377,6 +370,99 @@ export function sampleClusterCohort(world, particleBudget, seed, opts = {}) {
     clusters: exported,
     particleCount: exported.reduce((sum, c) => sum + c.members.length, 0),
     bondCount: exported.reduce((sum, c) => sum + c.bonds.length, 0),
+    sourceParticleCount: exported.reduce((sum, c) => sum + (c.sourceCount || c.members.length), 0),
+    trimmedClusterCount: exported.reduce((sum, c) => sum + (c.trimmed ? 1 : 0), 0),
+  };
+}
+
+function replayMemberScore(p) {
+  return (p.energy || 0) +
+    Math.min(10, (p.age || 0) / 150) +
+    (p.genome?.brain?.enabledCount?.() || 0) * 0.5 +
+    (p.bonds?.length || 0) * 0.4;
+}
+
+function selectReplayClusterMembers(members, budget, minSize) {
+  const limit = Math.min(Math.max(minSize, budget), members.length);
+  if (members.length <= limit) return members.slice();
+
+  const byId = new Map(members.map(p => [p.id, p]));
+  const ranked = members.slice().sort((a, b) => {
+    const d = replayMemberScore(b) - replayMemberScore(a);
+    return d || (a.id - b.id);
+  });
+  const selected = [];
+  const selectedIds = new Set();
+  const enqueueSortedNeighbors = (p, queue, queuedIds) => {
+    const neighbors = (p.bonds || [])
+      .map(id => byId.get(id))
+      .filter(q => q && !selectedIds.has(q.id) && !queuedIds.has(q.id))
+      .sort((a, b) => {
+        const d = replayMemberScore(b) - replayMemberScore(a);
+        return d || (a.id - b.id);
+      });
+    for (const q of neighbors) {
+      queue.push(q);
+      queuedIds.add(q.id);
+    }
+  };
+
+  for (const seed of ranked) {
+    if (selected.length >= limit) break;
+    if (selectedIds.has(seed.id)) continue;
+    const queue = [seed];
+    const queuedIds = new Set([seed.id]);
+    for (let qi = 0; qi < queue.length && selected.length < limit; qi++) {
+      const p = queue[qi];
+      if (!p || selectedIds.has(p.id)) continue;
+      selected.push(p);
+      selectedIds.add(p.id);
+      enqueueSortedNeighbors(p, queue, queuedIds);
+    }
+  }
+  return selected;
+}
+
+function clusterMemberStats(members) {
+  const memberIds = new Set(members.map(p => p.id));
+  let energy = 0;
+  let age = 0;
+  let slots = 0;
+  let internalBondRefs = 0;
+  let cx = 0;
+  let cy = 0;
+  for (const p of members) {
+    energy += p.energy || 0;
+    age += p.age || 0;
+    slots += p.genome?.brain?.enabledCount?.() || 0;
+    cx += p.x || 0;
+    cy += p.y || 0;
+    for (const id of p.bonds || []) if (memberIds.has(id)) internalBondRefs++;
+  }
+  const n = Math.max(1, members.length);
+  cx /= n;
+  cy /= n;
+  let spreadSum = 0;
+  let maxR2 = 0;
+  for (const p of members) {
+    const dx = (p.x || 0) - cx;
+    const dy = (p.y || 0) - cy;
+    const d2 = dx * dx + dy * dy;
+    spreadSum += Math.sqrt(d2);
+    if (d2 > maxR2) maxR2 = d2;
+  }
+  const meanBonds = internalBondRefs / n;
+  const topologyDenom = Math.max(0.001, Math.min(4, members.length - 1) - 1.5);
+  return {
+    cx,
+    cy,
+    radius: Math.max(8, Math.sqrt(maxR2)),
+    spread: spreadSum / n,
+    meanEnergy: energy / n,
+    meanAge: age / n,
+    meanSlots: slots / n,
+    meanBonds,
+    topology: Math.max(0, Math.min(1, (meanBonds - 1.5) / topologyDenom)),
   };
 }
 

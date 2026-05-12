@@ -260,17 +260,76 @@ function startPose(i, n, arena, opts = {}) {
   };
 }
 
-function focusCohortNearStart(world, cohort, arena, opts = {}) {
+export function focusCohortNearStart(world, cohort, arena, opts = {}) {
   const ps = cohort && cohort.length ? cohort : world.particles.filter(p => !p.dead);
-  const targetN = ps.length;
-  for (let i = 0; i < targetN; i++) {
-    const p = ps[i];
-    const pose = startPose(i, targetN, arena, opts);
-    p.x = pose.x;
-    p.y = pose.y;
-    p.vx = 0;
-    p.vy = 0;
+  const liveSet = new Set(ps.filter(p => p && !p.dead));
+  const bodies = [];
+  const assigned = new Set();
+
+  world._clustersTick = -10000;
+  world.updateClusters();
+  for (const c of world._clusters || []) {
+    const members = (c.members || []).filter(p => liveSet.has(p) && !p.dead);
+    if (members.length < 2) continue;
+    let cx = 0;
+    let cy = 0;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const p of members) {
+      cx += p.x;
+      cy += p.y;
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+      assigned.add(p);
+    }
+    bodies.push({ members, cx: cx / members.length, cy: cy / members.length, minX, maxX, minY, maxY });
   }
+
+  for (const p of ps) {
+    if (!p || p.dead || assigned.has(p)) continue;
+    bodies.push({ members: [p], cx: p.x, cy: p.y, minX: p.x, maxX: p.x, minY: p.y, maxY: p.y });
+  }
+
+  for (let i = 0; i < bodies.length; i++) {
+    const body = bodies[i];
+    const pose = startPose(i, bodies.length, arena, opts);
+    const minCenterX = 2 + (body.cx - body.minX);
+    const maxCenterX = arena.barrierX - 14 - (body.maxX - body.cx);
+    const minCenterY = 2 + (body.cy - body.minY);
+    const maxCenterY = H - 2 - (body.maxY - body.cy);
+    const targetX = minCenterX <= maxCenterX
+      ? clamp(pose.x, minCenterX, maxCenterX)
+      : (minCenterX + maxCenterX) * 0.5;
+    const targetY = minCenterY <= maxCenterY
+      ? clamp(pose.y, minCenterY, maxCenterY)
+      : (minCenterY + maxCenterY) * 0.5;
+    const dx = targetX - body.cx;
+    const dy = targetY - body.cy;
+    for (const p of body.members) {
+      p.x += dx;
+      p.y += dy;
+      p.vx = 0;
+      p.vy = 0;
+      p.lastMotorProgress = 0;
+      p.lastMotorSlip = 0;
+      p.lastHardContactX = 0;
+      p.lastHardContactY = 0;
+    }
+  }
+  if (world._clusterMotion) world._clusterMotion.clear();
+  if (world._clusterBus) {
+    for (const value of world._clusterBus.values()) {
+      value.r = 0;
+      value.g = 0;
+      value.b = 0;
+    }
+  }
+  world._clustersTick = -10000;
+  world.updateClusters();
 }
 
 function parseCurriculum(raw) {
@@ -866,6 +925,8 @@ export async function runDetourAssay(opts = {}) {
       sourceClusters: sourceWorld._clusters?.length || 0,
       clusterSampleParticles: sampled?.particleCount || 0,
       clusterSampleBonds: sampled?.bondCount || 0,
+      clusterSampleSourceParticles: sampled?.sourceParticleCount || sampled?.particleCount || 0,
+      clusterSampleTrimmed: sampled?.trimmedClusterCount || 0,
       ...summarizeClusterGroups(placed.clusterGroups),
     };
   } finally {

@@ -210,15 +210,25 @@ heavier Planet starts are still a deliberate stress test.
    After the motor/field-consensus pass, a longer one-seed `0x51A11` easy
    ladder replay (`ticks 360`, `evolveTicks 1200`, cap 620/start 340) produced
    intact-cluster crossings at 13.5%, matching the disassembled control while
-   retaining 99.6% of sampled bonds. The fair three-seed version was mixed but
-   no longer zero: intact clusters averaged 4.5% crossing versus 16.5% for
-   disassembled controls, with only one of three seeds producing a viable,
-   communicating/moving intact cohort (`fieldCov`/`msgCov` averaged 0.333).
-   Current conclusion: internal payload transmission and whole-body sensing are
-   now usable by evolution, and cohesive crossing is possible. The remaining
-   bottleneck is broader ecological reliability: produce more survivable,
-   route-capable organisms across seeds, then improve final gap passage and
-   goal reach without scripting a navigator.
+   retaining 99.6% of sampled bonds. A later audit found two replay-realism
+   issues: oversized source organisms were being dropped when they exceeded the
+   replay budget, and curriculum refocus moved members individually rather than
+   as a body. The sampler now trims oversized organisms into connected,
+   bond-preserving subclusters and reports `cTrim`; curriculum refocus now
+   translates named clusters as intact bodies. After also raising whole-body
+   traction and distributed-field steering to a still-weak but usable level,
+   the same fair three-seed event-mode easy ladder suite measured intact
+   clusters at 12.4% crossing, 0.0% goal reach, 95.1% survival, 94.5% bond
+   retention, `cMotor=0.436`, `cField=0.450`, and `fieldCov=1.0`; the
+   disassembled controls still led at 39.2% crossing and 17.4% goal reach. The
+   previously dropped large-organism canary seed `0xA11CE` now exports a
+   96-particle connected replay subcluster from a 550-particle source organism
+   and achieved 30.6% intact crossing with 98.9% bond retention. Current
+   conclusion: cohesive detour crossing is now real and no longer just a lucky
+   one-seed artifact, but intact bodies still lag disassembled members and do
+   not reliably finish the route. The next bottleneck is morphology, gap
+   fitting, final goal reach, and role specialization that makes staying intact
+   worth the mobility cost without scripting a navigator.
    Latest glass/edge pinning update: solid, glass, and world-edge collisions
    now add generic hard-contact feedback plus a tiny tangent/escape nudge so
    agents pressing into a barrier can slide away and receive the same bodily

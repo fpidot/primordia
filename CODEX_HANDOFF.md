@@ -40,11 +40,12 @@ but not this desktop chat unless you paste or commit the needed context.
 - GitHub Pages deploys automatically from pushes to `main`.
 - At this handoff, the working tree should be clean after commit/push.
 - Latest durable context checkpoint:
-  current `main` HEAD after this pass: `Add cluster locomotion scaffolds`
+  current `main` HEAD after this pass: `Improve cluster detour replay realism`
 
 Recent useful commits:
 
-- current `main` HEAD - Add cluster locomotion scaffolds
+- current `main` HEAD - Improve cluster detour replay realism
+- `7a6d932` - Add cluster locomotion scaffolds
 - `045275e` - Add cluster message trace and surface slide
 - `1cf46b8` - Add cluster body telemetry
 - `986448a` - Bias hard-contact slide by chemical tangent
@@ -813,7 +814,8 @@ Obstacle navigation:
   - `tools/detour-suite.js` runs preset/seed/replay matrices and summarizes
     crossing, goal reach, gap approach, closest goal/gap distance, survival,
     field/meat energy gain, movement speed, motor effort, cluster sample size,
-    source bonds, and bond retention.
+    source bonds, budget trimming, bond retention, cluster message coverage,
+    motor consensus, and distributed-field consensus.
   - Latest evidence after long-smell sensors: a short 120-tick/240-evolve-tick
     soup+planet suite still produced no crossings, but survival and closest
     distance improved. A longer two-seed easy glass-detour suite (`soup`,
@@ -832,9 +834,9 @@ Obstacle navigation:
     roles better than disassembled members
   - tune movement economics only after using the new speed/motor telemetry to
     avoid mistaking body/field drift for chosen full-throttle behavior
-  - next structural target if the above holds: coordinated cluster locomotion
-    and surface-following, because intact clusters currently preserve bonds
-    and survive but often cross less than dispersed cells.
+  - current structural target after coordinated locomotion scaffolding:
+    morphology, gap fitting, final goal reach, and role specialization that
+    make intact organisms worth their mobility cost.
 
 Communication:
 
@@ -1478,6 +1480,42 @@ Latest verification in the cluster-budding pass:
     is now possible, but not reliable across seeds; next work should focus on
     producing more survivable route-capable organisms and improving final
     passage/goal reach without scripted navigation.
+- Cluster detour replay-realism verification:
+  - Fixed cluster replay sampling so oversized source organisms are not
+    discarded. The harness now extracts a connected, budgeted subcluster that
+    preserves source bonds where possible and reports `cTrim` plus the source
+    particle count.
+  - Fixed curriculum refocus for named clusters so training stages translate
+    cluster bodies as bodies instead of scattering individual members, then
+    clear body-motion state before the next stage.
+  - Increased the still-weak whole-body traction and distributed-field steering
+    constants so shared motor/field state can move large organisms enough to
+    become selectable.
+  - New focused regressions passed:
+    `npm test -- cluster-replay-harness.test.js detour-navigation.test.js` and
+    `npm test -- cluster-body-telemetry.test.js detour-navigation.test.js cluster-replay-harness.test.js`.
+  - Full `npm test` passed all 25 test files after the replay-realism and force
+    tuning pass.
+  - GPU browser smoke passed:
+    `node tools\bench-browser.js --url http://127.0.0.1:8765/ --preset soup --seconds 3 --speed 1 --warmup 100 --width 1200 --height 800 --port 9276 --gpu`;
+    GPU ready/enabled, no page errors, about 26.7 FPS/ticks/sec in this short
+    local probe.
+  - One-tick diagnostic for the previously dropped seed `0xA11CE` now exports
+    a 96-particle connected replay subcluster from a 550-particle source
+    organism (`clusterSampleBonds=132`, `clusterSampleTrimmed=1`) instead of
+    tracking zero particles.
+  - Canary replay for `0xA11CE` after force tuning:
+    `soup`, ticks 360, evolveTicks 1200, cap 620/start 340, easy ladder,
+    event combat, clusterBudget 96. Intact clusters crossed at 30.6% with
+    98.9% bond retention; disassembled controls crossed at 70.8% and reached
+    the goal at 49.0%.
+  - Fair three-seed event-mode easy ladder replay
+    (`0x51A11,0xA11CE,0xD370A`) now shows intact clusters crossing at 12.4%,
+    goal 0.0%, survival 95.1%, bond retention 94.5%, `cMotor=0.436`,
+    `cField=0.450`, and `fieldCov=1.0`. Disassembled controls still lead at
+    39.2% crossing and 17.4% goal reach. Current read: cohesive crossing is
+    real, but final route completion and morphology/gap-fit selection remain
+    the next bottleneck.
 
 Core:
 
@@ -1567,9 +1605,11 @@ git log --oneline -5
 - agency: run repeated post-topology `--replay both` evidence with the new
   cohort behavior metrics plus still-missing cohesion under attack, alarm use,
   predator-distance change, retreat vector, and mud/glass use
-- agency: run longer detour-navigation comparisons for founder controls,
-  evolved soup/maze/planet cohorts, `gap-adjacent`/`ladder` curricula, and
-  intact vs disassembled clusters
+- agency: detour next step is no longer just "can intact clusters ever cross?"
+  The immediate target is complete route success: morphology/gap-fit pressure,
+  final goal reach rewards, organism body-shape telemetry, and role
+  specialization checks that compare intact clusters against their
+  disassembled controls across more seeds and medium difficulty.
 - UI: Best/top panel view/chase/card polish
 - audio: death gate and dig/deposit quantization
 

@@ -6,7 +6,8 @@
 
 import { assert, assertInRange, runTest, seedGlobalRandom } from './harness.js';
 import { World, CELL, GH, GW, WALL_MEMBRANE } from '../js/sim.js';
-import { buildDetourArena, runDetourAssay } from '../tools/detour-assay.js';
+import { makeGenome } from '../js/genome.js';
+import { buildDetourArena, focusCohortNearStart, runDetourAssay } from '../tools/detour-assay.js';
 
 seedGlobalRandom(0xD370A);
 
@@ -39,6 +40,48 @@ await runTest('detour-navigation: arena builds a glass barrier with two open gap
     `scentCells=${arena.scentCells}`);
   assert('start and goal regions exposed', world.habitatRegions.length === 2,
     `regions=${world.habitatRegions.length}`);
+});
+
+await runTest('detour-navigation: curriculum refocus preserves named cluster geometry', async () => {
+  const world = new World({ maxParticles: 16 });
+  const ps = [];
+  const cx = 70 * CELL;
+  const cy = 60 * CELL;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const p = world.addParticle(cx + Math.cos(a) * 11, cy + Math.sin(a) * 11, makeGenome(i % 2), 6);
+    ps.push(p);
+  }
+  for (let i = 0; i < ps.length; i++) {
+    const a = ps[i];
+    const b = ps[(i + 1) % ps.length];
+    a.bonds.push(b.id);
+    b.bonds.push(a.id);
+  }
+  world.updateClusters();
+  const before = ps.map((p, i) => {
+    const q = ps[(i + 1) % ps.length];
+    return Math.hypot(p.x - q.x, p.y - q.y);
+  });
+  const arena = buildDetourArena(world, { barrier: 'glass', difficulty: 'easy' });
+
+  focusCohortNearStart(world, ps, arena, { startX: 220, startY: 360 });
+
+  const after = ps.map((p, i) => {
+    const q = ps[(i + 1) % ps.length];
+    return Math.hypot(p.x - q.x, p.y - q.y);
+  });
+  const meanX = ps.reduce((sum, p) => sum + p.x, 0) / ps.length;
+  const meanY = ps.reduce((sum, p) => sum + p.y, 0) / ps.length;
+
+  assert('cluster still has one named body after refocus', world._clusters.length === 1,
+    `clusters=${world._clusters.length}`);
+  assert('refocus translates the body near the requested start',
+    Math.abs(meanX - 220) < 9 && Math.abs(meanY - 360) < 9,
+    `mean=(${meanX.toFixed(2)},${meanY.toFixed(2)})`);
+  assert('bond geometry is preserved by translation',
+    after.every((d, i) => Math.abs(d - before[i]) < 1e-6),
+    `before=${before.join(',')} after=${after.join(',')}`);
 });
 
 await runTest('detour-navigation: assay returns finite behavior metrics', async () => {
